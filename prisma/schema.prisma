@@ -1,0 +1,1934 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+//////////////////////////////////////////////////////
+// ENUMS
+//////////////////////////////////////////////////////
+
+/// Estado general del tenant/cliente del sistema.
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+/// Estado del usuario.
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+/// Tipo de establecimiento o sede.
+enum FacilityType {
+  HOSPITAL
+  CLINIC
+  CONSULTING_ROOM
+  LABORATORY
+  IMAGING_CENTER
+  OTHER
+}
+
+/// Estado del expediente clínico.
+enum MedicalRecordStatus {
+  ACTIVE
+  ARCHIVED
+  LOCKED
+}
+
+/// Tipo de episodio de atención.
+enum EncounterType {
+  OUTPATIENT
+  EMERGENCY
+  HOSPITALIZATION
+  SURGERY
+  FOLLOW_UP
+}
+
+/// Estado del episodio.
+enum EncounterStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+/// Categoría funcional del documento.
+/// Esto NO es la especialidad.
+/// La especialidad va en Specialty.
+enum DocumentCategory {
+  CONSULTATION
+  EMERGENCY
+  HOSPITALIZATION
+  SURGERY
+  NURSING
+  DIAGNOSTIC
+  LEGAL
+  DISCHARGE
+  DEATH
+  ADMINISTRATIVE
+  OTHER
+}
+
+/// Estado documental.
+enum DocumentStatus {
+  DRAFT
+  READY_FOR_SIGNATURE
+  SIGNED
+  AMENDED
+  SUPERSEDED
+  VOID_ADMIN
+}
+
+/// Tipo de firma aplicada.
+enum SignatureType {
+  SIMPLE_ELECTRONIC
+  ADVANCED_ELECTRONIC
+  DIGITAL
+}
+
+/// Acción auditada.
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  READ
+  EXPORT
+  PRINT
+  SIGN
+  LOGIN
+  LOGOUT
+  ACCESS_DENIED
+}
+
+/// Origen del ingreso.
+enum AdmissionSource {
+  CONSULTATION
+  EMERGENCY
+  TRANSFER
+  SURGERY
+  OTHER
+}
+
+/// Tipo de egreso.
+enum DischargeType {
+  NORMAL
+  VOLUNTARY
+  TRANSFER
+  DEFUNCTION
+  OTHER
+}
+
+/// Sexo biológico al nacer.
+enum SexAtBirth {
+  MALE
+  FEMALE
+  INTERSEX
+  UNKNOWN
+}
+
+//////////////////////////////////////////////////////
+// CORE MULTI-TENANT
+//////////////////////////////////////////////////////
+
+/// Cliente dueño del sistema.
+/// Ejemplo:
+/// - un hospital privado
+/// - una cadena de clínicas
+/// - un grupo médico
+model Tenant {
+  /// ID único del tenant.
+  id String @id @default(uuid())
+
+  /// Código único del tenant.
+  code String @unique
+
+  /// Nombre comercial del tenant.
+  name String
+
+  /// Razón social.
+  legalName String?
+
+  /// RFC o identificador fiscal.
+  taxId String?
+
+  /// Zona horaria principal.
+  timezone String @default("America/Mexico_City")
+
+  /// Estado del tenant.
+  status TenantStatus @default(ACTIVE)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de última actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  specialties          Specialty[]
+  facilities           Facility[]
+  users                User[]
+  patients             Patient[]
+  patientIdentifiers   PatientIdentifier[]
+  medicalRecords       MedicalRecord[]
+  encounters           Encounter[]
+  documentTypes        DocumentType[]
+  clinicalDocuments    ClinicalDocument[]
+  serviceAreas         ServiceArea[]
+  vitalSigns           VitalSign[]
+  diagnoses            Diagnosis[]
+  problems             Problem[]
+  allergies            Allergy[]
+  medicationStatements MedicationStatement[]
+  procedureRecords     ProcedureRecord[]
+  labRequests          LabRequest[]
+  labResults           LabResult[]
+  imagingRequests      ImagingRequest[]
+  imagingReports       ImagingReport[]
+  nursingNotes         NursingNote[]
+  consentForms         ConsentForm[]
+  discharges           Discharge[]
+  mpNotifications      MpNotification[]
+  deathRecords         DeathRecord[]
+  attachments          Attachment[]
+  auditLogs            AuditLog[]
+}
+
+/// Catálogo de especialidades clínicas.
+/// Aquí entran ONCO, GASTRO, CARDIO, PEDI, GINE, etc.
+model Specialty {
+  /// ID único de la especialidad.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del catálogo.
+  tenantId String
+
+  /// Código corto único.
+  /// Ejemplo: ONCO, GASTRO, CARDIO.
+  code String
+
+  /// Nombre visible de la especialidad.
+  /// Ejemplo: Oncología, Gastroenterología.
+  name String
+
+  /// Descripción opcional.
+  description String?
+
+  /// Activa o inactiva.
+  isActive Boolean @default(true)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users             User[]
+  serviceAreas      ServiceArea[]
+  encounters        Encounter[]
+  documentTypes     DocumentType[]
+  clinicalDocuments ClinicalDocument[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([name])
+}
+
+/// Sede física del tenant.
+/// Ejemplo:
+/// - Hospital Central
+/// - Clínica Roma
+/// - Consultorio 2
+model Facility {
+  /// ID único de la sede.
+  id String @id @default(uuid())
+
+  /// Tenant dueño de la sede.
+  tenantId String
+
+  /// Código único dentro del tenant.
+  code String
+
+  /// Nombre visible de la sede.
+  name String
+
+  /// Razón social de la sede.
+  legalName String?
+
+  /// Tipo de establecimiento.
+  facilityType FacilityType
+
+  /// Nombre de institución, si aplica.
+  institutionName String?
+
+  /// Propietario o responsable.
+  ownerName String?
+
+  /// Dirección principal.
+  addressLine1 String
+
+  /// Complemento de dirección.
+  addressLine2 String?
+
+  /// Ciudad.
+  city String?
+
+  /// Estado.
+  state String?
+
+  /// Código postal.
+  postalCode String?
+
+  /// País.
+  country String @default("MX")
+
+  /// Teléfono principal.
+  phone String?
+
+  /// Correo principal.
+  email String?
+
+  /// Bandera de activación.
+  isActive Boolean @default(true)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  serviceAreas      ServiceArea[]
+  users             User[]
+  medicalRecords    MedicalRecord[]
+  encounters        Encounter[]
+  clinicalDocuments ClinicalDocument[]
+  consentForms      ConsentForm[]
+  auditLogs         AuditLog[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+/// Área funcional de una sede.
+/// Ejemplo:
+/// - Urgencias
+/// - Hospitalización
+/// - Consulta externa
+/// - Quirófano
+model ServiceArea {
+  /// ID único del área.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del área.
+  tenantId String
+
+  /// Sede donde existe el área.
+  facilityId String
+
+  /// Especialidad predominante del área, si aplica.
+  /// Ejemplo: Oncología, Gastro.
+  specialtyId String?
+
+  /// Código único del área dentro de la sede.
+  code String
+
+  /// Nombre del área.
+  name String
+
+  /// Descripción opcional.
+  description String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility   Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  specialty  Specialty?  @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  encounters Encounter[]
+
+  @@unique([facilityId, code])
+  @@index([tenantId])
+  @@index([facilityId])
+  @@index([specialtyId])
+}
+
+//////////////////////////////////////////////////////
+// AUTH / ACCESS CONTROL
+//////////////////////////////////////////////////////
+
+/// Usuario autenticable del sistema.
+/// Puede ser médico, enfermería, recepción, admin, etc.
+model User {
+  /// ID único del usuario.
+  id String @id @default(uuid())
+
+  /// Tenant al que pertenece.
+  tenantId String
+
+  /// Sede principal asociada.
+  facilityId String?
+
+  /// Especialidad principal del usuario.
+  /// Ejemplo: un gastroenterólogo o un oncólogo.
+  specialtyId String?
+
+  /// Correo para login.
+  email String
+
+  /// Hash de contraseña.
+  passwordHash String
+
+  /// Nombre.
+  firstName String
+
+  /// Primer apellido.
+  lastName String
+
+  /// Segundo apellido.
+  middleName String?
+
+  /// Nombre completo precalculado.
+  fullName String
+
+  /// Cédula profesional o licencia.
+  professionalLicense String?
+
+  /// Estado del usuario.
+  status UserStatus @default(ACTIVE)
+
+  /// Último login.
+  lastLoginAt DateTime?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility             Facility?               @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  specialty            Specialty?              @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  roles                UserRole[]
+  authoredDocuments    ClinicalDocument[]      @relation("DocumentAuthor")
+  documentVersions     DocumentVersion[]
+  documentSignatures   DocumentSignature[]
+  statusHistoryChanges DocumentStatusHistory[]
+  procedureRecords     ProcedureRecord[]
+  labRequests          LabRequest[]
+  imagingRequests      ImagingRequest[]
+  nursingNotes         NursingNote[]
+  uploadedAttachments  Attachment[]
+  auditLogs            AuditLog[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([facilityId])
+  @@index([specialtyId])
+}
+
+/// Rol del sistema.
+/// Ejemplo:
+/// - PHYSICIAN
+/// - NURSE
+/// - TENANT_ADMIN
+model Role {
+  /// ID del rol.
+  id String @id @default(uuid())
+
+  /// Código único.
+  code String @unique
+
+  /// Nombre visible.
+  name String
+
+  /// Descripción.
+  description String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+/// Permiso atómico.
+/// Ejemplo:
+/// - patients.read
+/// - documents.sign
+/// - audits.read
+model Permission {
+  /// ID del permiso.
+  id String @id @default(uuid())
+
+  /// Código único del permiso.
+  code String @unique
+
+  /// Nombre visible.
+  name String
+
+  /// Descripción funcional.
+  description String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  roles RolePermission[]
+}
+
+/// Tabla pivote usuario-rol.
+model UserRole {
+  /// ID del vínculo.
+  id String @id @default(uuid())
+
+  /// Usuario.
+  userId String
+
+  /// Rol.
+  roleId String
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+/// Tabla pivote rol-permiso.
+model RolePermission {
+  /// ID del vínculo.
+  id String @id @default(uuid())
+
+  /// Rol.
+  roleId String
+
+  /// Permiso.
+  permissionId String
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+//////////////////////////////////////////////////////
+// PATIENTS
+//////////////////////////////////////////////////////
+
+/// Paciente del sistema.
+/// Pertenece al tenant y puede tener expediente en una o varias sedes.
+model Patient {
+  /// ID único del paciente.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del paciente.
+  tenantId String
+
+  /// Código externo o legado.
+  externalCode String?
+
+  /// Nombre.
+  firstName String
+
+  /// Primer apellido.
+  lastName String
+
+  /// Segundo apellido.
+  middleName String?
+
+  /// Nombre completo precalculado.
+  fullName String
+
+  /// Sexo biológico al nacer.
+  sexAtBirth SexAtBirth
+
+  /// Fecha de nacimiento.
+  birthDate DateTime? @db.Date
+
+  /// Edad snapshot, útil cuando fue capturada textualmente.
+  ageSnapshot Int?
+
+  /// Estado civil.
+  maritalStatus String?
+
+  /// Tipo sanguíneo.
+  bloodType String?
+
+  /// CURP.
+  curp String?
+
+  /// Teléfono.
+  phone String?
+
+  /// Correo.
+  email String?
+
+  /// Dirección línea 1.
+  addressLine1 String?
+
+  /// Dirección línea 2.
+  addressLine2 String?
+
+  /// Ciudad.
+  city String?
+
+  /// Estado.
+  state String?
+
+  /// Código postal.
+  postalCode String?
+
+  /// País.
+  country String? @default("MX")
+
+  /// Contacto de emergencia.
+  emergencyContactName String?
+
+  /// Teléfono de emergencia.
+  emergencyContactPhone String?
+
+  /// Activo/inactivo lógico.
+  isActive Boolean @default(true)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  identifiers          PatientIdentifier[]
+  medicalRecords       MedicalRecord[]
+  encounters           Encounter[]
+  vitalSigns           VitalSign[]
+  diagnoses            Diagnosis[]
+  problems             Problem[]
+  allergies            Allergy[]
+  medicationStatements MedicationStatement[]
+  procedureRecords     ProcedureRecord[]
+  labRequests          LabRequest[]
+  labResults           LabResult[]
+  imagingRequests      ImagingRequest[]
+  imagingReports       ImagingReport[]
+  nursingNotes         NursingNote[]
+  consentForms         ConsentForm[]
+  discharges           Discharge[]
+  mpNotifications      MpNotification[]
+  deathRecords         DeathRecord[]
+  attachments          Attachment[]
+  auditLogs            AuditLog[]
+  clinicalDocuments    ClinicalDocument[]
+
+  @@index([tenantId])
+  @@index([fullName])
+  @@index([curp])
+}
+
+/// Identificadores alternos del paciente.
+/// Ejemplo:
+/// - NSS
+/// - póliza
+/// - número legado
+model PatientIdentifier {
+  /// ID del identificador.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del registro.
+  tenantId String
+
+  /// Paciente dueño del identificador.
+  patientId String
+
+  /// Tipo de identificador.
+  identifierType String
+
+  /// Valor del identificador.
+  identifierValue String
+
+  /// Indica si es principal.
+  isPrimary Boolean @default(false)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, identifierType, identifierValue])
+  @@index([tenantId])
+  @@index([patientId])
+}
+
+//////////////////////////////////////////////////////
+// MEDICAL RECORD / ENCOUNTERS
+//////////////////////////////////////////////////////
+
+/// Expediente clínico maestro.
+/// Debe ser único por paciente por sede.
+model MedicalRecord {
+  /// ID del expediente.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del expediente.
+  tenantId String
+
+  /// Sede donde vive el expediente.
+  facilityId String
+
+  /// Paciente dueño del expediente.
+  patientId String
+
+  /// Número de expediente único por sede.
+  recordNumber String
+
+  /// Estado del expediente.
+  status MedicalRecordStatus @default(ACTIVE)
+
+  /// Fecha de apertura.
+  openedAt DateTime @default(now())
+
+  /// Último episodio relacionado.
+  lastEncounterAt DateTime?
+
+  /// Fecha de archivado.
+  archivedAt DateTime?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility          Facility           @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounters        Encounter[]
+  clinicalDocuments ClinicalDocument[]
+
+  @@unique([facilityId, recordNumber])
+  @@unique([facilityId, patientId])
+  @@index([tenantId])
+  @@index([facilityId])
+  @@index([patientId])
+}
+
+/// Episodio de atención.
+/// Puede ser consulta, urgencias, hospitalización, cirugía, seguimiento, etc.
+model Encounter {
+  /// ID del episodio.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del episodio.
+  tenantId String
+
+  /// Sede donde ocurrió.
+  facilityId String
+
+  /// Área funcional.
+  serviceAreaId String?
+
+  /// Especialidad bajo la cual se atendió.
+  specialtyId String?
+
+  /// Expediente clínico.
+  medicalRecordId String
+
+  /// Paciente atendido.
+  patientId String
+
+  /// Número único del episodio por sede.
+  encounterNumber String
+
+  /// Tipo de episodio.
+  encounterType EncounterType
+
+  /// Estado del episodio.
+  status EncounterStatus @default(OPEN)
+
+  /// Origen del ingreso.
+  admissionSource AdmissionSource?
+
+  /// Fecha/hora de apertura.
+  openedAt DateTime @default(now())
+
+  /// Fecha/hora de cierre.
+  closedAt DateTime?
+
+  /// Usuario tratante/responsable principal.
+  attendingUserId String?
+
+  /// Motivo de consulta/ingreso.
+  reasonForVisit String?
+
+  /// Notas generales.
+  notes String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility             Facility              @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  serviceArea          ServiceArea?          @relation(fields: [serviceAreaId], references: [id], onDelete: SetNull)
+  specialty            Specialty?            @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  medicalRecord        MedicalRecord         @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+  patient              Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicalDocuments    ClinicalDocument[]
+  vitalSigns           VitalSign[]
+  diagnoses            Diagnosis[]
+  problems             Problem[]
+  allergies            Allergy[]
+  medicationStatements MedicationStatement[]
+  procedureRecords     ProcedureRecord[]
+  labRequests          LabRequest[]
+  labResults           LabResult[]
+  imagingRequests      ImagingRequest[]
+  imagingReports       ImagingReport[]
+  nursingNotes         NursingNote[]
+  consentForms         ConsentForm[]
+  discharges           Discharge[]
+  mpNotifications      MpNotification[]
+  deathRecords         DeathRecord[]
+  attachments          Attachment[]
+  auditLogs            AuditLog[]
+
+  @@unique([facilityId, encounterNumber])
+  @@index([tenantId])
+  @@index([facilityId])
+  @@index([serviceAreaId])
+  @@index([specialtyId])
+  @@index([medicalRecordId])
+  @@index([patientId])
+}
+
+//////////////////////////////////////////////////////
+// DOCUMENTS / VERSIONING / SIGNATURES
+//////////////////////////////////////////////////////
+
+/// Catálogo de tipos documentales.
+/// Aquí vive la definición funcional del documento.
+model DocumentType {
+  /// ID del tipo documental.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del catálogo.
+  tenantId String
+
+  /// Especialidad a la que aplica, si es específica.
+  /// Ejemplo: una nota o formato sólo para oncología.
+  specialtyId String?
+
+  /// Código único del tipo documental.
+  code String
+
+  /// Nombre visible del tipo documental.
+  name String
+
+  /// Categoría funcional.
+  category DocumentCategory
+
+  /// Descripción.
+  description String?
+
+  /// Si requiere firma para finalizar.
+  requiresSignature Boolean @default(true)
+
+  /// Si se puede repetir múltiples veces.
+  allowsMultiple Boolean @default(true)
+
+  /// Esquema JSON opcional para validación dinámica.
+  schemaJson Json?
+
+  /// Activo/inactivo.
+  isActive Boolean @default(true)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  specialty         Specialty?         @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  clinicalDocuments ClinicalDocument[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([specialtyId])
+  @@index([category])
+}
+
+/// Documento clínico maestro.
+/// El contenido editable real vive en DocumentVersion.
+model ClinicalDocument {
+  /// ID del documento.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del documento.
+  tenantId String
+
+  /// Sede donde existe.
+  facilityId String
+
+  /// Expediente al que pertenece.
+  medicalRecordId String
+
+  /// Episodio asociado, si aplica.
+  encounterId String?
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Tipo documental.
+  documentTypeId String
+
+  /// Especialidad clínica del documento, si aplica.
+  specialtyId String?
+
+  /// Usuario autor principal.
+  authorUserId String
+
+  /// Título visible.
+  title String
+
+  /// Estado del documento.
+  status DocumentStatus @default(DRAFT)
+
+  /// Fecha clínica del documento.
+  documentDate DateTime
+
+  /// Fecha/hora de firma.
+  signedAt DateTime?
+
+  /// Fecha/hora de bloqueo.
+  lockedAt DateTime?
+
+  /// Versión vigente.
+  currentVersionId String? @unique
+
+  /// Metadatos adicionales.
+  metadataJson Json?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility      Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+  encounter     Encounter?    @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  documentType  DocumentType  @relation(fields: [documentTypeId], references: [id], onDelete: Restrict)
+  specialty     Specialty?    @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  author        User          @relation("DocumentAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  /// Relación a todas las versiones históricas.
+  versions DocumentVersion[] @relation("DocumentVersions")
+
+  /// Relación a la versión actual.
+  currentVersion DocumentVersion? @relation("CurrentDocumentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  /// Firmas del documento.
+  signatures DocumentSignature[]
+
+  /// Historial de cambios de estado.
+  statusHistory DocumentStatusHistory[]
+
+  /// Adjuntos del documento.
+  attachments Attachment[]
+
+  /// Consentimientos ligados a este documento.
+  consentForms ConsentForm[]
+
+  @@index([tenantId])
+  @@index([facilityId])
+  @@index([medicalRecordId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([documentTypeId])
+  @@index([specialtyId])
+  @@index([authorUserId])
+  @@index([status])
+  @@index([documentDate])
+}
+
+/// Snapshot inmutable del contenido del documento.
+model DocumentVersion {
+  /// ID de la versión.
+  id String @id @default(uuid())
+
+  /// Documento al que pertenece.
+  documentId String
+
+  /// Número incremental de versión.
+  versionNumber Int
+
+  /// Contenido estructurado de la versión.
+  contentJson Json
+
+  /// Texto narrativo libre.
+  narrativeText String?
+
+  /// Hash SHA-256 del contenido.
+  hashSha256 String
+
+  /// Usuario que creó la versión.
+  createdByUserId String
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  document           ClinicalDocument  @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  createdByUser      User              @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  currentForDocument ClinicalDocument? @relation("CurrentDocumentVersion")
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@index([createdByUserId])
+}
+
+/// Firma aplicada a un documento.
+model DocumentSignature {
+  /// ID de la firma.
+  id String @id @default(uuid())
+
+  /// Documento firmado.
+  documentId String
+
+  /// Usuario firmante.
+  userId String
+
+  /// Tipo de firma.
+  signatureType SignatureType
+
+  /// Hash del contenido firmado.
+  signedHash String
+
+  /// Fecha/hora de firma.
+  signedAt DateTime @default(now())
+
+  /// Metadatos técnicos de firma.
+  metadataJson Json?
+
+  /// Relaciones.
+  document ClinicalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([documentId])
+  @@index([userId])
+  @@index([signedAt])
+}
+
+/// Historial de estados del documento.
+model DocumentStatusHistory {
+  /// ID del cambio de estado.
+  id String @id @default(uuid())
+
+  /// Documento afectado.
+  documentId String
+
+  /// Estado anterior.
+  fromStatus DocumentStatus?
+
+  /// Estado nuevo.
+  toStatus DocumentStatus
+
+  /// Usuario que cambió el estado.
+  changedByUserId String
+
+  /// Motivo del cambio.
+  reason String?
+
+  /// Fecha del cambio.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  document      ClinicalDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  changedByUser User             @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([documentId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+}
+
+//////////////////////////////////////////////////////
+// CLINICAL DATA
+//////////////////////////////////////////////////////
+
+/// Signos vitales capturados durante un episodio.
+model VitalSign {
+  /// ID del registro.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado.
+  encounterId String
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Fecha/hora de toma.
+  takenAt DateTime @default(now())
+
+  /// Peso en kg.
+  weightKg Decimal? @db.Decimal(8, 2)
+
+  /// Talla en cm.
+  heightCm Decimal? @db.Decimal(8, 2)
+
+  /// Temperatura en °C.
+  temperatureC Decimal? @db.Decimal(4, 1)
+
+  /// Frecuencia cardiaca.
+  heartRate Int?
+
+  /// Frecuencia respiratoria.
+  respiratoryRate Int?
+
+  /// Presión sistólica.
+  systolicBp Int?
+
+  /// Presión diastólica.
+  diastolicBp Int?
+
+  /// Saturación de oxígeno.
+  oxygenSaturation Decimal? @db.Decimal(5, 2)
+
+  /// Escala de dolor.
+  painScale Int?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([takenAt])
+}
+
+/// Diagnóstico clínico.
+model Diagnosis {
+  /// ID del diagnóstico.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String
+
+  /// Paciente asociado.
+  patientId String
+
+  /// Código estándar, por ejemplo CIE-10.
+  code String?
+
+  /// Descripción textual.
+  description String
+
+  /// Tipo de diagnóstico.
+  diagnosisType String?
+
+  /// Si es principal.
+  isPrimary Boolean @default(false)
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([code])
+}
+
+/// Problema clínico activo o histórico.
+model Problem {
+  /// ID del problema.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado, si aplica.
+  encounterId String?
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Descripción del problema.
+  description String
+
+  /// Estado del problema.
+  status String?
+
+  /// Inicio.
+  onsetAt DateTime?
+
+  /// Resolución.
+  resolvedAt DateTime?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+}
+
+/// Alergia registrada del paciente.
+model Allergy {
+  /// ID de la alergia.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado, si aplica.
+  encounterId String?
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Sustancia alergénica.
+  substance String
+
+  /// Reacción.
+  reaction String?
+
+  /// Severidad.
+  severity String?
+
+  /// Estado actual.
+  status String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+}
+
+/// Medicación declarada o indicada.
+model MedicationStatement {
+  /// ID del registro.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado, si aplica.
+  encounterId String?
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Medicamento.
+  medicationName String
+
+  /// Dosis.
+  dose String?
+
+  /// Vía.
+  route String?
+
+  /// Frecuencia.
+  frequency String?
+
+  /// Fecha de inicio.
+  startDate DateTime? @db.Date
+
+  /// Fecha de fin.
+  endDate DateTime? @db.Date
+
+  /// Notas.
+  notes String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+}
+
+/// Procedimiento realizado.
+model ProcedureRecord {
+  /// ID del procedimiento.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado.
+  encounterId String
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Código del procedimiento.
+  code String?
+
+  /// Descripción.
+  description String
+
+  /// Fecha/hora de realización.
+  performedAt DateTime?
+
+  /// Usuario ejecutor principal.
+  performerUserId String?
+
+  /// Notas.
+  notes String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  performerUser User?     @relation(fields: [performerUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([performerUserId])
+}
+
+//////////////////////////////////////////////////////
+// AUXILIARY DIAGNOSTICS / NURSING
+//////////////////////////////////////////////////////
+
+/// Solicitud de laboratorio.
+model LabRequest {
+  /// ID de la solicitud.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String
+
+  /// Paciente asociado.
+  patientId String
+
+  /// Usuario solicitante.
+  requestedByUserId String?
+
+  /// Fecha/hora de solicitud.
+  requestedAt DateTime @default(now())
+
+  /// Nombre del estudio.
+  studyName String
+
+  /// Pregunta clínica.
+  clinicalQuestion String?
+
+  /// Estado.
+  status String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter       Encounter   @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient         Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedByUser User?       @relation(fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  labResults      LabResult[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([requestedByUserId])
+}
+
+/// Resultado de laboratorio.
+model LabResult {
+  /// ID del resultado.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String
+
+  /// Paciente asociado.
+  patientId String
+
+  /// Solicitud original.
+  labRequestId String?
+
+  /// Nombre del estudio.
+  studyName String
+
+  /// Resultado textual.
+  resultText String?
+
+  /// Profesional que interpretó.
+  interpretedBy String?
+
+  /// Fecha/hora del reporte.
+  reportedAt DateTime?
+
+  /// Incidentes u observaciones.
+  incidents String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter  Encounter   @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient    Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  labRequest LabRequest? @relation(fields: [labRequestId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([labRequestId])
+}
+
+/// Solicitud de imagenología.
+model ImagingRequest {
+  /// ID de la solicitud.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String
+
+  /// Paciente asociado.
+  patientId String
+
+  /// Usuario solicitante.
+  requestedByUserId String?
+
+  /// Fecha/hora de solicitud.
+  requestedAt DateTime @default(now())
+
+  /// Nombre del estudio.
+  studyName String
+
+  /// Pregunta clínica.
+  clinicalQuestion String?
+
+  /// Estado.
+  status String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter       Encounter       @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient         Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedByUser User?           @relation(fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  imagingReports  ImagingReport[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([requestedByUserId])
+}
+
+/// Reporte de imagenología.
+model ImagingReport {
+  /// ID del reporte.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String
+
+  /// Paciente asociado.
+  patientId String
+
+  /// Solicitud original.
+  imagingRequestId String?
+
+  /// Nombre del estudio.
+  studyName String
+
+  /// Resultado textual.
+  resultText String?
+
+  /// Profesional que interpretó.
+  interpretedBy String?
+
+  /// Fecha/hora del reporte.
+  reportedAt DateTime?
+
+  /// Incidentes u observaciones.
+  incidents String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter      Encounter       @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient        Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  imagingRequest ImagingRequest? @relation(fields: [imagingRequestId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([imagingRequestId])
+}
+
+/// Nota de enfermería.
+model NursingNote {
+  /// ID de la nota.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String
+
+  /// Paciente asociado.
+  patientId String
+
+  /// Usuario autor.
+  authoredByUserId String?
+
+  /// Fecha/hora clínica.
+  noteAt DateTime @default(now())
+
+  /// Habitus exterior.
+  habitusExterior String?
+
+  /// Observaciones.
+  observations String?
+
+  /// Escala de dolor.
+  painScale Int?
+
+  /// Riesgo de caída.
+  fallRiskLevel String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter      Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient        Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  authoredByUser User?     @relation(fields: [authoredByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([authoredByUserId])
+}
+
+//////////////////////////////////////////////////////
+// LEGAL / DISCHARGE / DEATH
+//////////////////////////////////////////////////////
+
+/// Consentimiento informado.
+model ConsentForm {
+  /// ID del consentimiento.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Sede relacionada.
+  facilityId String
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Episodio relacionado.
+  encounterId String?
+
+  /// Documento clínico relacionado.
+  clinicalDocumentId String?
+
+  /// Título visible.
+  title String
+
+  /// Acto autorizado.
+  authorizedAct String
+
+  /// Riesgos y beneficios.
+  risksBenefits String?
+
+  /// Indica si fue autorización en contexto de urgencia.
+  emergencyAuthorization Boolean @default(false)
+
+  /// Nombre de quien otorga el consentimiento.
+  grantedByName String
+
+  /// Relación con el paciente.
+  grantedByRelation String?
+
+  /// Fecha/hora de otorgamiento.
+  grantedAt DateTime
+
+  /// Testigo 1.
+  witness1Name String?
+
+  /// Testigo 2.
+  witness2Name String?
+
+  /// Médico relacionado.
+  physicianName String?
+
+  /// Notas adicionales.
+  notes String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  facility         Facility          @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  patient          Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter        Encounter?        @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  clinicalDocument ClinicalDocument? @relation(fields: [clinicalDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([facilityId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([clinicalDocumentId])
+}
+
+/// Registro de egreso.
+model Discharge {
+  /// ID del egreso.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado.
+  encounterId String
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Fecha/hora del egreso.
+  dischargeAt DateTime
+
+  /// Tipo de egreso.
+  dischargeType DischargeType
+
+  /// Motivo del egreso.
+  reason String
+
+  /// Resumen clínico.
+  clinicalSummary String?
+
+  /// Problemas pendientes.
+  pendingProblems String?
+
+  /// Plan terapéutico.
+  treatmentPlan String?
+
+  /// Indicaciones ambulatorias.
+  ambulatoryRecommendations String?
+
+  /// Pronóstico.
+  prognosis String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+}
+
+/// Notificación al Ministerio Público.
+model MpNotification {
+  /// ID de la notificación.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado.
+  encounterId String
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Fecha de notificación.
+  notificationDate DateTime
+
+  /// Hecho notificado.
+  notifiedAct String
+
+  /// Reporte de lesiones o descripción.
+  injuryReport String?
+
+  /// Agencia o autoridad.
+  agencyName String?
+
+  /// Médico que reporta.
+  physicianName String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+}
+
+/// Registro de defunción.
+model DeathRecord {
+  /// ID del registro.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del dato.
+  tenantId String
+
+  /// Episodio relacionado, si aplica.
+  encounterId String?
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Fecha/hora de fallecimiento.
+  deathDate DateTime?
+
+  /// Causa de muerte.
+  causeOfDeath String?
+
+  /// Indica si fue muerte fetal.
+  fetalDeath Boolean @default(false)
+
+  /// Notas.
+  notes String?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+}
+
+//////////////////////////////////////////////////////
+// FILES / ATTACHMENTS
+//////////////////////////////////////////////////////
+
+/// Archivo adjunto.
+/// Puede ligarse a documento, paciente y/o episodio.
+model Attachment {
+  /// ID del archivo.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del archivo.
+  tenantId String
+
+  /// Documento relacionado, si aplica.
+  documentId String?
+
+  /// Paciente relacionado, si aplica.
+  patientId String?
+
+  /// Episodio relacionado, si aplica.
+  encounterId String?
+
+  /// Nombre original del archivo.
+  fileName String
+
+  /// Tipo MIME.
+  mimeType String
+
+  /// Llave o ruta en almacenamiento externo.
+  storageKey String
+
+  /// Tamaño en bytes.
+  fileSizeBytes BigInt
+
+  /// Usuario que subió el archivo.
+  uploadedByUserId String?
+
+  /// Fecha/hora de carga.
+  uploadedAt DateTime @default(now())
+
+  /// Metadatos opcionales.
+  metadataJson Json?
+
+  /// Relaciones.
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  document       ClinicalDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  patient        Patient?          @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  encounter      Encounter?        @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  uploadedByUser User?             @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([documentId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([uploadedByUserId])
+}
+
+//////////////////////////////////////////////////////
+// AUDIT
+//////////////////////////////////////////////////////
+
+/// Bitácora de auditoría.
+/// Guarda accesos, lecturas, cambios, firmas, exportaciones, etc.
+model AuditLog {
+  /// ID del evento.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del evento.
+  tenantId String
+
+  /// Usuario que ejecutó la acción.
+  userId String?
+
+  /// Acción auditada.
+  action AuditAction
+
+  /// Tipo de entidad afectada.
+  /// Ejemplo: Patient, ClinicalDocument, Encounter.
+  entityType String
+
+  /// ID de la entidad afectada.
+  entityId String?
+
+  /// Sede relacionada.
+  facilityId String?
+
+  /// Paciente relacionado.
+  patientId String?
+
+  /// Episodio relacionado.
+  encounterId String?
+
+  /// Datos extra.
+  metadataJson Json?
+
+  /// Dirección IP.
+  ipAddress String?
+
+  /// User-Agent.
+  userAgent String?
+
+  /// Fecha/hora del evento.
+  createdAt DateTime @default(now())
+
+  /// Relaciones.
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  facility  Facility?  @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  patient   Patient?   @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([facilityId])
+  @@index([patientId])
+  @@index([encounterId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
