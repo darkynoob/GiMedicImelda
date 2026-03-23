@@ -20,9 +20,31 @@ import { DiagnosticsModule } from './diagnostics/diagnostics.module';
 import { SurgeryModule } from './surgery/surgery.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AiModule } from './ai/ai.module';
+import { PersistenceModule } from './shared/persistence/persistence.module';
 
 @Module({
-  imports: [AuthModule, UsersModule, TenantsModule, FacilitiesModule, PatientsModule, MedicalRecordsModule, EncountersModule, DocumentsModule, ConsentsModule, AuditsModule, CatalogModule, ConsultationsnestModule, EmergencyModule, HospitalizationModule, NursingModule, DiagnosticsModule, SurgeryModule, AttachmentsModule, AiModule],
+  imports: [
+    PersistenceModule,
+    AuthModule,
+    UsersModule,
+    TenantsModule,
+    FacilitiesModule,
+    PatientsModule,
+    MedicalRecordsModule,
+    EncountersModule,
+    DocumentsModule,
+    ConsentsModule,
+    AuditsModule,
+    CatalogModule,
+    ConsultationsnestModule,
+    EmergencyModule,
+    HospitalizationModule,
+    NursingModule,
+    DiagnosticsModule,
+    SurgeryModule,
+    AttachmentsModule,
+    AiModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
