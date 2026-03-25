@@ -4,10 +4,19 @@
   "description": "",
   "author": "",
   "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "build:all": "npm run build && npm run build:web",
+    "build:web": "npm run build --workspace apps/web",
+    "dev": "concurrently \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "nest start --watch",
+    "dev:web": "npm run dev --workspace apps/web",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "prisma:seed": "tsx prisma/seed.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -17,7 +26,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:web": "npm run test --workspace apps/web"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1004.0",
@@ -55,6 +65,7 @@
     "@types/node": "^22.10.7",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
+    "concurrently": "^9.2.1",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

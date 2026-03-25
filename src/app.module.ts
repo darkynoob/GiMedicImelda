@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
@@ -21,11 +22,17 @@ import { SurgeryModule } from './surgery/surgery.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AiModule } from './ai/ai.module';
 import { PersistenceModule } from './shared/persistence/persistence.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     PersistenceModule,
     AuthModule,
+    DashboardModule,
     UsersModule,
     TenantsModule,
     FacilitiesModule,

@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 215 25% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+    --primary: 215 28% 17%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 215 25% 15%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 215 25% 15%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 215 28% 17%;
+    --radius: 0.375rem;
+    --clinical-success: 160 84% 39%;
+    --clinical-success-foreground: 0 0% 100%;
+    --clinical-warning: 38 92% 50%;
+    --clinical-warning-foreground: 0 0% 100%;
+    --clinical-alert: 0 72% 51%;
+    --clinical-alert-foreground: 0 0% 100%;
+    --clinical-info: 213 94% 68%;
+    --clinical-info-foreground: 0 0% 100%;
+    --sidebar-background: 215 28% 17%;
+    --sidebar-foreground: 214 32% 91%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 215 28% 17%;
+    --sidebar-accent: 215 25% 23%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 215 25% 23%;
+    --sidebar-muted: 215 16% 47%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer utilities {
+  .clinical-card {
+    @apply rounded-md border bg-card shadow-sm;
+  }
+
+  .metric-card {
+    @apply rounded-md border bg-card p-5 shadow-sm transition-shadow hover:shadow-md;
+  }
+}

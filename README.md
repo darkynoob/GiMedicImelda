@@ -1,98 +1,93 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# giMedic
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Monorepo clínico con backend NestJS + Prisma en la raíz y frontend Vite + React en `apps/web`.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Qué incluye esta fase
 
-## Description
+- `auth` real con `POST /api/auth/login` y `GET /api/auth/me`
+- `dashboard` real con `GET /api/dashboard/summary`
+- `patients` real con `GET /api/patients` y `GET /api/patients/:id`
+- frontend Vite con rutas:
+  - `/login`
+  - `/dashboard`
+  - `/patients`
+  - `/patients/:patientId`
+- documentación de cambios y pendientes en [docs/ui-migration-notes.md](/F:/darky/Documentos/darky/Imelda/gimedic/docs/ui-migration-notes.md)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Estructura
 
-## Project setup
-
-```bash
-$ npm install
+```text
+.
+|-- apps/
+|   `-- web/                 Frontend Vite + React
+|-- prisma/                  Schema y seeds
+|-- src/                     Backend NestJS
+`-- docs/                    Notas de migración y pendientes
 ```
 
-## Compile and run the project
+## Requisitos
+
+- Node.js 20+
+- PostgreSQL disponible localmente
+- `.env` configurado con `DATABASE_URL`, `JWT_ACCESS_SECRET` y `CORS_ORIGIN`
+
+## Instalación
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
+## Desarrollo
+
+Backend Nest:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run dev:api
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Frontend Vite:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run dev:web
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Ambos al mismo tiempo:
 
-## Resources
+```bash
+npm run dev
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Seeds
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Ejecuta el seed después de preparar la base:
 
-## Support
+```bash
+npm run prisma:seed
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Si tu entorno no tiene ese alias, usa:
 
-## Stay in touch
+```bash
+npx prisma db seed
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Credenciales de desarrollo:
 
-## License
+- `valeria.ruiz@nova.mx` / `Admin123*`
+- `ernesto.salas@horizonte.mx` / `Admin123*`
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Scripts útiles
+
+```bash
+npm run build
+npm run build:web
+npm run build:all
+npm test -- --runInBand
+npm run test:web
+```
+
+## Notas
+
+- La UI actual es una base propia inspirada en la dirección del proyecto objetivo, pero la réplica exacta de `clinico-nexus` sigue pendiente hasta que ese repo exista dentro de `contex`.
+- El schema Prisma no fue modificado en esta fase.
+- `encounters` y `documents` completos aún no están conectados al frontend; quedó preparada la arquitectura para extenderlos.
