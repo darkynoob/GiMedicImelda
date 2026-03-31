@@ -29,13 +29,13 @@ async function main() {
   await seedSupport(deps);
   await seedLegalAndAudit(deps);
 
-  console.log('✅ Seed completado');
-  console.log('📦 Seed dividido por dominios');
+  console.log('Seed completado');
+  console.log('Seed dividido por dominios');
 }
 
 main()
   .catch((error) => {
-    console.error('❌ Error al ejecutar seed:', error);
+    console.error('Error al ejecutar seed:', error);
     process.exit(1);
   })
   .finally(async () => {

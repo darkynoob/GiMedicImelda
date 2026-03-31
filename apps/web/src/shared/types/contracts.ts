@@ -72,6 +72,7 @@ export interface PatientListItemResponse {
 
 export interface PatientDetailResponse {
   id: string;
+  tenantId: string;
   fullName: string;
   firstName: string;
   lastName: string;
@@ -118,4 +119,31 @@ export interface PatientDetailResponse {
     reasonForVisit: string | null;
     facilityName: string | null;
   }>;
+}
+
+export interface CreatePatientRequest {
+  firstName: string;
+  lastName: string;
+  middleName?: string;
+  sexAtBirth: string;
+  birthDate?: string;
+  ageSnapshot?: number;
+  maritalStatus?: string;
+  bloodType?: string;
+  curp?: string;
+  phone?: string;
+  email?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  externalCode?: string;
+  identifierType?: string;
+  identifierValue?: string;
+  recordNumber?: string;
+  facilityId?: string;
 }

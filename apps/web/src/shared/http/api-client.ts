@@ -25,8 +25,21 @@ export async function apiRequest<T>(
   });
 
   if (!response.ok) {
+    const contentType = response.headers.get('content-type') ?? '';
+
+    if (contentType.includes('application/json')) {
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string | string[] }
+        | null;
+      const message = Array.isArray(payload?.message)
+        ? payload.message.join(', ')
+        : payload?.message;
+
+      throw new Error(message || 'Ocurrio un error al consultar la API');
+    }
+
     const message = await response.text();
-    throw new Error(message || 'Ocurrió un error al consultar la API');
+    throw new Error(message || 'Ocurrio un error al consultar la API');
   }
 
   return (await response.json()) as T;

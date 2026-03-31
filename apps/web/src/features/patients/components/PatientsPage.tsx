@@ -33,7 +33,12 @@ export function PatientsPage() {
               {patientsQuery.data?.total ?? 0} pacientes registrados
             </p>
           </div>
-          <Button className="gap-1.5" size="sm" type="button">
+          <Button
+            className="gap-1.5"
+            onClick={() => navigate('/pacientes/nuevo')}
+            size="sm"
+            type="button"
+          >
             <Plus className="h-4 w-4" /> Nuevo paciente
           </Button>
         </div>

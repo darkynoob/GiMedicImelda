@@ -1,7 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -10,11 +12,24 @@ import type { AuthenticatedRequest } from '../../auth/application/interfaces/aut
 import { JwtAuthGuard } from '../../auth/infrastructure/jwt-auth.guard';
 import { PatientsQueryDto } from '../application/dto/patients-query.dto';
 import { PatientsService } from '../application/services/patients.service';
+import { CreatePatientDto } from '../create-patient.dto';
 
 @Controller('patients')
 @UseGuards(JwtAuthGuard)
 export class PatientsController {
   constructor(private readonly patientsService: PatientsService) {}
+
+  @Post()
+  create(
+    @Req() request: AuthenticatedRequest,
+    @Body() input: CreatePatientDto,
+  ) {
+    return this.patientsService.createForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      input,
+    );
+  }
 
   @Get()
   list(

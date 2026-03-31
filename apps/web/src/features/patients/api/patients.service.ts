@@ -1,5 +1,6 @@
 import { apiRequest } from '../../../shared/http/api-client';
 import type {
+  CreatePatientRequest,
   PatientDetailResponse,
   PatientsListResponse,
 } from '../../../shared/types/contracts';
@@ -30,4 +31,12 @@ export function fetchPatients(
 
 export function fetchPatientDetail(token: string, patientId: string) {
   return apiRequest<PatientDetailResponse>(`/patients/${patientId}`, { token });
+}
+
+export function createPatient(token: string, input: CreatePatientRequest) {
+  return apiRequest<PatientDetailResponse>('/patients', {
+    method: 'POST',
+    token,
+    body: JSON.stringify(input),
+  });
 }

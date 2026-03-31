@@ -3,6 +3,7 @@ import { LoginPage } from '../features/auth/components/LoginPage';
 import { useAuth } from '../features/auth/hooks/auth-context';
 import { DashboardPage } from '../features/dashboard/components/DashboardPage';
 import { PatientDetailPage } from '../features/patients/components/PatientDetailPage';
+import { NewPatientPage } from '../features/patients/components/NewPatientPage';
 import { PatientsPage } from '../features/patients/components/PatientsPage';
 import { ModulePlaceholderPage } from '../pages/ModulePlaceholderPage';
 
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: 'dashboard', element: <Navigate replace to="/" /> },
       { path: 'pacientes', element: <PatientsPage /> },
+      { path: 'pacientes/nuevo', element: <NewPatientPage /> },
       { path: 'patients', element: <Navigate replace to="/pacientes" /> },
       { path: 'pacientes/:patientId', element: <PatientDetailPage /> },
       {
