@@ -22,6 +22,15 @@ describe('PatientsService', () => {
 
   const facilityRepository = {
     findMany: jest.fn(),
+    findById: jest.fn(),
+  };
+
+  const userRepository = {
+    findById: jest.fn(),
+  };
+
+  const prisma = {
+    $transaction: jest.fn(),
   };
 
   const service = new PatientsService(
@@ -30,6 +39,8 @@ describe('PatientsService', () => {
     medicalRecordRepository as never,
     encounterRepository as never,
     facilityRepository as never,
+    userRepository as never,
+    prisma as never,
   );
 
   afterEach(() => {
@@ -40,7 +51,7 @@ describe('PatientsService', () => {
     patientRepository.findMany.mockResolvedValue([
       {
         id: 'patient-1',
-        fullName: 'Ana López Hernández',
+        fullName: 'Ana Lopez Hernandez',
         curp: 'CURP123',
         email: 'ana@example.com',
         phone: '5551112222',
@@ -81,5 +92,77 @@ describe('PatientsService', () => {
     await expect(
       service.getDetailByTenant('tenant-1', 'patient-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('creates a patient, primary identifier and medical record', async () => {
+    userRepository.findById.mockResolvedValue({
+      id: 'user-1',
+      facilityId: 'facility-1',
+    });
+    facilityRepository.findById.mockResolvedValue({
+      id: 'facility-1',
+      tenantId: 'tenant-1',
+      code: 'NOVA',
+      isActive: true,
+    });
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        patient: {
+          create: jest.fn().mockResolvedValue({
+            id: 'patient-2',
+          }),
+        },
+        patientIdentifier: {
+          create: jest.fn().mockResolvedValue({
+            id: 'identifier-1',
+          }),
+        },
+        medicalRecord: {
+          create: jest.fn().mockResolvedValue({
+            id: 'record-1',
+          }),
+        },
+      }),
+    );
+
+    const detailSpy = jest.spyOn(service, 'getDetailByTenant').mockResolvedValue({
+      id: 'patient-2',
+      tenantId: 'tenant-1',
+      fullName: 'Patricia Ramirez Nava',
+      firstName: 'Patricia',
+      lastName: 'Ramirez',
+      middleName: 'Nava',
+      curp: null,
+      birthDate: null,
+      sexAtBirth: 'FEMALE',
+      maritalStatus: null,
+      bloodType: null,
+      email: null,
+      phone: null,
+      addressLine1: null,
+      addressLine2: null,
+      city: null,
+      state: null,
+      postalCode: null,
+      country: 'MX',
+      emergencyContactName: null,
+      emergencyContactPhone: null,
+      identifiers: [],
+      medicalRecords: [],
+      recentEncounters: [],
+    });
+
+    const result = await service.createForTenant('tenant-1', 'user-1', {
+      firstName: 'Patricia',
+      lastName: 'Ramirez',
+      middleName: 'Nava',
+      sexAtBirth: 'FEMALE' as never,
+      identifierType: 'NSS',
+      identifierValue: 'NSS-1234',
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(detailSpy).toHaveBeenCalledWith('tenant-1', 'patient-2');
+    expect(result.id).toBe('patient-2');
   });
 });

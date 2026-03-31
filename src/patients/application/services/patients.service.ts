@@ -1,22 +1,34 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  Encounter,
-  Facility,
-  MedicalRecord,
-  Patient,
-  PatientIdentifier,
+import { randomUUID } from 'node:crypto';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  MedicalRecordStatus,
   Prisma,
+  type Encounter,
+  type Facility,
+  type MedicalRecord,
+  type Patient,
+  type PatientIdentifier,
 } from '@prisma/client';
 import { ENCOUNTER_REPOSITORY } from '../../../shared/persistence/tokens/encounter.token';
 import { FACILITY_REPOSITORY } from '../../../shared/persistence/tokens/facility.token';
 import { MEDICALRECORD_REPOSITORY } from '../../../shared/persistence/tokens/medicalRecord.token';
 import { PATIENTIDENTIFIER_REPOSITORY } from '../../../shared/persistence/tokens/patientIdentifier.token';
 import { PATIENT_REPOSITORY } from '../../../shared/persistence/tokens/patient.token';
+import { USER_REPOSITORY } from '../../../shared/persistence/tokens/user.token';
+import { PrismaService } from '../../../shared/persistence/prisma/prisma.service';
 import type { EncounterRepository } from '../../../shared/persistence/repositories/encounter.repository';
 import type { FacilityRepository } from '../../../shared/persistence/repositories/facility.repository';
 import type { MedicalRecordRepository } from '../../../shared/persistence/repositories/medicalRecord.repository';
 import type { PatientIdentifierRepository } from '../../../shared/persistence/repositories/patientIdentifier.repository';
 import type { PatientRepository } from '../../../shared/persistence/repositories/patient.repository';
+import type { UserRepository } from '../../../shared/persistence/repositories/user.repository';
+import { CreatePatientDto } from '../../create-patient.dto';
 import type {
   PatientDetailResponse,
   PatientListItemResponse,
@@ -37,7 +49,93 @@ export class PatientsService {
     private readonly encounterRepository: EncounterRepository,
     @Inject(FACILITY_REPOSITORY)
     private readonly facilityRepository: FacilityRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
+    private readonly prisma: PrismaService,
   ) {}
+
+  async createForTenant(
+    tenantId: string,
+    userId: string,
+    input: CreatePatientDto,
+  ): Promise<PatientDetailResponse> {
+    if (Boolean(input.identifierType) !== Boolean(input.identifierValue)) {
+      throw new BadRequestException(
+        'El identificador principal requiere tipo y valor',
+      );
+    }
+
+    const facility = await this.resolveTargetFacility(tenantId, userId, input);
+    const fullName = this.buildFullName(input);
+
+    try {
+      const patient = await this.prisma.$transaction(async (tx) => {
+        const createdPatient = await tx.patient.create({
+          data: {
+            tenantId,
+            externalCode: input.externalCode,
+            firstName: input.firstName,
+            lastName: input.lastName,
+            middleName: input.middleName,
+            fullName,
+            sexAtBirth: input.sexAtBirth,
+            birthDate: input.birthDate ? new Date(input.birthDate) : undefined,
+            ageSnapshot: input.ageSnapshot,
+            maritalStatus: input.maritalStatus,
+            bloodType: input.bloodType,
+            curp: input.curp,
+            phone: input.phone,
+            email: input.email,
+            addressLine1: input.addressLine1,
+            addressLine2: input.addressLine2,
+            city: input.city,
+            state: input.state,
+            postalCode: input.postalCode,
+            country: input.country ?? 'MX',
+            emergencyContactName: input.emergencyContactName,
+            emergencyContactPhone: input.emergencyContactPhone,
+          },
+        });
+
+        if (input.identifierType && input.identifierValue) {
+          await tx.patientIdentifier.create({
+            data: {
+              tenantId,
+              patientId: createdPatient.id,
+              identifierType: input.identifierType,
+              identifierValue: input.identifierValue,
+              isPrimary: true,
+            },
+          });
+        }
+
+        await tx.medicalRecord.create({
+          data: {
+            tenantId,
+            facilityId: facility.id,
+            patientId: createdPatient.id,
+            recordNumber:
+              input.recordNumber ?? this.generateRecordNumber(facility.code),
+            status: MedicalRecordStatus.ACTIVE,
+          },
+        });
+
+        return createdPatient;
+      });
+
+      return this.getDetailByTenant(tenantId, patient.id);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException(
+            'Ya existe un registro con alguno de los datos capturados',
+          );
+        }
+      }
+
+      throw error;
+    }
+  }
 
   async listByTenant(
     tenantId: string,
@@ -333,5 +431,42 @@ export class PatientsService {
       code: facility.code,
       name: facility.name,
     };
+  }
+
+  private buildFullName(input: CreatePatientDto): string {
+    return [input.firstName, input.lastName, input.middleName]
+      .filter((part): part is string => Boolean(part))
+      .join(' ');
+  }
+
+  private async resolveTargetFacility(
+    tenantId: string,
+    userId: string,
+    input: CreatePatientDto,
+  ): Promise<Facility> {
+    const fallbackFacilityId = (await this.userRepository.findById(userId))
+      ?.facilityId;
+    const requestedFacilityId = input.facilityId ?? fallbackFacilityId;
+
+    if (!requestedFacilityId) {
+      throw new BadRequestException(
+        'No se pudo determinar la sede para abrir el expediente',
+      );
+    }
+
+    const facility = await this.facilityRepository.findById(requestedFacilityId);
+
+    if (!facility || facility.tenantId !== tenantId || !facility.isActive) {
+      throw new BadRequestException('La sede indicada no esta disponible');
+    }
+
+    return facility;
+  }
+
+  private generateRecordNumber(facilityCode: string): string {
+    const safeFacilityCode =
+      facilityCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'GEN';
+
+    return `EXP-${safeFacilityCode}-${randomUUID().slice(0, 8).toUpperCase()}`;
   }
 }

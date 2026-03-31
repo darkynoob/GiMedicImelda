@@ -1,5 +1,6 @@
 import { AuditAction, DischargeType } from '@prisma/client';
 import type { SeedDeps } from './_context';
+import { seedExpansion } from './07-expansion.seed';
 
 export async function seedLegalAndAudit({ prisma, ctx }: SeedDeps) {
   const { ids, dates } = ctx;
@@ -203,4 +204,6 @@ export async function seedLegalAndAudit({ prisma, ctx }: SeedDeps) {
       },
     ],
   });
+
+  await seedExpansion({ prisma, ctx });
 }
