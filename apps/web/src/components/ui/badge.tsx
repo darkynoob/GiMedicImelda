@@ -11,13 +11,13 @@ type BadgeVariant =
   | 'signed';
 
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'border-transparent bg-primary text-primary-foreground',
-  secondary: 'border-transparent bg-secondary text-secondary-foreground',
-  success: 'border-transparent bg-clinical-success text-clinical-success-foreground',
-  warning: 'border-transparent bg-clinical-warning text-clinical-warning-foreground',
-  alert: 'border-transparent bg-clinical-alert text-clinical-alert-foreground',
-  draft: 'border-clinical-warning/30 bg-clinical-warning/10 text-clinical-warning',
-  signed: 'border-clinical-success/30 bg-clinical-success/10 text-clinical-success',
+  default: 'border border-gray-200 bg-gray-50 text-gray-700',
+  secondary: 'bg-gray-100 text-gray-700 border-gray-200',
+  success: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
+  warning: 'border border-amber-200 bg-amber-50 text-amber-700',
+  alert: 'border border-red-200 bg-red-50 text-red-700',
+  draft: 'border border-amber-200 bg-amber-50 text-amber-700',
+  signed: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
 };
 
 interface BadgeProps extends HTMLAttributes<HTMLDivElement> {
@@ -32,7 +32,7 @@ export function Badge({
   return (
     <div
       className={cn(
-        'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-medium tracking-wide',
         variantClasses[variant],
         className,
       )}
