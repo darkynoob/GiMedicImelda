@@ -14,7 +14,7 @@ const variantClasses: Record<BadgeVariant, string> = {
   default: 'border border-gray-200 bg-gray-50 text-gray-700',
   secondary: 'bg-gray-100 text-gray-700 border-gray-200',
   success: 'border border-emerald-200 bg-emerald-50 text-emerald-700',
-  warning: 'border border-amber-200 bg-amber-50 text-amber-700',
+  warning: 'border border-amber-400 bg-amber-50 text-amber-400',
   alert: 'border border-red-200 bg-red-50 text-red-700',
   draft: 'border border-amber-200 bg-amber-50 text-amber-700',
   signed: 'border border-emerald-200 bg-emerald-50 text-emerald-700',

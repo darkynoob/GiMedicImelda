@@ -35,8 +35,8 @@ export function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen grid-cols-1 bg-background lg:grid-cols-[1.15fr_0.85fr]">
-      <section className="flex flex-col justify-between bg-sidebar px-10 py-12 text-sidebar-foreground">
+    <main className="grid min-h-[100dvh] grid-cols-1 bg-background lg:grid-cols-[1.15fr_0.85fr]">
+      <section className="hidden lg:flex flex-col justify-between bg-sidebar px-10 py-12 text-sidebar-foreground">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-md bg-clinical-info/15">
             <Stethoscope className="h-5 w-5 text-clinical-info" />
@@ -53,12 +53,11 @@ export function LoginPage() {
             Acceso seguro
           </div>
           <div>
-            <h1 className="text-4xl font-semibold leading-tight text-sidebar-primary">
+            <h1 className="text-3xl font-semibold leading-snug text-sidebar-primary">
               La misma capa visual de clinico-nexus, ahora conectada a giMedic.
             </h1>
-            <p className="mt-3 max-w-lg text-sm leading-6 text-sidebar-foreground/70">
-              Esta pantalla conserva el lenguaje clínico del proyecto de referencia y
-              entra directo al dashboard, pacientes y detalle con la API real del backend.
+            <p className="mt-3 max-w-md text-sm leading-6 text-sidebar-foreground/70">
+              Plataforma clínica diseñada para gestionar pacientes, operaciones y seguimiento en tiempo real.
             </p>
           </div>
         </div>
@@ -74,48 +73,63 @@ export function LoginPage() {
           </div>
         </div>
       </section>
-
-      <section className="flex items-center justify-center px-6 py-10">
-        <div className="clinical-card w-full max-w-md p-8">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold">Iniciar sesion</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Usa una cuenta activa del tenant para continuar.
+      
+      <section className="flex min-h-[100dvh] items-center justify-center px-4 py-8 sm:px-6 lg:px-12">
+        <div className="clinical-card w-full max-w-sm sm:max-w-md p-6 sm:p-8 space-y-6">
+          <div>
+            <h2 className="text-lg sm:text-xl font-semibold">Iniciar sesión</h2>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Ingresa tus credenciales para acceder al sistema.
             </p>
           </div>
 
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          <form className="space-y-4 sm:space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-1.5">
               <label className="text-sm font-medium" htmlFor="email">
                 Correo
               </label>
               <Input
                 id="email"
+                type="email"
+                placeholder="correo@empresa.com"
+                className="h-10 sm:h-11 bg-background"
                 onChange={(event) => setEmail(event.target.value)}
                 value={email}
+                autoFocus
               />
             </div>
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium" htmlFor="password">
-                Contrasena
+                Contraseña
               </label>
               <Input
                 id="password"
-                onChange={(event) => setPassword(event.target.value)}
                 type="password"
+                placeholder="••••••••"
+                className="h-10 sm:h-11 bg-background"
+                onChange={(event) => setPassword(event.target.value)}
                 value={password}
               />
             </div>
 
             {error ? (
-              <div className="rounded-md border border-clinical-alert/20 bg-clinical-alert/5 px-3 py-2 text-sm text-clinical-alert">
+              <div className="rounded-md border border-clinical-alert/30 bg-clinical-alert/10 px-3 py-2 text-sm text-clinical-alert">
                 {error}
               </div>
             ) : null}
 
-            <Button className="w-full" disabled={isSubmitting} type="submit">
-              {isSubmitting ? 'Entrando...' : 'Entrar al sistema'}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-primary"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+
+            <Button className="w-full h-10 sm:h-11 mt-2" disabled={isSubmitting} type="submit">
+              {isSubmitting ? 'Validando acceso...' : 'Acceder'}
             </Button>
           </form>
         </div>

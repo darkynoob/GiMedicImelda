@@ -89,7 +89,7 @@ export function PatientsPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="hidden p-3 font-mono text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded md:table-cell">
+                  <td className="hidden p-3 font-sans text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded md:table-cell">
                     {patient.curp ?? 'Sin CURP'}
                   </td>
                   <td className="hidden p-3 lg:table-cell">{patient.sexAtBirth}</td>
