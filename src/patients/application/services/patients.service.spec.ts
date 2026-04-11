@@ -125,38 +125,67 @@ describe('PatientsService', () => {
       }),
     );
 
-    const detailSpy = jest.spyOn(service, 'getDetailByTenant').mockResolvedValue({
-      id: 'patient-2',
-      tenantId: 'tenant-1',
-      fullName: 'Patricia Ramirez Nava',
-      firstName: 'Patricia',
-      lastName: 'Ramirez',
-      middleName: 'Nava',
-      curp: null,
-      birthDate: null,
-      sexAtBirth: 'FEMALE',
-      maritalStatus: null,
-      bloodType: null,
-      email: null,
-      phone: null,
-      addressLine1: null,
-      addressLine2: null,
-      city: null,
-      state: null,
-      postalCode: null,
-      country: 'MX',
-      emergencyContactName: null,
-      emergencyContactPhone: null,
-      identifiers: [],
-      medicalRecords: [],
-      recentEncounters: [],
-    });
+    const detailSpy = jest
+      .spyOn(service, 'getDetailByTenant')
+      .mockResolvedValue({
+        id: 'patient-2',
+        tenantId: 'tenant-1',
+        fullName: 'Patricia Ramirez Nava',
+        firstName: 'Patricia',
+        lastName: 'Ramirez',
+        middleName: 'Nava',
+        curp: null,
+        birthDate: null,
+        sexAtBirth: 'FEMALE',
+        maritalStatus: null,
+        bloodType: null,
+        email: null,
+        phone: null,
+        alternatePhone: null,
+        addressLine1: null,
+        addressLine2: null,
+        city: null,
+        state: null,
+        postalCode: null,
+        country: 'MX',
+        municipality: null,
+        neighborhood: null,
+        street: null,
+        exteriorNumber: null,
+        interiorNumber: null,
+        emergencyContactName: null,
+        emergencyContactPhone: null,
+        emergencyContactRelation: null,
+        patientStatus: 'Activo',
+        patientType: 'Ambulatorio',
+        medicalUnit: 'Hospital Nova',
+        hasKnownAllergies: false,
+        allergiesNotes: null,
+        occupation: null,
+        educationLevel: null,
+        religion: null,
+        primaryLanguage: null,
+        requiresTranslator: false,
+        registrationSource: null,
+        administrativeNotes: null,
+        identifiers: [],
+        medicalRecords: [],
+        recentEncounters: [],
+      });
 
     const result = await service.createForTenant('tenant-1', 'user-1', {
       firstName: 'Patricia',
       lastName: 'Ramirez',
       middleName: 'Nava',
       sexAtBirth: 'FEMALE' as never,
+      birthDate: '1990-07-09',
+      phone: '5512345678',
+      city: 'Ciudad de Mexico',
+      state: 'CDMX',
+      patientStatus: 'Activo',
+      patientType: 'Ambulatorio',
+      medicalUnit: 'Hospital Nova',
+      hasKnownAllergies: false,
       identifierType: 'NSS',
       identifierValue: 'NSS-1234',
     });
@@ -164,5 +193,42 @@ describe('PatientsService', () => {
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(detailSpy).toHaveBeenCalledWith('tenant-1', 'patient-2');
     expect(result.id).toBe('patient-2');
+  });
+
+  it('rejects creation when neither birth date nor age are present', async () => {
+    await expect(
+      service.createForTenant('tenant-1', 'user-1', {
+        firstName: 'Patricia',
+        lastName: 'Ramirez',
+        sexAtBirth: 'FEMALE' as never,
+        phone: '5512345678',
+        city: 'Ciudad de Mexico',
+        state: 'CDMX',
+        patientStatus: 'Activo',
+        patientType: 'Ambulatorio',
+        medicalUnit: 'Hospital Nova',
+        hasKnownAllergies: false,
+      }),
+    ).rejects.toThrow(
+      'La fecha de nacimiento o la edad referida son obligatorias',
+    );
+  });
+
+  it('rejects creation when allergies were flagged without detail', async () => {
+    await expect(
+      service.createForTenant('tenant-1', 'user-1', {
+        firstName: 'Patricia',
+        lastName: 'Ramirez',
+        sexAtBirth: 'FEMALE' as never,
+        birthDate: '1990-07-09',
+        phone: '5512345678',
+        city: 'Ciudad de Mexico',
+        state: 'CDMX',
+        patientStatus: 'Activo',
+        patientType: 'Ambulatorio',
+        medicalUnit: 'Hospital Nova',
+        hasKnownAllergies: true,
+      }),
+    ).rejects.toThrow('Debes detallar las alergias conocidas del paciente');
   });
 });

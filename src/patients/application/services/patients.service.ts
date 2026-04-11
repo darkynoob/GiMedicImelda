@@ -36,6 +36,9 @@ import type {
 } from '../dto/patient.response';
 import { PatientsQueryDto } from '../dto/patients-query.dto';
 
+const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+
 @Injectable()
 export class PatientsService {
   constructor(
@@ -59,17 +62,20 @@ export class PatientsService {
     userId: string,
     input: CreatePatientDto,
   ): Promise<PatientDetailResponse> {
-    if (Boolean(input.identifierType) !== Boolean(input.identifierValue)) {
-      throw new BadRequestException(
-        'El identificador principal requiere tipo y valor',
-      );
-    }
+    this.validateCreateInput(input);
 
     const facility = await this.resolveTargetFacility(tenantId, userId, input);
     const fullName = this.buildFullName(input);
+    const addressLine1 =
+      input.addressLine1 ?? this.buildAddressLine1FromStructuredAddress(input);
+    const addressLine2 =
+      input.addressLine2 ?? this.buildAddressLine2FromStructuredAddress(input);
 
     try {
       const patient = await this.prisma.$transaction(async (tx) => {
+        // The create flow stores both the structured address fields and the
+        // legacy address lines so existing screens keep working during the
+        // migration to the richer admission form.
         const createdPatient = await tx.patient.create({
           data: {
             tenantId,
@@ -85,15 +91,37 @@ export class PatientsService {
             bloodType: input.bloodType,
             curp: input.curp,
             phone: input.phone,
+            alternatePhone: input.alternatePhone,
             email: input.email,
-            addressLine1: input.addressLine1,
-            addressLine2: input.addressLine2,
+            addressLine1,
+            addressLine2,
             city: input.city,
             state: input.state,
             postalCode: input.postalCode,
             country: input.country ?? 'MX',
+            municipality: input.municipality,
+            neighborhood: input.neighborhood,
+            street: input.street,
+            exteriorNumber: input.exteriorNumber,
+            interiorNumber: input.interiorNumber,
             emergencyContactName: input.emergencyContactName,
             emergencyContactPhone: input.emergencyContactPhone,
+            emergencyContactRelation: input.emergencyContactRelation,
+            patientStatus: input.patientStatus,
+            patientType: input.patientType,
+            medicalUnit: input.medicalUnit,
+            hasKnownAllergies: input.hasKnownAllergies,
+            allergiesNotes: input.hasKnownAllergies
+              ? input.allergiesNotes
+              : null,
+            occupation: input.occupation,
+            educationLevel: input.educationLevel,
+            religion: input.religion,
+            primaryLanguage: input.primaryLanguage,
+            requiresTranslator: input.requiresTranslator,
+            registrationSource: input.registrationSource,
+            administrativeNotes: input.administrativeNotes,
+            isActive: this.isActivePatientStatus(input.patientStatus),
           },
         });
 
@@ -275,14 +303,33 @@ export class PatientsService {
       bloodType: patient.bloodType,
       email: patient.email,
       phone: patient.phone,
+      alternatePhone: patient.alternatePhone,
       addressLine1: patient.addressLine1,
       addressLine2: patient.addressLine2,
       city: patient.city,
       state: patient.state,
       postalCode: patient.postalCode,
       country: patient.country,
+      municipality: patient.municipality,
+      neighborhood: patient.neighborhood,
+      street: patient.street,
+      exteriorNumber: patient.exteriorNumber,
+      interiorNumber: patient.interiorNumber,
       emergencyContactName: patient.emergencyContactName,
       emergencyContactPhone: patient.emergencyContactPhone,
+      emergencyContactRelation: patient.emergencyContactRelation,
+      patientStatus: patient.patientStatus,
+      patientType: patient.patientType,
+      medicalUnit: patient.medicalUnit,
+      hasKnownAllergies: patient.hasKnownAllergies,
+      allergiesNotes: patient.allergiesNotes,
+      occupation: patient.occupation,
+      educationLevel: patient.educationLevel,
+      religion: patient.religion,
+      primaryLanguage: patient.primaryLanguage,
+      requiresTranslator: patient.requiresTranslator,
+      registrationSource: patient.registrationSource,
+      administrativeNotes: patient.administrativeNotes,
       identifiers: identifiers.map((identifier) => ({
         id: identifier.id,
         identifierType: identifier.identifierType,
@@ -349,6 +396,18 @@ export class PatientsService {
       },
       {
         curp: {
+          contains: search,
+          mode: 'insensitive',
+        },
+      },
+      {
+        phone: {
+          contains: search,
+          mode: 'insensitive',
+        },
+      },
+      {
+        externalCode: {
           contains: search,
           mode: 'insensitive',
         },
@@ -439,6 +498,84 @@ export class PatientsService {
       .join(' ');
   }
 
+  /**
+   * Centralizes create-time business rules so both controller tests and future
+   * admission flows share the same clinical/administrative invariants.
+   */
+  private validateCreateInput(input: CreatePatientDto) {
+    if (Boolean(input.identifierType) !== Boolean(input.identifierValue)) {
+      throw new BadRequestException(
+        'El identificador principal requiere tipo y valor',
+      );
+    }
+
+    if (!input.birthDate && input.ageSnapshot === undefined) {
+      throw new BadRequestException(
+        'La fecha de nacimiento o la edad referida son obligatorias',
+      );
+    }
+
+    if (!input.phone) {
+      throw new BadRequestException('El telefono principal es obligatorio');
+    }
+
+    if (!PHONE_REGEX.test(input.phone)) {
+      throw new BadRequestException(
+        'El telefono principal tiene formato invalido',
+      );
+    }
+
+    if (!input.city || !input.state) {
+      throw new BadRequestException(
+        'La ciudad y el estado son obligatorios para el alta rapida',
+      );
+    }
+
+    if (input.curp && !CURP_REGEX.test(input.curp)) {
+      throw new BadRequestException('La CURP capturada no es valida');
+    }
+
+    if (input.hasKnownAllergies && !input.allergiesNotes) {
+      throw new BadRequestException(
+        'Debes detallar las alergias conocidas del paciente',
+      );
+    }
+  }
+
+  /**
+   * The historical UI expects a compact primary address line, so the richer
+   * structured address coming from the new form is flattened here as a bridge.
+   */
+  private buildAddressLine1FromStructuredAddress(input: CreatePatientDto) {
+    const primaryAddressLine = [input.street, input.exteriorNumber]
+      .filter((part): part is string => Boolean(part))
+      .join(' ')
+      .trim();
+
+    return primaryAddressLine.length > 0 ? primaryAddressLine : undefined;
+  }
+
+  /**
+   * Secondary address data remains visible in older screens through the legacy
+   * address line while the detail views adopt the richer fields progressively.
+   */
+  private buildAddressLine2FromStructuredAddress(input: CreatePatientDto) {
+    const secondaryAddressLine = [
+      input.interiorNumber ? `Int. ${input.interiorNumber}` : null,
+      input.neighborhood ? `Col. ${input.neighborhood}` : null,
+      input.municipality,
+    ]
+      .filter((part): part is string => Boolean(part))
+      .join(', ')
+      .trim();
+
+    return secondaryAddressLine.length > 0 ? secondaryAddressLine : undefined;
+  }
+
+  private isActivePatientStatus(patientStatus: string) {
+    return patientStatus.trim().toLowerCase() === 'activo';
+  }
+
   private async resolveTargetFacility(
     tenantId: string,
     userId: string,
@@ -454,7 +591,8 @@ export class PatientsService {
       );
     }
 
-    const facility = await this.facilityRepository.findById(requestedFacilityId);
+    const facility =
+      await this.facilityRepository.findById(requestedFacilityId);
 
     if (!facility || facility.tenantId !== tenantId || !facility.isActive) {
       throw new BadRequestException('La sede indicada no esta disponible');

@@ -1,6 +1,7 @@
 import { SexAtBirth } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
@@ -10,9 +11,14 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
+
+const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
 
 const trimValue = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -33,6 +39,26 @@ const trimUppercaseToUndefined = ({ value }: { value: unknown }) => {
 
   const trimmedValue = value.trim().toUpperCase();
   return trimmedValue.length > 0 ? trimmedValue : undefined;
+};
+
+const booleanValue = ({ value }: { value: unknown }) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLowerCase();
+
+    if (normalizedValue === 'true') {
+      return true;
+    }
+
+    if (normalizedValue === 'false') {
+      return false;
+    }
+  }
+
+  return value;
 };
 
 export class CreatePatientDto {
@@ -84,13 +110,22 @@ export class CreatePatientDto {
   @IsString()
   @MaxLength(18)
   @Transform(trimUppercaseToUndefined)
+  @Matches(CURP_REGEX, { message: 'CURP invalido' })
   curp?: string;
 
   @IsOptional()
   @IsString()
   @MaxLength(64)
   @Transform(trimToUndefined)
+  @Matches(PHONE_REGEX, { message: 'Telefono invalido' })
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Transform(trimToUndefined)
+  @Matches(PHONE_REGEX, { message: 'Telefono alterno invalido' })
+  alternatePhone?: string;
 
   @IsOptional()
   @IsEmail()
@@ -136,6 +171,36 @@ export class CreatePatientDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  @Transform(trimToUndefined)
+  municipality?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  @Transform(trimToUndefined)
+  neighborhood?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  @Transform(trimToUndefined)
+  street?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Transform(trimToUndefined)
+  exteriorNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  @Transform(trimToUndefined)
+  interiorNumber?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(120)
   @Transform(trimToUndefined)
   emergencyContactName?: string;
@@ -144,7 +209,84 @@ export class CreatePatientDto {
   @IsString()
   @MaxLength(64)
   @Transform(trimToUndefined)
+  @Matches(PHONE_REGEX, { message: 'Telefono de emergencia invalido' })
   emergencyContactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Transform(trimToUndefined)
+  emergencyContactRelation?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  @Transform(trimValue)
+  patientStatus!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  @Transform(trimValue)
+  patientType!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  @Transform(trimValue)
+  medicalUnit!: string;
+
+  @IsBoolean()
+  @Transform(booleanValue)
+  hasKnownAllergies!: boolean;
+
+  @ValidateIf((input: CreatePatientDto) => input.hasKnownAllergies === true)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  @Transform(trimValue)
+  allergiesNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  @Transform(trimToUndefined)
+  occupation?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Transform(trimToUndefined)
+  educationLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Transform(trimToUndefined)
+  religion?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Transform(trimToUndefined)
+  primaryLanguage?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(booleanValue)
+  requiresTranslator?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  @Transform(trimToUndefined)
+  registrationSource?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  @Transform(trimToUndefined)
+  administrativeNotes?: string;
 
   @IsOptional()
   @IsString()

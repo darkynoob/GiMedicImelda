@@ -592,6 +592,9 @@ model Patient {
   /// Teléfono.
   phone String?
 
+  /// Teléfono alterno.
+  alternatePhone String?
+
   /// Correo.
   email String?
 
@@ -613,11 +616,65 @@ model Patient {
   /// País.
   country String? @default("MX")
 
+  /// Municipio o alcaldía.
+  municipality String?
+
+  /// Colonia.
+  neighborhood String?
+
+  /// Calle.
+  street String?
+
+  /// Número exterior.
+  exteriorNumber String?
+
+  /// Número interior.
+  interiorNumber String?
+
   /// Contacto de emergencia.
   emergencyContactName String?
 
   /// Teléfono de emergencia.
   emergencyContactPhone String?
+
+  /// Relación con el contacto de emergencia.
+  emergencyContactRelation String?
+
+  /// Estatus administrativo del paciente.
+  patientStatus String @default("Activo")
+
+  /// Tipo operativo del paciente.
+  patientType String?
+
+  /// Unidad médica de referencia capturada en admisión.
+  medicalUnit String?
+
+  /// Señala si se confirmaron alergias conocidas al alta.
+  hasKnownAllergies Boolean?
+
+  /// Resumen administrativo de alergias conocidas.
+  allergiesNotes String?
+
+  /// Ocupación referida.
+  occupation String?
+
+  /// Escolaridad referida.
+  educationLevel String?
+
+  /// Religión referida.
+  religion String?
+
+  /// Lengua principal del paciente.
+  primaryLanguage String?
+
+  /// Si requiere traductor para la atención.
+  requiresTranslator Boolean?
+
+  /// Origen o canal del registro.
+  registrationSource String?
+
+  /// Observaciones administrativas del alta.
+  administrativeNotes String?
 
   /// Activo/inactivo lógico.
   isActive Boolean @default(true)
@@ -655,6 +712,8 @@ model Patient {
   @@index([tenantId])
   @@index([fullName])
   @@index([curp])
+  @@index([phone])
+  @@index([externalCode])
 }
 
 /// Identificadores alternos del paciente.
