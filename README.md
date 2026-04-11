@@ -1,18 +1,32 @@
 # giMedic
 
-Monorepo clínico con backend NestJS + Prisma en la raíz y frontend Vite + React en `apps/web`.
+Monorepo clinico con backend NestJS + Prisma en la raiz y frontend Vite +
+React en `apps/web`.
 
-## Qué incluye esta fase
+## Que incluye hoy
 
 - `auth` real con `POST /api/auth/login` y `GET /api/auth/me`
 - `dashboard` real con `GET /api/dashboard/summary`
-- `patients` real con `GET /api/patients` y `GET /api/patients/:id`
+- `patients` real con:
+  - `GET /api/patients`
+  - `GET /api/patients/:id`
+  - `POST /api/patients`
 - frontend Vite con rutas:
   - `/login`
   - `/dashboard`
-  - `/patients`
-  - `/patients/:patientId`
-- documentación de cambios y pendientes en [docs/ui-migration-notes.md](/F:/darky/Documentos/darky/Imelda/gimedic/docs/ui-migration-notes.md)
+  - `/pacientes`
+  - `/pacientes/:patientId`
+  - `/pacientes/nuevo`
+- documentacion de cambios y pendientes en
+  [docs/ui-migration-notes.md](/F:/darky/Documentos/darky/Imelda/gimedic/docs/ui-migration-notes.md)
+
+## En esta fase se adapto
+
+- la pantalla `/pacientes/nuevo` de gi medic
+- tomando como referencia estructural la vista de nuevo paciente de
+  `clinico-nexus`
+- conservando el diseno visual actual de gi medic
+- con backend/schema/DTOs alineados para persistir la nueva captura
 
 ## Estructura
 
@@ -20,9 +34,9 @@ Monorepo clínico con backend NestJS + Prisma en la raíz y frontend Vite + Reac
 .
 |-- apps/
 |   `-- web/                 Frontend Vite + React
-|-- prisma/                  Schema y seeds
+|-- prisma/                  Schema, migraciones y seeds
 |-- src/                     Backend NestJS
-`-- docs/                    Notas de migración y pendientes
+`-- docs/                    Notas de migracion y pendientes
 ```
 
 ## Requisitos
@@ -31,7 +45,7 @@ Monorepo clínico con backend NestJS + Prisma en la raíz y frontend Vite + Reac
 - PostgreSQL disponible localmente
 - `.env` configurado con `DATABASE_URL`, `JWT_ACCESS_SECRET` y `CORS_ORIGIN`
 
-## Instalación
+## Instalacion
 
 ```bash
 npm install
@@ -57,18 +71,26 @@ Ambos al mismo tiempo:
 npm run dev
 ```
 
+## Base de datos
+
+Despues de bajar cambios de schema, aplica migraciones:
+
+```bash
+npx prisma migrate deploy
+```
+
+Si estas trabajando local y quieres regenerar cliente:
+
+```bash
+npx prisma generate
+```
+
 ## Seeds
 
-Ejecuta el seed después de preparar la base:
+Ejecuta el seed despues de preparar la base:
 
 ```bash
 npm run prisma:seed
-```
-
-Si tu entorno no tiene ese alias, usa:
-
-```bash
-npx prisma db seed
 ```
 
 Credenciales de desarrollo:
@@ -76,18 +98,21 @@ Credenciales de desarrollo:
 - `valeria.ruiz@nova.mx` / `Admin123*`
 - `ernesto.salas@horizonte.mx` / `Admin123*`
 
-## Scripts útiles
+## Scripts utiles
 
 ```bash
 npm run build
 npm run build:web
 npm run build:all
 npm test -- --runInBand
-npm run test:web
+npx tsc -p apps/web/tsconfig.json --noEmit
 ```
 
 ## Notas
 
-- La UI actual es una base propia inspirada en la dirección del proyecto objetivo, pero la réplica exacta de `clinico-nexus` sigue pendiente hasta que ese repo exista dentro de `contex`.
-- El schema Prisma no fue modificado en esta fase.
-- `encounters` y `documents` completos aún no están conectados al frontend; quedó preparada la arquitectura para extenderlos.
+- la referencia visual/estructural usada para la pantalla nueva esta en
+  `contex/clinico-nexus-ref`
+- el schema Prisma ya fue extendido para soportar el alta enriquecida de
+  pacientes
+- `encounters` y `documents` completos aun no estan conectados con el mismo
+  nivel de detalle del flujo de alta
