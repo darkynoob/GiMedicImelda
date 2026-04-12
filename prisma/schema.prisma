@@ -170,33 +170,39 @@ model Tenant {
   updatedAt DateTime @updatedAt
 
   /// Relaciones.
-  specialties          Specialty[]
-  facilities           Facility[]
-  users                User[]
-  patients             Patient[]
-  patientIdentifiers   PatientIdentifier[]
-  medicalRecords       MedicalRecord[]
-  encounters           Encounter[]
-  documentTypes        DocumentType[]
-  clinicalDocuments    ClinicalDocument[]
-  serviceAreas         ServiceArea[]
-  vitalSigns           VitalSign[]
-  diagnoses            Diagnosis[]
-  problems             Problem[]
-  allergies            Allergy[]
-  medicationStatements MedicationStatement[]
-  procedureRecords     ProcedureRecord[]
-  labRequests          LabRequest[]
-  labResults           LabResult[]
-  imagingRequests      ImagingRequest[]
-  imagingReports       ImagingReport[]
-  nursingNotes         NursingNote[]
-  consentForms         ConsentForm[]
-  discharges           Discharge[]
-  mpNotifications      MpNotification[]
-  deathRecords         DeathRecord[]
-  attachments          Attachment[]
-  auditLogs            AuditLog[]
+  specialties                Specialty[]
+  facilities                 Facility[]
+  users                      User[]
+  patients                   Patient[]
+  patientIdentifiers         PatientIdentifier[]
+  medicalRecords             MedicalRecord[]
+  encounters                 Encounter[]
+  documentTypes              DocumentType[]
+  clinicalDocuments          ClinicalDocument[]
+  serviceAreas               ServiceArea[]
+  vitalSigns                 VitalSign[]
+  diagnoses                  Diagnosis[]
+  problems                   Problem[]
+  allergies                  Allergy[]
+  medicationStatements       MedicationStatement[]
+  procedureRecords           ProcedureRecord[]
+  labRequests                LabRequest[]
+  labResults                 LabResult[]
+  imagingRequests            ImagingRequest[]
+  imagingReports             ImagingReport[]
+  nursingNotes               NursingNote[]
+  consentForms               ConsentForm[]
+  discharges                 Discharge[]
+  mpNotifications            MpNotification[]
+  deathRecords               DeathRecord[]
+  attachments                Attachment[]
+  auditLogs                  AuditLog[]
+  patientResponsibleContacts PatientResponsibleContact[]
+  patientCoverages           PatientCoverage[]
+  patientDocuments           PatientDocument[]
+  patientDemographicProfiles PatientDemographicProfile[]
+  patientClinicalProfiles    PatientClinicalProfile[]
+  patientBillingProfiles     PatientBillingProfile[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -589,6 +595,9 @@ model Patient {
   /// CURP.
   curp String?
 
+  /// RFC del paciente o de la persona física titular del perfil.
+  rfc String?
+
   /// Teléfono.
   phone String?
 
@@ -686,7 +695,7 @@ model Patient {
   updatedAt DateTime @updatedAt
 
   /// Relaciones.
-  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant               Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   identifiers          PatientIdentifier[]
   medicalRecords       MedicalRecord[]
   encounters           Encounter[]
@@ -708,10 +717,17 @@ model Patient {
   attachments          Attachment[]
   auditLogs            AuditLog[]
   clinicalDocuments    ClinicalDocument[]
+  responsibleContact   PatientResponsibleContact?
+  coverages            PatientCoverage[]
+  documents            PatientDocument[]
+  demographicProfile   PatientDemographicProfile?
+  clinicalProfile      PatientClinicalProfile?
+  billingProfile       PatientBillingProfile?
 
   @@index([tenantId])
   @@index([fullName])
   @@index([curp])
+  @@index([rfc])
   @@index([phone])
   @@index([externalCode])
 }
@@ -750,6 +766,240 @@ model PatientIdentifier {
   @@unique([tenantId, identifierType, identifierValue])
   @@index([tenantId])
   @@index([patientId])
+}
+
+/// Responsable principal del paciente a nivel administrativo.
+/// Se mantiene separado para no sobrecargar el registro base del paciente y
+/// poder evolucionar la gestión de responsables sin tocar el flujo de alta.
+model PatientResponsibleContact {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String @unique
+
+  fullName String
+
+  relationship String?
+
+  phone String
+
+  alternatePhone String?
+
+  email String?
+
+  legalRepresentationType String?
+
+  addressLine1 String?
+
+  addressLine2 String?
+
+  city String?
+
+  state String?
+
+  postalCode String?
+
+  country String? @default("MX")
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+}
+
+/// Cobertura financiera del paciente.
+/// Se permite más de una para soportar escenarios con pagador principal,
+/// secundario o cambios históricos sin rediseñar la tabla.
+model PatientCoverage {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String
+
+  coverageType String
+
+  providerName String
+
+  planName String?
+
+  policyNumber String?
+
+  membershipNumber String?
+
+  insuredPersonName String?
+
+  relationshipToInsured String?
+
+  validFrom DateTime? @db.Date
+
+  validUntil DateTime? @db.Date
+
+  authorizationNotes String?
+
+  isPrimary Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([patientId, isPrimary])
+}
+
+/// Documentos administrativos del paciente.
+/// No sustituye archivos adjuntos: aquí vive el metadato estructurado del
+/// documento (tipo, folio, vigencia) para edición rápida.
+model PatientDocument {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String
+
+  documentType String
+
+  documentNumber String
+
+  issuedBy String?
+
+  issuedAt DateTime? @db.Date
+
+  expiresAt DateTime? @db.Date
+
+  isPrimary Boolean @default(false)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([patientId, isPrimary])
+}
+
+/// Demografía ampliada para el perfil del paciente.
+/// Son datos no críticos para abrir el expediente, por lo que viven fuera de
+/// Patient y pueden crecer sin afectar el flujo de registro rápido.
+model PatientDemographicProfile {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String @unique
+
+  preferredName String?
+
+  genderIdentity String?
+
+  preferredPronouns String?
+
+  nationality String?
+
+  countryOfBirth String?
+
+  stateOfBirth String?
+
+  ethnicGroup String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+}
+
+/// Perfil clínico administrativo del paciente.
+/// Complementa el catálogo clínico transaccional (alergias, problemas,
+/// medicamentos) con banderas y resúmenes útiles en la portada del perfil.
+model PatientClinicalProfile {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String @unique
+
+  organDonorStatus String?
+
+  rhFactor String?
+
+  pregnancyStatus String?
+
+  disabilityNotes String?
+
+  clinicalAlerts String?
+
+  clinicalObservations String?
+
+  chronicConditionsNotes String?
+
+  currentMedicationsNotes String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+}
+
+/// Perfil fiscal para facturación del paciente.
+/// Se separa del registro principal porque su uso es administrativo y opcional.
+model PatientBillingProfile {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String @unique
+
+  requiresInvoice Boolean @default(false)
+
+  businessName String?
+
+  taxRfc String?
+
+  taxRegime String?
+
+  taxPostalCode String?
+
+  billingEmail String?
+
+  cfdiUse String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([requiresInvoice])
 }
 
 //////////////////////////////////////////////////////

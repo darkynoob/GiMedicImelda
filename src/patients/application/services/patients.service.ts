@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   BadRequestException,
   ConflictException,
@@ -29,6 +31,7 @@ import type { PatientIdentifierRepository } from '../../../shared/persistence/re
 import type { PatientRepository } from '../../../shared/persistence/repositories/patient.repository';
 import type { UserRepository } from '../../../shared/persistence/repositories/user.repository';
 import { CreatePatientDto } from '../../create-patient.dto';
+import { UpdatePatientDto } from '../../update-patient.dto';
 import type {
   PatientDetailResponse,
   PatientListItemResponse,
@@ -37,7 +40,15 @@ import type {
 import { PatientsQueryDto } from '../dto/patients-query.dto';
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+const RFC_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+
+type UploadedAttachmentFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
 
 @Injectable()
 export class PatientsService {
@@ -244,7 +255,20 @@ export class PatientsService {
       throw new NotFoundException('Paciente no encontrado');
     }
 
-    const [identifiers, medicalRecords, encounters] = await Promise.all([
+    const [
+      identifiers,
+      medicalRecords,
+      encounters,
+      responsibleContact,
+      coverages,
+      documents,
+      attachments,
+      demographicProfile,
+      clinicalProfile,
+      billingProfile,
+      allergies,
+      problems,
+    ] = await Promise.all([
       this.patientIdentifierRepository.findMany({
         where: {
           tenantId,
@@ -267,6 +291,63 @@ export class PatientsService {
         orderBy: { openedAt: 'desc' },
         take: 5,
       } satisfies Prisma.EncounterFindManyArgs),
+      this.prisma.patientResponsibleContact.findUnique({
+        where: {
+          patientId,
+        },
+      }),
+      this.prisma.patientCoverage.findMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }],
+      }),
+      this.prisma.patientDocument.findMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }],
+      }),
+      this.prisma.attachment.findMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+        orderBy: { uploadedAt: 'desc' },
+      }),
+      this.prisma.patientDemographicProfile.findUnique({
+        where: {
+          patientId,
+        },
+      }),
+      this.prisma.patientClinicalProfile.findUnique({
+        where: {
+          patientId,
+        },
+      }),
+      this.prisma.patientBillingProfile.findUnique({
+        where: {
+          patientId,
+        },
+      }),
+      this.prisma.allergy.findMany({
+        where: {
+          tenantId,
+          patientId,
+          encounterId: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.problem.findMany({
+        where: {
+          tenantId,
+          patientId,
+          encounterId: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
     ]);
 
     const facilityIds = [
@@ -292,12 +373,15 @@ export class PatientsService {
     return {
       id: patient.id,
       tenantId: patient.tenantId,
+      externalCode: patient.externalCode,
       fullName: patient.fullName,
       firstName: patient.firstName,
       lastName: patient.lastName,
       middleName: patient.middleName,
       curp: patient.curp,
+      rfc: patient.rfc,
       birthDate: patient.birthDate ? patient.birthDate.toISOString() : null,
+      ageSnapshot: patient.ageSnapshot,
       sexAtBirth: patient.sexAtBirth,
       maritalStatus: patient.maritalStatus,
       bloodType: patient.bloodType,
@@ -330,6 +414,105 @@ export class PatientsService {
       requiresTranslator: patient.requiresTranslator,
       registrationSource: patient.registrationSource,
       administrativeNotes: patient.administrativeNotes,
+      updatedAt: patient.updatedAt.toISOString(),
+      responsibleContact: responsibleContact
+        ? {
+            id: responsibleContact.id,
+            fullName: responsibleContact.fullName,
+            relationship: responsibleContact.relationship,
+            phone: responsibleContact.phone,
+            alternatePhone: responsibleContact.alternatePhone,
+            email: responsibleContact.email,
+            legalRepresentationType: responsibleContact.legalRepresentationType,
+            addressLine1: responsibleContact.addressLine1,
+            addressLine2: responsibleContact.addressLine2,
+            city: responsibleContact.city,
+            state: responsibleContact.state,
+            postalCode: responsibleContact.postalCode,
+            country: responsibleContact.country,
+            notes: responsibleContact.notes,
+          }
+        : null,
+      coverages: coverages.map((coverage) => ({
+        id: coverage.id,
+        coverageType: coverage.coverageType,
+        providerName: coverage.providerName,
+        planName: coverage.planName,
+        policyNumber: coverage.policyNumber,
+        membershipNumber: coverage.membershipNumber,
+        insuredPersonName: coverage.insuredPersonName,
+        relationshipToInsured: coverage.relationshipToInsured,
+        validFrom: coverage.validFrom?.toISOString() ?? null,
+        validUntil: coverage.validUntil?.toISOString() ?? null,
+        authorizationNotes: coverage.authorizationNotes,
+        isPrimary: coverage.isPrimary,
+      })),
+      documents: documents.map((document) => ({
+        id: document.id,
+        documentType: document.documentType,
+        documentNumber: document.documentNumber,
+        issuedBy: document.issuedBy,
+        issuedAt: document.issuedAt?.toISOString() ?? null,
+        expiresAt: document.expiresAt?.toISOString() ?? null,
+        notes: document.notes,
+        isPrimary: document.isPrimary,
+      })),
+      attachments: attachments.map((attachment) => ({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        fileSizeBytes: attachment.fileSizeBytes.toString(),
+        uploadedAt: attachment.uploadedAt.toISOString(),
+      })),
+      allergies: allergies.map((allergy) => ({
+        id: allergy.id,
+        substance: allergy.substance,
+        reaction: allergy.reaction,
+        severity: allergy.severity,
+        status: allergy.status,
+      })),
+      problems: problems.map((problem) => ({
+        id: problem.id,
+        description: problem.description,
+        status: problem.status,
+      })),
+      clinicalProfile: clinicalProfile
+        ? {
+            id: clinicalProfile.id,
+            organDonorStatus: clinicalProfile.organDonorStatus,
+            rhFactor: clinicalProfile.rhFactor,
+            pregnancyStatus: clinicalProfile.pregnancyStatus,
+            disabilityNotes: clinicalProfile.disabilityNotes,
+            clinicalAlerts: clinicalProfile.clinicalAlerts,
+            clinicalObservations: clinicalProfile.clinicalObservations,
+            chronicConditionsNotes: clinicalProfile.chronicConditionsNotes,
+            currentMedicationsNotes: clinicalProfile.currentMedicationsNotes,
+          }
+        : null,
+      demographicProfile: demographicProfile
+        ? {
+            id: demographicProfile.id,
+            preferredName: demographicProfile.preferredName,
+            genderIdentity: demographicProfile.genderIdentity,
+            preferredPronouns: demographicProfile.preferredPronouns,
+            nationality: demographicProfile.nationality,
+            countryOfBirth: demographicProfile.countryOfBirth,
+            stateOfBirth: demographicProfile.stateOfBirth,
+            ethnicGroup: demographicProfile.ethnicGroup,
+          }
+        : null,
+      billingProfile: billingProfile
+        ? {
+            id: billingProfile.id,
+            requiresInvoice: billingProfile.requiresInvoice,
+            businessName: billingProfile.businessName,
+            taxRfc: billingProfile.taxRfc,
+            taxRegime: billingProfile.taxRegime,
+            taxPostalCode: billingProfile.taxPostalCode,
+            billingEmail: billingProfile.billingEmail,
+            cfdiUse: billingProfile.cfdiUse,
+          }
+        : null,
       identifiers: identifiers.map((identifier) => ({
         id: identifier.id,
         identifierType: identifier.identifierType,
@@ -356,6 +539,161 @@ export class PatientsService {
         facilityName: facilitiesById.get(encounter.facilityId)?.name ?? null,
       })),
     };
+  }
+
+  async updateForTenant(
+    tenantId: string,
+    patientId: string,
+    input: UpdatePatientDto,
+  ): Promise<PatientDetailResponse> {
+    const existingPatient = await this.patientRepository.findById(patientId);
+
+    if (!existingPatient || existingPatient.tenantId !== tenantId) {
+      throw new NotFoundException('Paciente no encontrado');
+    }
+
+    this.validateUpdateInput(input);
+
+    const fullName = this.buildFullName(input);
+    const addressLine1 =
+      input.addressLine1 ?? this.buildAddressLine1FromStructuredAddress(input);
+    const addressLine2 =
+      input.addressLine2 ?? this.buildAddressLine2FromStructuredAddress(input);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.patient.update({
+          where: { id: patientId },
+          data: {
+            externalCode: input.externalCode ?? null,
+            firstName: input.firstName,
+            lastName: input.lastName,
+            middleName: input.middleName ?? null,
+            fullName,
+            sexAtBirth: input.sexAtBirth,
+            birthDate: input.birthDate ? new Date(input.birthDate) : null,
+            ageSnapshot: input.ageSnapshot ?? null,
+            maritalStatus: input.maritalStatus ?? null,
+            bloodType: this.composeBloodType(
+              input.bloodType,
+              input.clinicalProfile?.rhFactor,
+            ),
+            curp: input.curp ?? null,
+            rfc: input.rfc ?? null,
+            phone: input.phone ?? null,
+            alternatePhone: input.alternatePhone ?? null,
+            email: input.email ?? null,
+            addressLine1: addressLine1 ?? null,
+            addressLine2: addressLine2 ?? null,
+            city: input.city ?? null,
+            state: input.state ?? null,
+            postalCode: input.postalCode ?? null,
+            country: input.country ?? 'MX',
+            municipality: input.municipality ?? null,
+            neighborhood: input.neighborhood ?? null,
+            street: input.street ?? null,
+            exteriorNumber: input.exteriorNumber ?? null,
+            interiorNumber: input.interiorNumber ?? null,
+            emergencyContactName:
+              input.responsibleContact?.fullName ??
+              input.emergencyContactName ??
+              null,
+            emergencyContactPhone:
+              input.responsibleContact?.phone ??
+              input.emergencyContactPhone ??
+              null,
+            emergencyContactRelation:
+              input.responsibleContact?.relationship ??
+              input.emergencyContactRelation ??
+              null,
+            patientStatus: input.patientStatus,
+            patientType: input.patientType,
+            medicalUnit: input.medicalUnit,
+            hasKnownAllergies: input.hasKnownAllergies,
+            allergiesNotes: input.hasKnownAllergies
+              ? (input.allergiesNotes ?? null)
+              : null,
+            occupation: input.occupation ?? null,
+            educationLevel: input.educationLevel ?? null,
+            religion: input.religion ?? null,
+            primaryLanguage: input.primaryLanguage ?? null,
+            requiresTranslator: input.requiresTranslator ?? null,
+            registrationSource: input.registrationSource ?? null,
+            administrativeNotes: input.administrativeNotes ?? null,
+            isActive: this.isActivePatientStatus(input.patientStatus),
+          },
+        });
+
+        await this.syncPrimaryIdentifier(
+          tx,
+          tenantId,
+          patientId,
+          input.identifierType,
+          input.identifierValue,
+        );
+
+        await this.syncResponsibleContact(
+          tx,
+          tenantId,
+          patientId,
+          input.responsibleContact,
+        );
+        await this.syncCoverages(
+          tx,
+          tenantId,
+          patientId,
+          input.coverages ?? [],
+        );
+        await this.syncPatientDocuments(
+          tx,
+          tenantId,
+          patientId,
+          input.documents ?? [],
+        );
+        await this.syncProfileAllergies(
+          tx,
+          tenantId,
+          patientId,
+          input.allergies ?? [],
+        );
+        await this.syncProfileProblems(
+          tx,
+          tenantId,
+          patientId,
+          input.problems ?? [],
+        );
+        await this.syncClinicalProfile(
+          tx,
+          tenantId,
+          patientId,
+          input.clinicalProfile,
+        );
+        await this.syncDemographicProfile(
+          tx,
+          tenantId,
+          patientId,
+          input.demographicProfile,
+        );
+        await this.syncBillingProfile(
+          tx,
+          tenantId,
+          patientId,
+          input.billingProfile,
+        );
+      });
+
+      return this.getDetailByTenant(tenantId, patientId);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException(
+            'Ya existe un registro con alguno de los datos capturados',
+          );
+        }
+      }
+
+      throw error;
+    }
   }
 
   private async findPatientIdsByIdentifierSearch(
@@ -498,6 +836,515 @@ export class PatientsService {
       .join(' ');
   }
 
+  private async syncPrimaryIdentifier(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    identifierType: string | undefined,
+    identifierValue: string | undefined,
+  ) {
+    const existingIdentifiers = await tx.patientIdentifier.findMany({
+      where: {
+        tenantId,
+        patientId,
+      },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    });
+
+    const currentPrimaryIdentifier =
+      existingIdentifiers.find((identifier) => identifier.isPrimary) ??
+      existingIdentifiers[0] ??
+      null;
+
+    if (!identifierType && !identifierValue) {
+      if (currentPrimaryIdentifier) {
+        await tx.patientIdentifier.delete({
+          where: { id: currentPrimaryIdentifier.id },
+        });
+      }
+
+      return;
+    }
+
+    if (!identifierType || !identifierValue) {
+      throw new BadRequestException(
+        'El identificador principal requiere tipo y valor',
+      );
+    }
+
+    await tx.patientIdentifier.updateMany({
+      where: {
+        tenantId,
+        patientId,
+        isPrimary: true,
+        NOT: currentPrimaryIdentifier
+          ? { id: currentPrimaryIdentifier.id }
+          : undefined,
+      },
+      data: {
+        isPrimary: false,
+      },
+    });
+
+    if (currentPrimaryIdentifier) {
+      await tx.patientIdentifier.update({
+        where: { id: currentPrimaryIdentifier.id },
+        data: {
+          identifierType,
+          identifierValue,
+          isPrimary: true,
+        },
+      });
+
+      return;
+    }
+
+    await tx.patientIdentifier.create({
+      data: {
+        tenantId,
+        patientId,
+        identifierType,
+        identifierValue,
+        isPrimary: true,
+      },
+    });
+  }
+
+  private async syncResponsibleContact(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    responsibleContact: UpdatePatientDto['responsibleContact'],
+  ) {
+    if (!responsibleContact) {
+      await tx.patientResponsibleContact.deleteMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+      });
+      return;
+    }
+
+    await tx.patientResponsibleContact.upsert({
+      where: {
+        patientId,
+      },
+      update: {
+        fullName: responsibleContact.fullName,
+        relationship: responsibleContact.relationship ?? null,
+        phone: responsibleContact.phone,
+        alternatePhone: responsibleContact.alternatePhone ?? null,
+        email: responsibleContact.email ?? null,
+        legalRepresentationType:
+          responsibleContact.legalRepresentationType ?? null,
+        addressLine1: responsibleContact.addressLine1 ?? null,
+        addressLine2: responsibleContact.addressLine2 ?? null,
+        city: responsibleContact.city ?? null,
+        state: responsibleContact.state ?? null,
+        postalCode: responsibleContact.postalCode ?? null,
+        country: responsibleContact.country ?? 'MX',
+        notes: responsibleContact.notes ?? null,
+      },
+      create: {
+        tenantId,
+        patientId,
+        fullName: responsibleContact.fullName,
+        relationship: responsibleContact.relationship ?? null,
+        phone: responsibleContact.phone,
+        alternatePhone: responsibleContact.alternatePhone ?? null,
+        email: responsibleContact.email ?? null,
+        legalRepresentationType:
+          responsibleContact.legalRepresentationType ?? null,
+        addressLine1: responsibleContact.addressLine1 ?? null,
+        addressLine2: responsibleContact.addressLine2 ?? null,
+        city: responsibleContact.city ?? null,
+        state: responsibleContact.state ?? null,
+        postalCode: responsibleContact.postalCode ?? null,
+        country: responsibleContact.country ?? 'MX',
+        notes: responsibleContact.notes ?? null,
+      },
+    });
+  }
+
+  private async syncCoverages(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    coverages: NonNullable<UpdatePatientDto['coverages']>,
+  ) {
+    await tx.patientCoverage.deleteMany({
+      where: {
+        tenantId,
+        patientId,
+      },
+    });
+
+    if (!coverages.length) {
+      return;
+    }
+
+    await tx.patientCoverage.createMany({
+      data: coverages.map((coverage, index) => ({
+        tenantId,
+        patientId,
+        coverageType: coverage.coverageType,
+        providerName: coverage.providerName,
+        planName: coverage.planName ?? null,
+        policyNumber: coverage.policyNumber ?? null,
+        membershipNumber: coverage.membershipNumber ?? null,
+        insuredPersonName: coverage.insuredPersonName ?? null,
+        relationshipToInsured: coverage.relationshipToInsured ?? null,
+        validFrom: coverage.validFrom ? new Date(coverage.validFrom) : null,
+        validUntil: coverage.validUntil ? new Date(coverage.validUntil) : null,
+        authorizationNotes: coverage.authorizationNotes ?? null,
+        isPrimary:
+          coverage.isPrimary ?? (index === 0 && coverages.length === 1),
+      })),
+    });
+  }
+
+  private async syncPatientDocuments(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    documents: NonNullable<UpdatePatientDto['documents']>,
+  ) {
+    await tx.patientDocument.deleteMany({
+      where: {
+        tenantId,
+        patientId,
+      },
+    });
+
+    if (!documents.length) {
+      return;
+    }
+
+    await tx.patientDocument.createMany({
+      data: documents.map((document, index) => ({
+        tenantId,
+        patientId,
+        documentType: document.documentType,
+        documentNumber: document.documentNumber,
+        issuedBy: document.issuedBy ?? null,
+        issuedAt: document.issuedAt ? new Date(document.issuedAt) : null,
+        expiresAt: document.expiresAt ? new Date(document.expiresAt) : null,
+        isPrimary:
+          document.isPrimary ?? (index === 0 && documents.length === 1),
+        notes: document.notes ?? null,
+      })),
+    });
+  }
+
+  private async syncProfileAllergies(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    allergies: NonNullable<UpdatePatientDto['allergies']>,
+  ) {
+    await tx.allergy.deleteMany({
+      where: {
+        tenantId,
+        patientId,
+        encounterId: null,
+      },
+    });
+
+    if (!allergies.length) {
+      return;
+    }
+
+    await tx.allergy.createMany({
+      data: allergies.map((allergy) => ({
+        tenantId,
+        patientId,
+        substance: allergy.substance,
+        reaction: allergy.reaction ?? null,
+        severity: allergy.severity ?? null,
+        status: allergy.status ?? null,
+      })),
+    });
+  }
+
+  private async syncProfileProblems(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    problems: NonNullable<UpdatePatientDto['problems']>,
+  ) {
+    await tx.problem.deleteMany({
+      where: {
+        tenantId,
+        patientId,
+        encounterId: null,
+      },
+    });
+
+    if (!problems.length) {
+      return;
+    }
+
+    await tx.problem.createMany({
+      data: problems.map((problem) => ({
+        tenantId,
+        patientId,
+        description: problem.description,
+        status: problem.status ?? null,
+      })),
+    });
+  }
+
+  private async syncClinicalProfile(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    clinicalProfile: UpdatePatientDto['clinicalProfile'],
+  ) {
+    if (!clinicalProfile) {
+      await tx.patientClinicalProfile.deleteMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+      });
+      return;
+    }
+
+    await tx.patientClinicalProfile.upsert({
+      where: {
+        patientId,
+      },
+      update: {
+        organDonorStatus: clinicalProfile.organDonorStatus ?? null,
+        rhFactor: clinicalProfile.rhFactor ?? null,
+        pregnancyStatus: clinicalProfile.pregnancyStatus ?? null,
+        disabilityNotes: clinicalProfile.disabilityNotes ?? null,
+        clinicalAlerts: clinicalProfile.clinicalAlerts ?? null,
+        clinicalObservations: clinicalProfile.clinicalObservations ?? null,
+        chronicConditionsNotes: clinicalProfile.chronicConditionsNotes ?? null,
+        currentMedicationsNotes:
+          clinicalProfile.currentMedicationsNotes ?? null,
+      },
+      create: {
+        tenantId,
+        patientId,
+        organDonorStatus: clinicalProfile.organDonorStatus ?? null,
+        rhFactor: clinicalProfile.rhFactor ?? null,
+        pregnancyStatus: clinicalProfile.pregnancyStatus ?? null,
+        disabilityNotes: clinicalProfile.disabilityNotes ?? null,
+        clinicalAlerts: clinicalProfile.clinicalAlerts ?? null,
+        clinicalObservations: clinicalProfile.clinicalObservations ?? null,
+        chronicConditionsNotes: clinicalProfile.chronicConditionsNotes ?? null,
+        currentMedicationsNotes:
+          clinicalProfile.currentMedicationsNotes ?? null,
+      },
+    });
+  }
+
+  private async syncDemographicProfile(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    demographicProfile: UpdatePatientDto['demographicProfile'],
+  ) {
+    if (!demographicProfile) {
+      await tx.patientDemographicProfile.deleteMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+      });
+      return;
+    }
+
+    await tx.patientDemographicProfile.upsert({
+      where: {
+        patientId,
+      },
+      update: {
+        preferredName: demographicProfile.preferredName ?? null,
+        genderIdentity: demographicProfile.genderIdentity ?? null,
+        preferredPronouns: demographicProfile.preferredPronouns ?? null,
+        nationality: demographicProfile.nationality ?? null,
+        countryOfBirth: demographicProfile.countryOfBirth ?? null,
+        stateOfBirth: demographicProfile.stateOfBirth ?? null,
+        ethnicGroup: demographicProfile.ethnicGroup ?? null,
+      },
+      create: {
+        tenantId,
+        patientId,
+        preferredName: demographicProfile.preferredName ?? null,
+        genderIdentity: demographicProfile.genderIdentity ?? null,
+        preferredPronouns: demographicProfile.preferredPronouns ?? null,
+        nationality: demographicProfile.nationality ?? null,
+        countryOfBirth: demographicProfile.countryOfBirth ?? null,
+        stateOfBirth: demographicProfile.stateOfBirth ?? null,
+        ethnicGroup: demographicProfile.ethnicGroup ?? null,
+      },
+    });
+  }
+
+  private async syncBillingProfile(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    billingProfile: UpdatePatientDto['billingProfile'],
+  ) {
+    const hasBillingPayload =
+      billingProfile &&
+      (billingProfile.requiresInvoice ||
+        Boolean(
+          billingProfile.businessName ||
+            billingProfile.taxRfc ||
+            billingProfile.taxRegime ||
+            billingProfile.taxPostalCode ||
+            billingProfile.billingEmail ||
+            billingProfile.cfdiUse,
+        ));
+
+    if (!hasBillingPayload) {
+      await tx.patientBillingProfile.deleteMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+      });
+      return;
+    }
+
+    await tx.patientBillingProfile.upsert({
+      where: {
+        patientId,
+      },
+      update: {
+        requiresInvoice: billingProfile.requiresInvoice,
+        businessName: billingProfile.businessName ?? null,
+        taxRfc: billingProfile.taxRfc ?? null,
+        taxRegime: billingProfile.taxRegime ?? null,
+        taxPostalCode: billingProfile.taxPostalCode ?? null,
+        billingEmail: billingProfile.billingEmail ?? null,
+        cfdiUse: billingProfile.cfdiUse ?? null,
+      },
+      create: {
+        tenantId,
+        patientId,
+        requiresInvoice: billingProfile.requiresInvoice,
+        businessName: billingProfile.businessName ?? null,
+        taxRfc: billingProfile.taxRfc ?? null,
+        taxRegime: billingProfile.taxRegime ?? null,
+        taxPostalCode: billingProfile.taxPostalCode ?? null,
+        billingEmail: billingProfile.billingEmail ?? null,
+        cfdiUse: billingProfile.cfdiUse ?? null,
+      },
+    });
+  }
+
+  async uploadAttachmentsForTenant(
+    tenantId: string,
+    userId: string,
+    patientId: string,
+    files: UploadedAttachmentFile[],
+  ) {
+    const patient = await this.patientRepository.findById(patientId);
+
+    if (!patient || patient.tenantId !== tenantId) {
+      throw new NotFoundException('Paciente no encontrado');
+    }
+
+    if (!files.length) {
+      throw new BadRequestException('Selecciona al menos un archivo');
+    }
+
+    const uploadRoot = join(
+      process.cwd(),
+      'uploads',
+      'patients',
+      tenantId,
+      patientId,
+    );
+    await mkdir(uploadRoot, { recursive: true });
+
+    const createdAttachments: Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSizeBytes: string;
+      uploadedAt: string;
+    }> = [];
+
+    for (const file of files) {
+      if (!file.buffer?.length) {
+        throw new BadRequestException(
+          'Uno de los archivos no contiene datos válidos',
+        );
+      }
+
+      const storedFileName = `${randomUUID()}-${this.sanitizeFileName(
+        file.originalname,
+      )}`;
+      const absoluteStoragePath = join(uploadRoot, storedFileName);
+
+      await writeFile(absoluteStoragePath, file.buffer);
+
+      const attachment = await this.prisma.attachment.create({
+        data: {
+          tenantId,
+          patientId,
+          fileName: file.originalname,
+          mimeType: file.mimetype,
+          storageKey: absoluteStoragePath,
+          fileSizeBytes: BigInt(file.size),
+          uploadedByUserId: userId,
+          metadataJson: {
+            origin: 'patient-profile',
+            section: 'documentos',
+          },
+        },
+      });
+
+      createdAttachments.push({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        fileSizeBytes: attachment.fileSizeBytes.toString(),
+        uploadedAt: attachment.uploadedAt.toISOString(),
+      });
+    }
+
+    return createdAttachments;
+  }
+
+  async deleteAttachmentForTenant(
+    tenantId: string,
+    patientId: string,
+    attachmentId: string,
+  ) {
+    const attachment = await this.prisma.attachment.findUnique({
+      where: {
+        id: attachmentId,
+      },
+    });
+
+    if (
+      !attachment ||
+      attachment.tenantId !== tenantId ||
+      attachment.patientId !== patientId
+    ) {
+      throw new NotFoundException('Adjunto no encontrado');
+    }
+
+    await this.prisma.attachment.delete({
+      where: {
+        id: attachmentId,
+      },
+    });
+
+    await unlink(attachment.storageKey).catch(() => undefined);
+
+    return { success: true };
+  }
+
   /**
    * Centralizes create-time business rules so both controller tests and future
    * admission flows share the same clinical/administrative invariants.
@@ -543,10 +1390,106 @@ export class PatientsService {
   }
 
   /**
+   * Editing reuses the same safety invariants as admission so the profile
+   * cannot drift into a shape the rest of the clinical flow does not expect.
+   */
+  private validateUpdateInput(input: UpdatePatientDto) {
+    if (Boolean(input.identifierType) !== Boolean(input.identifierValue)) {
+      throw new BadRequestException(
+        'El identificador principal requiere tipo y valor',
+      );
+    }
+
+    if (!input.birthDate && input.ageSnapshot === undefined) {
+      throw new BadRequestException(
+        'La fecha de nacimiento o la edad referida son obligatorias',
+      );
+    }
+
+    if (!input.phone) {
+      throw new BadRequestException('El telefono principal es obligatorio');
+    }
+
+    if (!PHONE_REGEX.test(input.phone)) {
+      throw new BadRequestException(
+        'El telefono principal tiene formato invalido',
+      );
+    }
+
+    if (!input.city || !input.state) {
+      throw new BadRequestException(
+        'La ciudad y el estado son obligatorios para editar el perfil',
+      );
+    }
+
+    if (input.curp && !CURP_REGEX.test(input.curp)) {
+      throw new BadRequestException('La CURP capturada no es valida');
+    }
+
+    if (input.rfc && !RFC_REGEX.test(input.rfc)) {
+      throw new BadRequestException('El RFC capturado no es valido');
+    }
+
+    if (input.hasKnownAllergies && !input.allergiesNotes) {
+      throw new BadRequestException(
+        'Debes detallar las alergias conocidas del paciente',
+      );
+    }
+
+    if (
+      input.responsibleContact?.phone &&
+      !PHONE_REGEX.test(input.responsibleContact.phone)
+    ) {
+      throw new BadRequestException(
+        'El telefono del responsable tiene formato invalido',
+      );
+    }
+
+    if (
+      input.emergencyContactPhone &&
+      !PHONE_REGEX.test(input.emergencyContactPhone)
+    ) {
+      throw new BadRequestException(
+        'El telefono de emergencia tiene formato invalido',
+      );
+    }
+
+    if (
+      input.billingProfile?.requiresInvoice &&
+      (!input.billingProfile.businessName ||
+        !input.billingProfile.taxRfc ||
+        !input.billingProfile.taxRegime ||
+        !input.billingProfile.taxPostalCode ||
+        !input.billingProfile.billingEmail ||
+        !input.billingProfile.cfdiUse)
+    ) {
+      throw new BadRequestException(
+        'Completa todos los datos fiscales cuando el paciente requiere factura',
+      );
+    }
+
+    const primaryCoverageCount =
+      input.coverages?.filter((coverage) => coverage.isPrimary).length ?? 0;
+    if (primaryCoverageCount > 1) {
+      throw new BadRequestException(
+        'Solo puede existir una cobertura primaria',
+      );
+    }
+
+    const primaryDocumentCount =
+      input.documents?.filter((document) => document.isPrimary).length ?? 0;
+    if (primaryDocumentCount > 1) {
+      throw new BadRequestException('Solo puede existir un documento primario');
+    }
+  }
+
+  /**
    * The historical UI expects a compact primary address line, so the richer
    * structured address coming from the new form is flattened here as a bridge.
    */
-  private buildAddressLine1FromStructuredAddress(input: CreatePatientDto) {
+  private buildAddressLine1FromStructuredAddress(
+    input: Pick<CreatePatientDto, 'street' | 'exteriorNumber'>,
+  ) {
     const primaryAddressLine = [input.street, input.exteriorNumber]
       .filter((part): part is string => Boolean(part))
       .join(' ')
@@ -559,7 +1502,12 @@ export class PatientsService {
    * Secondary address data remains visible in older screens through the legacy
    * address line while the detail views adopt the richer fields progressively.
    */
-  private buildAddressLine2FromStructuredAddress(input: CreatePatientDto) {
+  private buildAddressLine2FromStructuredAddress(
+    input: Pick<
+      CreatePatientDto,
+      'interiorNumber' | 'neighborhood' | 'municipality'
+    >,
+  ) {
     const secondaryAddressLine = [
       input.interiorNumber ? `Int. ${input.interiorNumber}` : null,
       input.neighborhood ? `Col. ${input.neighborhood}` : null,
@@ -574,6 +1522,29 @@ export class PatientsService {
 
   private isActivePatientStatus(patientStatus: string) {
     return patientStatus.trim().toLowerCase() === 'activo';
+  }
+
+  private composeBloodType(
+    bloodType: string | undefined,
+    rhFactor: string | undefined,
+  ) {
+    if (!bloodType) {
+      return null;
+    }
+
+    if (rhFactor === 'POSITIVO') {
+      return `${bloodType}+`;
+    }
+
+    if (rhFactor === 'NEGATIVO') {
+      return `${bloodType}-`;
+    }
+
+    return bloodType;
+  }
+
+  private sanitizeFileName(fileName: string) {
+    return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   }
 
   private async resolveTargetFacility(

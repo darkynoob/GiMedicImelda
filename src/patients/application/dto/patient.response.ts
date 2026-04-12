@@ -22,12 +22,15 @@ export interface PatientsListResponse {
 export interface PatientDetailResponse {
   id: string;
   tenantId: string;
+  externalCode: string | null;
   fullName: string;
   firstName: string;
   lastName: string;
   middleName: string | null;
   curp: string | null;
+  rfc: string | null;
   birthDate: string | null;
+  ageSnapshot: number | null;
   sexAtBirth: string;
   maritalStatus: string | null;
   bloodType: string | null;
@@ -60,6 +63,97 @@ export interface PatientDetailResponse {
   requiresTranslator: boolean | null;
   registrationSource: string | null;
   administrativeNotes: string | null;
+  updatedAt: string;
+  responsibleContact: {
+    id: string;
+    fullName: string;
+    relationship: string | null;
+    phone: string;
+    alternatePhone: string | null;
+    email: string | null;
+    legalRepresentationType: string | null;
+    addressLine1: string | null;
+    addressLine2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+    notes: string | null;
+  } | null;
+  coverages: Array<{
+    id: string;
+    coverageType: string;
+    providerName: string;
+    planName: string | null;
+    policyNumber: string | null;
+    membershipNumber: string | null;
+    insuredPersonName: string | null;
+    relationshipToInsured: string | null;
+    validFrom: string | null;
+    validUntil: string | null;
+    authorizationNotes: string | null;
+    isPrimary: boolean;
+  }>;
+  documents: Array<{
+    id: string;
+    documentType: string;
+    documentNumber: string;
+    issuedBy: string | null;
+    issuedAt: string | null;
+    expiresAt: string | null;
+    notes: string | null;
+    isPrimary: boolean;
+  }>;
+  attachments: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    fileSizeBytes: string;
+    uploadedAt: string;
+  }>;
+  allergies: Array<{
+    id: string;
+    substance: string;
+    reaction: string | null;
+    severity: string | null;
+    status: string | null;
+  }>;
+  problems: Array<{
+    id: string;
+    description: string;
+    status: string | null;
+  }>;
+  clinicalProfile: {
+    id: string;
+    organDonorStatus: string | null;
+    rhFactor: string | null;
+    pregnancyStatus: string | null;
+    disabilityNotes: string | null;
+    clinicalAlerts: string | null;
+    clinicalObservations: string | null;
+    chronicConditionsNotes: string | null;
+    currentMedicationsNotes: string | null;
+  } | null;
+  demographicProfile: {
+    id: string;
+    preferredName: string | null;
+    genderIdentity: string | null;
+    preferredPronouns: string | null;
+    nationality: string | null;
+    countryOfBirth: string | null;
+    stateOfBirth: string | null;
+    ethnicGroup: string | null;
+  } | null;
+  billingProfile: {
+    id: string;
+    requiresInvoice: boolean;
+    businessName: string | null;
+    taxRfc: string | null;
+    taxRegime: string | null;
+    taxPostalCode: string | null;
+    billingEmail: string | null;
+    cfdiUse: string | null;
+  } | null;
   identifiers: Array<{
     id: string;
     identifierType: string;

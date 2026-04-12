@@ -26,6 +26,7 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         maritalStatus: 'CASADA',
         bloodType: 'O+',
         curp: 'LOHA890312MDFPRN05',
+        rfc: 'LOHA890312AB1',
         phone: '5511111111',
         alternatePhone: '5511112222',
         email: 'ana.lopez@email.com',
@@ -71,6 +72,7 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         maritalStatus: 'SOLTERO',
         bloodType: 'A+',
         curp: 'MEPC781022HDFNRR02',
+        rfc: 'MEPC7810229X1',
         phone: '5533333333',
         alternatePhone: '5533330000',
         email: 'carlos.mendoza@email.com',
@@ -122,6 +124,272 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         identifierType: 'POLIZA',
         identifierValue: 'POL-CARLOS-100',
         isPrimary: true,
+      },
+    ],
+  });
+
+  await prisma.patientResponsibleContact.createMany({
+    data: [
+      {
+        id: ids.patientResponsibleContacts.anaResponsible,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        fullName: 'Luis López',
+        relationship: 'Esposo',
+        phone: '5522222222',
+        alternatePhone: '5522221111',
+        email: 'luis.lopez@email.com',
+        legalRepresentationType: 'Familiar responsable',
+        addressLine1: 'Calle Magnolia 22',
+        addressLine2: 'Depto 3',
+        city: 'Ciudad de México',
+        state: 'CDMX',
+        postalCode: '03650',
+        country: 'MX',
+        notes:
+          'Acompañante principal para procedimientos y firma de documentos',
+      },
+      {
+        id: ids.patientResponsibleContacts.carlosResponsible,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        fullName: 'Laura Mendoza',
+        relationship: 'Hermana',
+        phone: '5544444444',
+        alternatePhone: null,
+        email: 'laura.mendoza@email.com',
+        legalRepresentationType: 'Contacto administrativo',
+        addressLine1: 'Eje 5 Sur 120',
+        addressLine2: null,
+        city: 'Ciudad de México',
+        state: 'CDMX',
+        postalCode: '03240',
+        country: 'MX',
+        notes: 'Responsable de autorizaciones y trámites de cobertura',
+      },
+    ],
+  });
+
+  await prisma.patientCoverage.createMany({
+    data: [
+      {
+        id: ids.patientCoverages.anaPrimary,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        coverageType: 'SEGURO_PRIVADO',
+        providerName: 'Seguros Nova Salud',
+        planName: 'Integral Plus',
+        policyNumber: 'POL-ANA-9981',
+        membershipNumber: 'AFI-1102',
+        insuredPersonName: 'Ana López Hernández',
+        relationshipToInsured: 'Titular',
+        validFrom: new Date('2026-01-01'),
+        validUntil: new Date('2026-12-31'),
+        authorizationNotes: 'Requiere autorización para procedimientos mayores',
+        isPrimary: true,
+      },
+      {
+        id: ids.patientCoverages.anaSecondary,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        coverageType: 'CONVENIO',
+        providerName: 'Empresa Textiles del Valle',
+        planName: 'Convenio corporativo',
+        policyNumber: 'EMP-4432',
+        membershipNumber: null,
+        insuredPersonName: 'Ana López Hernández',
+        relationshipToInsured: 'Empleado',
+        validFrom: new Date('2026-01-01'),
+        validUntil: new Date('2026-12-31'),
+        authorizationNotes: 'Aplica para consulta externa',
+        isPrimary: false,
+      },
+      {
+        id: ids.patientCoverages.carlosPrimary,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        coverageType: 'PUBLICO',
+        providerName: 'IMSS',
+        planName: 'Régimen ordinario',
+        policyNumber: 'IMSS-CAR-4401',
+        membershipNumber: 'NSS-55441122',
+        insuredPersonName: 'Carlos Mendoza Pérez',
+        relationshipToInsured: 'Titular',
+        validFrom: new Date('2026-01-01'),
+        validUntil: new Date('2026-12-31'),
+        authorizationNotes: 'Cobertura vigente para consulta y estudios',
+        isPrimary: true,
+      },
+    ],
+  });
+
+  await prisma.patientDocument.createMany({
+    data: [
+      {
+        id: ids.patientDocuments.anaIne,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        documentType: 'INE',
+        documentNumber: 'INE-ANA-3344',
+        issuedBy: 'INE',
+        issuedAt: new Date('2021-05-20'),
+        expiresAt: new Date('2031-05-20'),
+        isPrimary: true,
+        notes: 'Credencial verificada en recepción',
+      },
+      {
+        id: ids.patientDocuments.anaPassport,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        documentType: 'PASAPORTE',
+        documentNumber: 'XG449912',
+        issuedBy: 'SRE',
+        issuedAt: new Date('2024-02-10'),
+        expiresAt: new Date('2034-02-10'),
+        isPrimary: false,
+        notes: 'Documento alterno para identificación',
+      },
+      {
+        id: ids.patientDocuments.carlosIne,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        documentType: 'INE',
+        documentNumber: 'INE-CAR-2288',
+        issuedBy: 'INE',
+        issuedAt: new Date('2020-08-14'),
+        expiresAt: new Date('2030-08-14'),
+        isPrimary: true,
+        notes: 'Documento primario',
+      },
+    ],
+  });
+
+  await prisma.patientDemographicProfile.createMany({
+    data: [
+      {
+        id: ids.patientDemographicProfiles.anaProfile,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        preferredName: 'Ana López',
+        genderIdentity: 'Mujer',
+        preferredPronouns: 'Ella',
+        nationality: 'Mexicana',
+        countryOfBirth: 'México',
+        stateOfBirth: 'Ciudad de México',
+        ethnicGroup: 'Mestiza',
+      },
+      {
+        id: ids.patientDemographicProfiles.carlosProfile,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        preferredName: 'Carlos Mendoza',
+        genderIdentity: 'Hombre',
+        preferredPronouns: 'Él',
+        nationality: 'Mexicana',
+        countryOfBirth: 'México',
+        stateOfBirth: 'Estado de México',
+        ethnicGroup: 'Mestizo',
+      },
+    ],
+  });
+
+  await prisma.patientClinicalProfile.createMany({
+    data: [
+      {
+        id: ids.patientClinicalProfiles.anaProfile,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        organDonorStatus: 'SI',
+        rhFactor: 'POSITIVO',
+        pregnancyStatus: 'NO',
+        disabilityNotes: null,
+        clinicalAlerts:
+          'Riesgo elevado con penicilinas. Verificar antibióticos antes de prescribir.',
+        clinicalObservations:
+          'Paciente cooperadora. Confirmar antecedentes antes de indicar antibióticos.',
+        chronicConditionsNotes:
+          'Seguimiento oncológico activo por lesión mamaria.',
+        currentMedicationsNotes: 'Paracetamol PRN y omeprazol 20 mg.',
+      },
+      {
+        id: ids.patientClinicalProfiles.carlosProfile,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        organDonorStatus: 'DESCONOCIDO',
+        rhFactor: 'POSITIVO',
+        pregnancyStatus: 'NO_APLICA',
+        disabilityNotes: null,
+        clinicalAlerts: 'Vigilar uso de AINEs por antecedente de gastritis.',
+        clinicalObservations:
+          'Paciente adherente al tratamiento. Reforzar medidas dietéticas.',
+        chronicConditionsNotes: 'ERGE y dispepsia funcional en control.',
+        currentMedicationsNotes: 'Omeprazol 20 mg cada 24 h.',
+      },
+    ],
+  });
+
+  await prisma.patientBillingProfile.createMany({
+    data: [
+      {
+        id: ids.patientBillingProfiles.anaBilling,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        requiresInvoice: true,
+        businessName: 'Ana López Hernández',
+        taxRfc: 'LOHA890312AB1',
+        taxRegime: '612 - Personas Físicas con Actividades Empresariales',
+        taxPostalCode: '03650',
+        billingEmail: 'facturacion.ana@email.com',
+        cfdiUse: 'G03 - Gastos en general',
+      },
+      {
+        id: ids.patientBillingProfiles.carlosBilling,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        requiresInvoice: false,
+        businessName: null,
+        taxRfc: null,
+        taxRegime: null,
+        taxPostalCode: null,
+        billingEmail: null,
+        cfdiUse: null,
+      },
+    ],
+  });
+
+  await prisma.attachment.createMany({
+    data: [
+      {
+        id: ids.attachments.anaPatientFile,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        fileName: 'ana-identificacion.pdf',
+        mimeType: 'application/pdf',
+        storageKey:
+          'tenant/nova/patients/ana/attachments/ana-identificacion.pdf',
+        fileSizeBytes: BigInt(245760),
+        uploadedByUserId: ids.users.valeria,
+        uploadedAt: dates.anaUploadAt,
+        metadataJson: {
+          origin: 'patient-profile',
+          section: 'documentos',
+        },
+      },
+      {
+        id: ids.attachments.carlosPatientFile,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        fileName: 'carlos-poliza.pdf',
+        mimeType: 'application/pdf',
+        storageKey:
+          'tenant/horizonte/patients/carlos/attachments/carlos-poliza.pdf',
+        fileSizeBytes: BigInt(198420),
+        uploadedByUserId: ids.users.ernesto,
+        uploadedAt: dates.carlosUploadAt,
+        metadataJson: {
+          origin: 'patient-profile',
+          section: 'documentos',
+        },
       },
     ],
   });

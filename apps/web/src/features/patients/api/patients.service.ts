@@ -3,6 +3,7 @@ import type {
   CreatePatientRequest,
   PatientDetailResponse,
   PatientsListResponse,
+  UpdatePatientRequest,
 } from '../../../shared/types/contracts';
 
 interface PatientsListQuery {
@@ -11,10 +12,7 @@ interface PatientsListQuery {
   search: string;
 }
 
-export function fetchPatients(
-  token: string,
-  query: PatientsListQuery,
-) {
+export function fetchPatients(token: string, query: PatientsListQuery) {
   const params = new URLSearchParams({
     page: String(query.page),
     pageSize: String(query.pageSize),
@@ -39,4 +37,56 @@ export function createPatient(token: string, input: CreatePatientRequest) {
     token,
     body: JSON.stringify(input),
   });
+}
+
+export function updatePatient(
+  token: string,
+  patientId: string,
+  input: UpdatePatientRequest,
+) {
+  return apiRequest<PatientDetailResponse>(`/patients/${patientId}`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function uploadPatientAttachments(
+  token: string,
+  patientId: string,
+  files: File[],
+) {
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  return apiRequest<
+    Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSizeBytes: string;
+      uploadedAt: string;
+    }>
+  >(`/patients/${patientId}/attachments`, {
+    method: 'POST',
+    token,
+    body: formData,
+  });
+}
+
+export function deletePatientAttachment(
+  token: string,
+  patientId: string,
+  attachmentId: string,
+) {
+  return apiRequest<{ success: boolean }>(
+    `/patients/${patientId}/attachments/${attachmentId}`,
+    {
+      method: 'DELETE',
+      token,
+    },
+  );
 }
