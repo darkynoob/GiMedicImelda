@@ -185,11 +185,7 @@ export class PatientsService {
       ? await this.findPatientIdsByIdentifierSearch(tenantId, trimmedSearch)
       : [];
 
-    const where = this.buildPatientSearchWhere(
-      tenantId,
-      trimmedSearch,
-      patientIdsByIdentifier,
-    );
+    const where = this.buildPatientSearchWhere(tenantId, query, patientIdsByIdentifier);
     const skip = (query.page - 1) * query.pageSize;
 
     const [patients, total] = await Promise.all([
@@ -205,7 +201,7 @@ export class PatientsService {
     ]);
 
     const patientIds = patients.map((patient) => patient.id);
-    const [identifiers, medicalRecords] = await Promise.all([
+    const [identifiers, medicalRecords, encounterCounts, allergies] = await Promise.all([
       patientIds.length > 0
         ? this.patientIdentifierRepository.findMany({
             where: {
@@ -224,11 +220,45 @@ export class PatientsService {
             orderBy: { openedAt: 'desc' },
           } satisfies Prisma.MedicalRecordFindManyArgs)
         : Promise.resolve([]),
+      patientIds.length > 0
+        ? this.prisma.encounter.groupBy({
+            by: ['patientId'],
+            where: {
+              tenantId,
+              patientId: { in: patientIds },
+            },
+            _count: {
+              patientId: true,
+            },
+          })
+        : Promise.resolve([]),
+      patientIds.length > 0
+        ? this.prisma.allergy.findMany({
+            where: {
+              tenantId,
+              patientId: { in: patientIds },
+              encounterId: null,
+            },
+            orderBy: { createdAt: 'asc' },
+          })
+        : Promise.resolve([]),
     ]);
 
     const identifiersByPatientId = this.groupByPatientId(identifiers);
     const medicalRecordByPatientId =
       this.pickLatestMedicalRecordByPatient(medicalRecords);
+    const encounterCountByPatientId = new Map<string, number>(
+      encounterCounts.map(
+        (item): [string, number] => [item.patientId, item._count.patientId],
+      ),
+    );
+    const allergiesByPatientId = new Map<string, string[]>();
+
+    for (const allergy of allergies) {
+      const collection = allergiesByPatientId.get(allergy.patientId) ?? [];
+      collection.push(allergy.substance);
+      allergiesByPatientId.set(allergy.patientId, collection);
+    }
 
     return {
       items: patients.map((patient) =>
@@ -236,6 +266,8 @@ export class PatientsService {
           patient,
           identifiersByPatientId.get(patient.id) ?? [],
           medicalRecordByPatientId.get(patient.id) ?? null,
+          encounterCountByPatientId.get(patient.id) ?? 0,
+          allergiesByPatientId.get(patient.id) ?? [],
         ),
       ),
       page: query.page,
@@ -718,11 +750,41 @@ export class PatientsService {
 
   private buildPatientSearchWhere(
     tenantId: string,
-    search: string | undefined,
+    query: PatientsQueryDto,
     patientIdsByIdentifier: string[],
   ): Prisma.PatientWhereInput {
+    const search = query.search?.trim();
+    const andConditions: Prisma.PatientWhereInput[] = [{ tenantId }];
+
+    if (query.patientStatus) {
+      andConditions.push({
+        patientStatus: {
+          equals: query.patientStatus,
+          mode: 'insensitive',
+        },
+      });
+    }
+
+    if (query.sexAtBirth) {
+      andConditions.push({
+        sexAtBirth: query.sexAtBirth as never,
+      });
+    }
+
+    if (query.allergiesFilter === 'with_allergies') {
+      andConditions.push({
+        hasKnownAllergies: true,
+      });
+    }
+
+    if (query.allergiesFilter === 'without_allergies') {
+      andConditions.push({
+        hasKnownAllergies: false,
+      });
+    }
+
     if (!search) {
-      return { tenantId };
+      return andConditions.length === 1 ? andConditions[0]! : { AND: andConditions };
     }
 
     const orConditions: Prisma.PatientWhereInput[] = [
@@ -761,8 +823,7 @@ export class PatientsService {
     }
 
     return {
-      tenantId,
-      OR: orConditions,
+      AND: [...andConditions, { OR: orConditions }],
     };
   }
 
@@ -798,6 +859,8 @@ export class PatientsService {
     patient: Patient,
     identifiers: PatientIdentifier[],
     medicalRecord: MedicalRecord | null,
+    encounterCount: number,
+    allergiesSummary: string[],
   ): PatientListItemResponse {
     const primaryIdentifier =
       identifiers.find((identifier) => identifier.isPrimary) ??
@@ -812,9 +875,14 @@ export class PatientsService {
       phone: patient.phone,
       sexAtBirth: patient.sexAtBirth,
       birthDate: patient.birthDate ? patient.birthDate.toISOString() : null,
+      ageLabel: this.buildAgeLabel(patient.birthDate, patient.ageSnapshot),
+      patientStatus: patient.patientStatus,
       medicalRecordNumber: medicalRecord?.recordNumber ?? null,
       primaryIdentifier: primaryIdentifier?.identifierValue ?? null,
       lastEncounterAt: medicalRecord?.lastEncounterAt?.toISOString() ?? null,
+      encounterCount,
+      allergiesSummary,
+      hasKnownAllergies: patient.hasKnownAllergies,
     };
   }
 
@@ -1545,6 +1613,25 @@ export class PatientsService {
 
   private sanitizeFileName(fileName: string) {
     return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  }
+
+  private buildAgeLabel(birthDate: Date | null, ageSnapshot: number | null) {
+    if (birthDate) {
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDifference = today.getMonth() - birthDate.getMonth();
+
+      if (
+        monthDifference < 0 ||
+        (monthDifference === 0 && today.getDate() < birthDate.getDate())
+      ) {
+        age -= 1;
+      }
+
+      return age >= 0 ? `${age} años` : null;
+    }
+
+    return ageSnapshot !== null ? `${ageSnapshot} años` : null;
   }
 
   private async resolveTargetFacility(

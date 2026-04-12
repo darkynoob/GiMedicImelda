@@ -10,6 +10,9 @@ interface PatientsListQuery {
   page: number;
   pageSize: number;
   search: string;
+  patientStatus?: string;
+  sexAtBirth?: string;
+  allergiesFilter?: string;
 }
 
 export function fetchPatients(token: string, query: PatientsListQuery) {
@@ -20,6 +23,18 @@ export function fetchPatients(token: string, query: PatientsListQuery) {
 
   if (query.search.trim()) {
     params.set('search', query.search.trim());
+  }
+
+  if (query.patientStatus?.trim()) {
+    params.set('patientStatus', query.patientStatus.trim());
+  }
+
+  if (query.sexAtBirth?.trim()) {
+    params.set('sexAtBirth', query.sexAtBirth.trim());
+  }
+
+  if (query.allergiesFilter?.trim()) {
+    params.set('allergiesFilter', query.allergiesFilter.trim());
   }
 
   return apiRequest<PatientsListResponse>(`/patients?${params.toString()}`, {
