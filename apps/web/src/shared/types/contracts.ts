@@ -65,9 +65,14 @@ export interface PatientListItemResponse {
   phone: string | null;
   sexAtBirth: string;
   birthDate: string | null;
+  ageLabel: string | null;
+  patientStatus: string;
   medicalRecordNumber: string | null;
   primaryIdentifier: string | null;
   lastEncounterAt: string | null;
+  encounterCount: number;
+  allergiesSummary: string[];
+  hasKnownAllergies: boolean | null;
 }
 
 export interface PatientDetailResponse {

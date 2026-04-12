@@ -31,6 +31,12 @@ describe('PatientsService', () => {
 
   const prisma = {
     $transaction: jest.fn(),
+    encounter: {
+      groupBy: jest.fn(),
+    },
+    allergy: {
+      findMany: jest.fn(),
+    },
   };
 
   const service = new PatientsService(
@@ -74,6 +80,20 @@ describe('PatientsService', () => {
         lastEncounterAt: new Date('2026-03-01T10:00:00.000Z'),
       },
     ]);
+    prisma.encounter.groupBy.mockResolvedValue([
+      {
+        patientId: 'patient-1',
+        _count: {
+          patientId: 3,
+        },
+      },
+    ]);
+    prisma.allergy.findMany.mockResolvedValue([
+      {
+        patientId: 'patient-1',
+        substance: 'Penicilina',
+      },
+    ]);
 
     const result = await service.listByTenant('tenant-1', {
       page: 1,
@@ -84,6 +104,8 @@ describe('PatientsService', () => {
     expect(result.total).toBe(1);
     expect(result.items[0]?.medicalRecordNumber).toBe('EXP-NOVA-0001');
     expect(result.items[0]?.primaryIdentifier).toBe('NSS-ANA-0001');
+    expect(result.items[0]?.encounterCount).toBe(3);
+    expect(result.items[0]?.allergiesSummary).toEqual(['Penicilina']);
   });
 
   it('throws when the patient does not belong to the tenant', async () => {

@@ -8,6 +8,21 @@ export class PatientsQueryDto {
   search?: string;
 
   @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  patientStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  sexAtBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  allergiesFilter?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
