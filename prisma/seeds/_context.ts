@@ -54,6 +54,28 @@ export function buildSeedContext() {
       anaNss: randomUUID(),
       carlosPolicy: randomUUID(),
     },
+    patientResponsibleContacts: {
+      anaResponsible: randomUUID(),
+      carlosResponsible: randomUUID(),
+    },
+    patientCoverages: {
+      anaPrimary: randomUUID(),
+      anaSecondary: randomUUID(),
+      carlosPrimary: randomUUID(),
+    },
+    patientDocuments: {
+      anaIne: randomUUID(),
+      anaPassport: randomUUID(),
+      carlosIne: randomUUID(),
+    },
+    patientDemographicProfiles: {
+      anaProfile: randomUUID(),
+      carlosProfile: randomUUID(),
+    },
+    patientClinicalProfiles: {
+      anaProfile: randomUUID(),
+      carlosProfile: randomUUID(),
+    },
     medicalRecords: {
       anaNova: randomUUID(),
       carlosHorizonte: randomUUID(),

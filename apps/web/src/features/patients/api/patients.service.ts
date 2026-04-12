@@ -3,6 +3,7 @@ import type {
   CreatePatientRequest,
   PatientDetailResponse,
   PatientsListResponse,
+  UpdatePatientRequest,
 } from '../../../shared/types/contracts';
 
 interface PatientsListQuery {
@@ -11,10 +12,7 @@ interface PatientsListQuery {
   search: string;
 }
 
-export function fetchPatients(
-  token: string,
-  query: PatientsListQuery,
-) {
+export function fetchPatients(token: string, query: PatientsListQuery) {
   const params = new URLSearchParams({
     page: String(query.page),
     pageSize: String(query.pageSize),
@@ -36,6 +34,18 @@ export function fetchPatientDetail(token: string, patientId: string) {
 export function createPatient(token: string, input: CreatePatientRequest) {
   return apiRequest<PatientDetailResponse>('/patients', {
     method: 'POST',
+    token,
+    body: JSON.stringify(input),
+  });
+}
+
+export function updatePatient(
+  token: string,
+  patientId: string,
+  input: UpdatePatientRequest,
+) {
+  return apiRequest<PatientDetailResponse>(`/patients/${patientId}`, {
+    method: 'PATCH',
     token,
     body: JSON.stringify(input),
   });

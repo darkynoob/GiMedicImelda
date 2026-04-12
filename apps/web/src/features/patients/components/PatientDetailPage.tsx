@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -21,11 +22,13 @@ import { Button } from '../../../components/ui/button';
 import { useAuth } from '../../auth/hooks/auth-context';
 import { fetchPatientDetail } from '../api/patients.service';
 import { formatDateTime, formatDate } from '../../../shared/lib/formatters';
+import { PatientEditModal } from './PatientEditModal';
 
 export function PatientDetailPage() {
   const { patientId = '' } = useParams();
   const navigate = useNavigate();
   const { session } = useAuth();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const patientQuery = useQuery({
     queryKey: ['patient-detail', patientId],
@@ -84,7 +87,12 @@ export function PatientDetailPage() {
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <span>ID: {patient?.id}</span>
                 <span>•</span>
-                <span>Última actualización: hoy</span>
+                <span>
+                  Ultima actualizacion:{' '}
+                  {patient?.updatedAt
+                    ? formatDateTime(patient.updatedAt)
+                    : 'Sin dato'}
+                </span>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -95,7 +103,12 @@ export function PatientDetailPage() {
                 >
                   <FolderOpen className="h-3.5 w-3.5" /> Expediente
                 </Button>
-                <Button className="gap-1.5" size="sm" type="button">
+                <Button
+                  className="gap-1.5"
+                  onClick={() => setIsEditModalOpen(true)}
+                  size="sm"
+                  type="button"
+                >
                   <Edit className="h-3.5 w-3.5" /> Editar
                 </Button>
               </div>
@@ -311,6 +324,13 @@ export function PatientDetailPage() {
           </div>
         </div>
       </div>
+      {patient ? (
+        <PatientEditModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          patient={patient}
+        />
+      ) : null}
     </AppLayout>
   );
 }

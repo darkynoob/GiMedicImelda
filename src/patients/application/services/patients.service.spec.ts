@@ -130,12 +130,14 @@ describe('PatientsService', () => {
       .mockResolvedValue({
         id: 'patient-2',
         tenantId: 'tenant-1',
+        externalCode: null,
         fullName: 'Patricia Ramirez Nava',
         firstName: 'Patricia',
         lastName: 'Ramirez',
         middleName: 'Nava',
         curp: null,
         birthDate: null,
+        ageSnapshot: null,
         sexAtBirth: 'FEMALE',
         maritalStatus: null,
         bloodType: null,
@@ -168,6 +170,14 @@ describe('PatientsService', () => {
         requiresTranslator: false,
         registrationSource: null,
         administrativeNotes: null,
+        updatedAt: '2026-04-11T12:00:00.000Z',
+        responsibleContact: null,
+        coverages: [],
+        documents: [],
+        allergies: [],
+        problems: [],
+        clinicalProfile: null,
+        demographicProfile: null,
         identifiers: [],
         medicalRecords: [],
         recentEncounters: [],
@@ -193,6 +203,226 @@ describe('PatientsService', () => {
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(detailSpy).toHaveBeenCalledWith('tenant-1', 'patient-2');
     expect(result.id).toBe('patient-2');
+  });
+
+  it('updates the patient profile and rewrites the primary identifier', async () => {
+    patientRepository.findById.mockResolvedValue({
+      id: 'patient-1',
+      tenantId: 'tenant-1',
+    });
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        patient: {
+          update: jest.fn().mockResolvedValue({
+            id: 'patient-1',
+          }),
+        },
+        patientIdentifier: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'identifier-1',
+              isPrimary: true,
+            },
+          ]),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          update: jest.fn().mockResolvedValue({
+            id: 'identifier-1',
+          }),
+          delete: jest.fn(),
+          create: jest.fn(),
+        },
+        patientResponsibleContact: {
+          deleteMany: jest.fn(),
+          upsert: jest.fn(),
+        },
+        patientCoverage: {
+          deleteMany: jest.fn(),
+          createMany: jest.fn(),
+        },
+        patientDocument: {
+          deleteMany: jest.fn(),
+          createMany: jest.fn(),
+        },
+        allergy: {
+          deleteMany: jest.fn(),
+          createMany: jest.fn(),
+        },
+        problem: {
+          deleteMany: jest.fn(),
+          createMany: jest.fn(),
+        },
+        patientClinicalProfile: {
+          deleteMany: jest.fn(),
+          upsert: jest.fn(),
+        },
+        patientDemographicProfile: {
+          deleteMany: jest.fn(),
+          upsert: jest.fn(),
+        },
+      }),
+    );
+
+    const detailSpy = jest
+      .spyOn(service, 'getDetailByTenant')
+      .mockResolvedValue({
+        id: 'patient-1',
+        tenantId: 'tenant-1',
+        externalCode: 'LEG-100',
+        fullName: 'Ana Lopez Hernandez',
+        firstName: 'Ana',
+        lastName: 'Lopez',
+        middleName: 'Hernandez',
+        curp: 'LOHA890312MDFPRN05',
+        birthDate: '1989-03-12T00:00:00.000Z',
+        ageSnapshot: 37,
+        sexAtBirth: 'FEMALE',
+        maritalStatus: 'CASADA',
+        bloodType: 'O+',
+        email: 'ana@example.com',
+        phone: '5511111111',
+        alternatePhone: null,
+        addressLine1: 'Calle Magnolia 22',
+        addressLine2: 'Col. Del Valle',
+        city: 'Ciudad de Mexico',
+        state: 'CDMX',
+        postalCode: '03100',
+        country: 'MX',
+        municipality: 'Benito Juarez',
+        neighborhood: 'Del Valle',
+        street: 'Calle Magnolia',
+        exteriorNumber: '22',
+        interiorNumber: null,
+        emergencyContactName: 'Luis Lopez',
+        emergencyContactPhone: '5522222222',
+        emergencyContactRelation: 'Esposo',
+        patientStatus: 'Activo',
+        patientType: 'Ambulatorio',
+        medicalUnit: 'Hospital Nova',
+        hasKnownAllergies: true,
+        allergiesNotes: 'Penicilina',
+        occupation: 'Contadora',
+        educationLevel: 'Licenciatura',
+        religion: 'Catolica',
+        primaryLanguage: 'Español',
+        requiresTranslator: false,
+        registrationSource: 'Presencial',
+        administrativeNotes: 'Nota actualizada',
+        updatedAt: '2026-04-11T12:00:00.000Z',
+        responsibleContact: {
+          id: 'responsible-1',
+          fullName: 'Luis Lopez',
+          relationship: 'Esposo',
+          phone: '5522222222',
+          alternatePhone: null,
+          email: null,
+          legalRepresentationType: 'Familiar responsable',
+          addressLine1: 'Calle Magnolia 22',
+          addressLine2: null,
+          city: 'Ciudad de Mexico',
+          state: 'CDMX',
+          postalCode: '03100',
+          country: 'MX',
+          notes: 'Contacto principal',
+        },
+        coverages: [
+          {
+            id: 'coverage-1',
+            coverageType: 'SEGURO_PRIVADO',
+            providerName: 'Seguros Nova',
+            planName: 'Integral',
+            policyNumber: 'POL-123',
+            membershipNumber: 'AFI-222',
+            insuredPersonName: 'Ana Lopez Hernandez',
+            relationshipToInsured: 'Titular',
+            validFrom: '2026-01-01T00:00:00.000Z',
+            validUntil: '2026-12-31T00:00:00.000Z',
+            authorizationNotes: null,
+            isPrimary: true,
+          },
+        ],
+        documents: [
+          {
+            id: 'document-1',
+            documentType: 'INE',
+            documentNumber: 'INE-ANA-3344',
+            issuedBy: 'INE',
+            issuedAt: '2021-05-20T00:00:00.000Z',
+            expiresAt: '2031-05-20T00:00:00.000Z',
+            notes: null,
+            isPrimary: true,
+          },
+        ],
+        allergies: [
+          {
+            id: 'allergy-1',
+            substance: 'Penicilina',
+            reaction: 'Rash',
+            severity: 'SEVERA',
+            status: 'ACTIVA',
+          },
+        ],
+        problems: [
+          {
+            id: 'problem-1',
+            description: 'ERGE',
+            status: 'ACTIVO',
+          },
+        ],
+        clinicalProfile: {
+          id: 'clinical-1',
+          organDonorStatus: 'SI',
+          pregnancyStatus: 'NO',
+          disabilityNotes: null,
+          clinicalAlerts: 'Alergia a penicilina',
+          chronicConditionsNotes: 'Seguimiento oncológico',
+          currentMedicationsNotes: 'Omeprazol',
+        },
+        demographicProfile: {
+          id: 'demographic-1',
+          preferredName: 'Ana Lopez',
+          genderIdentity: 'Mujer',
+          preferredPronouns: 'Ella',
+          nationality: 'Mexicana',
+          countryOfBirth: 'México',
+          stateOfBirth: 'Ciudad de México',
+          ethnicGroup: 'Mestiza',
+        },
+        identifiers: [
+          {
+            id: 'identifier-1',
+            identifierType: 'NSS',
+            identifierValue: 'NSS-UPDATED',
+            isPrimary: true,
+          },
+        ],
+        medicalRecords: [],
+        recentEncounters: [],
+      });
+
+    const result = await service.updateForTenant('tenant-1', 'patient-1', {
+      firstName: 'Ana',
+      lastName: 'Lopez',
+      middleName: 'Hernandez',
+      sexAtBirth: 'FEMALE' as never,
+      birthDate: '1989-03-12',
+      ageSnapshot: 37,
+      curp: 'LOHA890312MDFPRN05',
+      patientStatus: 'Activo',
+      patientType: 'Ambulatorio',
+      medicalUnit: 'Hospital Nova',
+      phone: '5511111111',
+      city: 'Ciudad de Mexico',
+      state: 'CDMX',
+      hasKnownAllergies: true,
+      allergiesNotes: 'Penicilina',
+      identifierType: 'NSS',
+      identifierValue: 'NSS-UPDATED',
+      externalCode: 'LEG-100',
+    });
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(detailSpy).toHaveBeenCalledWith('tenant-1', 'patient-1');
+    expect(result.identifiers[0]?.identifierValue).toBe('NSS-UPDATED');
   });
 
   it('rejects creation when neither birth date nor age are present', async () => {
