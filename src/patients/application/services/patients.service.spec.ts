@@ -136,6 +136,7 @@ describe('PatientsService', () => {
         lastName: 'Ramirez',
         middleName: 'Nava',
         curp: null,
+        rfc: null,
         birthDate: null,
         ageSnapshot: null,
         sexAtBirth: 'FEMALE',
@@ -174,10 +175,12 @@ describe('PatientsService', () => {
         responsibleContact: null,
         coverages: [],
         documents: [],
+        attachments: [],
         allergies: [],
         problems: [],
         clinicalProfile: null,
         demographicProfile: null,
+        billingProfile: null,
         identifiers: [],
         medicalRecords: [],
         recentEncounters: [],
@@ -259,6 +262,10 @@ describe('PatientsService', () => {
           deleteMany: jest.fn(),
           upsert: jest.fn(),
         },
+        patientBillingProfile: {
+          deleteMany: jest.fn(),
+          upsert: jest.fn(),
+        },
       }),
     );
 
@@ -273,6 +280,7 @@ describe('PatientsService', () => {
         lastName: 'Lopez',
         middleName: 'Hernandez',
         curp: 'LOHA890312MDFPRN05',
+        rfc: 'LOHA890312AB1',
         birthDate: '1989-03-12T00:00:00.000Z',
         ageSnapshot: 37,
         sexAtBirth: 'FEMALE',
@@ -352,6 +360,15 @@ describe('PatientsService', () => {
             isPrimary: true,
           },
         ],
+        attachments: [
+          {
+            id: 'attachment-1',
+            fileName: 'ana-identificacion.pdf',
+            mimeType: 'application/pdf',
+            fileSizeBytes: '245760',
+            uploadedAt: '2026-04-11T12:00:00.000Z',
+          },
+        ],
         allergies: [
           {
             id: 'allergy-1',
@@ -371,9 +388,11 @@ describe('PatientsService', () => {
         clinicalProfile: {
           id: 'clinical-1',
           organDonorStatus: 'SI',
+          rhFactor: 'POSITIVO',
           pregnancyStatus: 'NO',
           disabilityNotes: null,
           clinicalAlerts: 'Alergia a penicilina',
+          clinicalObservations: 'Observacion clinica de seguimiento',
           chronicConditionsNotes: 'Seguimiento oncológico',
           currentMedicationsNotes: 'Omeprazol',
         },
@@ -386,6 +405,16 @@ describe('PatientsService', () => {
           countryOfBirth: 'México',
           stateOfBirth: 'Ciudad de México',
           ethnicGroup: 'Mestiza',
+        },
+        billingProfile: {
+          id: 'billing-1',
+          requiresInvoice: true,
+          businessName: 'Ana Lopez Hernandez',
+          taxRfc: 'LOHA890312AB1',
+          taxRegime: '612',
+          taxPostalCode: '03100',
+          billingEmail: 'facturacion@ana.com',
+          cfdiUse: 'G03',
         },
         identifiers: [
           {

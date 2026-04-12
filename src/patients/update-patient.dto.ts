@@ -19,6 +19,7 @@ import {
 } from 'class-validator';
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+const RFC_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
 
 const trimValue = ({ value }: { value: unknown }) =>
@@ -297,6 +298,12 @@ class UpdateClinicalProfileDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
+  @Transform(trimToUndefined)
+  rhFactor?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(40)
   @Transform(trimToUndefined)
   pregnancyStatus?: string;
@@ -312,6 +319,12 @@ class UpdateClinicalProfileDto {
   @MaxLength(800)
   @Transform(trimToUndefined)
   clinicalAlerts?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(800)
+  @Transform(trimToUndefined)
+  clinicalObservations?: string;
 
   @IsOptional()
   @IsString()
@@ -370,6 +383,53 @@ class UpdateDemographicProfileDto {
   ethnicGroup?: string;
 }
 
+class UpdateBillingProfileDto {
+  @IsBoolean()
+  @Transform(booleanValue)
+  requiresInvoice!: boolean;
+
+  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  @Transform(trimValue)
+  businessName?: string;
+
+  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @IsString()
+  @MaxLength(13)
+  @Transform(trimUppercaseToUndefined)
+  @Matches(RFC_REGEX, { message: 'RFC fiscal invalido' })
+  taxRfc?: string;
+
+  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  @Transform(trimValue)
+  taxRegime?: string;
+
+  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(12)
+  @Transform(trimValue)
+  taxPostalCode?: string;
+
+  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @IsEmail()
+  @MaxLength(160)
+  @Transform(trimToUndefined)
+  billingEmail?: string;
+
+  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  @Transform(trimValue)
+  cfdiUse?: string;
+}
+
 /**
  * Keeps patient-profile editing isolated from the create flow so we can evolve
  * both contracts independently without regressing admission.
@@ -425,6 +485,13 @@ export class UpdatePatientDto {
   @Transform(trimUppercaseToUndefined)
   @Matches(CURP_REGEX, { message: 'CURP invalido' })
   curp?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(13)
+  @Transform(trimUppercaseToUndefined)
+  @Matches(RFC_REGEX, { message: 'RFC invalido' })
+  rfc?: string;
 
   @IsOptional()
   @IsString()
@@ -657,4 +724,9 @@ export class UpdatePatientDto {
   @ValidateNested()
   @Type(() => UpdateDemographicProfileDto)
   demographicProfile?: UpdateDemographicProfileDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateBillingProfileDto)
+  billingProfile?: UpdateBillingProfileDto;
 }

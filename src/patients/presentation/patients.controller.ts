@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -8,13 +9,23 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { AuthenticatedRequest } from '../../auth/application/interfaces/authenticated-request.interface';
 import { JwtAuthGuard } from '../../auth/infrastructure/jwt-auth.guard';
 import { PatientsQueryDto } from '../application/dto/patients-query.dto';
 import { PatientsService } from '../application/services/patients.service';
 import { CreatePatientDto } from '../create-patient.dto';
 import { UpdatePatientDto } from '../update-patient.dto';
+
+type UploadedAttachmentFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
 
 @Controller('patients')
 @UseGuards(JwtAuthGuard)
@@ -56,6 +67,34 @@ export class PatientsController {
       request.user.tenantId,
       patientId,
       input,
+    );
+  }
+
+  @Post(':id/attachments')
+  @UseInterceptors(FilesInterceptor('files', 10))
+  uploadAttachments(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') patientId: string,
+    @UploadedFiles() files: UploadedAttachmentFile[],
+  ) {
+    return this.patientsService.uploadAttachmentsForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      patientId,
+      files,
+    );
+  }
+
+  @Delete(':id/attachments/:attachmentId')
+  removeAttachment(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') patientId: string,
+    @Param('attachmentId') attachmentId: string,
+  ) {
+    return this.patientsService.deleteAttachmentForTenant(
+      request.user.tenantId,
+      patientId,
+      attachmentId,
     );
   }
 }

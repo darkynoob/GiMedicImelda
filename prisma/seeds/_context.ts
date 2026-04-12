@@ -76,6 +76,10 @@ export function buildSeedContext() {
       anaProfile: randomUUID(),
       carlosProfile: randomUUID(),
     },
+    patientBillingProfiles: {
+      anaBilling: randomUUID(),
+      carlosBilling: randomUUID(),
+    },
     medicalRecords: {
       anaNova: randomUUID(),
       carlosHorizonte: randomUUID(),
@@ -167,6 +171,8 @@ export function buildSeedContext() {
     attachments: {
       anaAttachment: randomUUID(),
       carlosAttachment: randomUUID(),
+      anaPatientFile: randomUUID(),
+      carlosPatientFile: randomUUID(),
     },
     auditLogs: {
       anaAudit: randomUUID(),

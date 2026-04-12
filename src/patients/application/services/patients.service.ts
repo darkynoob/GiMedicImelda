@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   BadRequestException,
   ConflictException,
@@ -38,7 +40,15 @@ import type {
 import { PatientsQueryDto } from '../dto/patients-query.dto';
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+const RFC_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+
+type UploadedAttachmentFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
 
 @Injectable()
 export class PatientsService {
@@ -252,8 +262,10 @@ export class PatientsService {
       responsibleContact,
       coverages,
       documents,
+      attachments,
       demographicProfile,
       clinicalProfile,
+      billingProfile,
       allergies,
       problems,
     ] = await Promise.all([
@@ -298,12 +310,24 @@ export class PatientsService {
         },
         orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }],
       }),
+      this.prisma.attachment.findMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+        orderBy: { uploadedAt: 'desc' },
+      }),
       this.prisma.patientDemographicProfile.findUnique({
         where: {
           patientId,
         },
       }),
       this.prisma.patientClinicalProfile.findUnique({
+        where: {
+          patientId,
+        },
+      }),
+      this.prisma.patientBillingProfile.findUnique({
         where: {
           patientId,
         },
@@ -355,6 +379,7 @@ export class PatientsService {
       lastName: patient.lastName,
       middleName: patient.middleName,
       curp: patient.curp,
+      rfc: patient.rfc,
       birthDate: patient.birthDate ? patient.birthDate.toISOString() : null,
       ageSnapshot: patient.ageSnapshot,
       sexAtBirth: patient.sexAtBirth,
@@ -432,6 +457,13 @@ export class PatientsService {
         notes: document.notes,
         isPrimary: document.isPrimary,
       })),
+      attachments: attachments.map((attachment) => ({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        fileSizeBytes: attachment.fileSizeBytes.toString(),
+        uploadedAt: attachment.uploadedAt.toISOString(),
+      })),
       allergies: allergies.map((allergy) => ({
         id: allergy.id,
         substance: allergy.substance,
@@ -448,9 +480,11 @@ export class PatientsService {
         ? {
             id: clinicalProfile.id,
             organDonorStatus: clinicalProfile.organDonorStatus,
+            rhFactor: clinicalProfile.rhFactor,
             pregnancyStatus: clinicalProfile.pregnancyStatus,
             disabilityNotes: clinicalProfile.disabilityNotes,
             clinicalAlerts: clinicalProfile.clinicalAlerts,
+            clinicalObservations: clinicalProfile.clinicalObservations,
             chronicConditionsNotes: clinicalProfile.chronicConditionsNotes,
             currentMedicationsNotes: clinicalProfile.currentMedicationsNotes,
           }
@@ -465,6 +499,18 @@ export class PatientsService {
             countryOfBirth: demographicProfile.countryOfBirth,
             stateOfBirth: demographicProfile.stateOfBirth,
             ethnicGroup: demographicProfile.ethnicGroup,
+          }
+        : null,
+      billingProfile: billingProfile
+        ? {
+            id: billingProfile.id,
+            requiresInvoice: billingProfile.requiresInvoice,
+            businessName: billingProfile.businessName,
+            taxRfc: billingProfile.taxRfc,
+            taxRegime: billingProfile.taxRegime,
+            taxPostalCode: billingProfile.taxPostalCode,
+            billingEmail: billingProfile.billingEmail,
+            cfdiUse: billingProfile.cfdiUse,
           }
         : null,
       identifiers: identifiers.map((identifier) => ({
@@ -528,8 +574,12 @@ export class PatientsService {
             birthDate: input.birthDate ? new Date(input.birthDate) : null,
             ageSnapshot: input.ageSnapshot ?? null,
             maritalStatus: input.maritalStatus ?? null,
-            bloodType: input.bloodType ?? null,
+            bloodType: this.composeBloodType(
+              input.bloodType,
+              input.clinicalProfile?.rhFactor,
+            ),
             curp: input.curp ?? null,
+            rfc: input.rfc ?? null,
             phone: input.phone ?? null,
             alternatePhone: input.alternatePhone ?? null,
             email: input.email ?? null,
@@ -623,6 +673,12 @@ export class PatientsService {
           tenantId,
           patientId,
           input.demographicProfile,
+        );
+        await this.syncBillingProfile(
+          tx,
+          tenantId,
+          patientId,
+          input.billingProfile,
         );
       });
 
@@ -1061,9 +1117,11 @@ export class PatientsService {
       },
       update: {
         organDonorStatus: clinicalProfile.organDonorStatus ?? null,
+        rhFactor: clinicalProfile.rhFactor ?? null,
         pregnancyStatus: clinicalProfile.pregnancyStatus ?? null,
         disabilityNotes: clinicalProfile.disabilityNotes ?? null,
         clinicalAlerts: clinicalProfile.clinicalAlerts ?? null,
+        clinicalObservations: clinicalProfile.clinicalObservations ?? null,
         chronicConditionsNotes: clinicalProfile.chronicConditionsNotes ?? null,
         currentMedicationsNotes:
           clinicalProfile.currentMedicationsNotes ?? null,
@@ -1072,9 +1130,11 @@ export class PatientsService {
         tenantId,
         patientId,
         organDonorStatus: clinicalProfile.organDonorStatus ?? null,
+        rhFactor: clinicalProfile.rhFactor ?? null,
         pregnancyStatus: clinicalProfile.pregnancyStatus ?? null,
         disabilityNotes: clinicalProfile.disabilityNotes ?? null,
         clinicalAlerts: clinicalProfile.clinicalAlerts ?? null,
+        clinicalObservations: clinicalProfile.clinicalObservations ?? null,
         chronicConditionsNotes: clinicalProfile.chronicConditionsNotes ?? null,
         currentMedicationsNotes:
           clinicalProfile.currentMedicationsNotes ?? null,
@@ -1123,6 +1183,166 @@ export class PatientsService {
         ethnicGroup: demographicProfile.ethnicGroup ?? null,
       },
     });
+  }
+
+  private async syncBillingProfile(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    patientId: string,
+    billingProfile: UpdatePatientDto['billingProfile'],
+  ) {
+    const hasBillingPayload =
+      billingProfile &&
+      (billingProfile.requiresInvoice ||
+        Boolean(
+          billingProfile.businessName ||
+            billingProfile.taxRfc ||
+            billingProfile.taxRegime ||
+            billingProfile.taxPostalCode ||
+            billingProfile.billingEmail ||
+            billingProfile.cfdiUse,
+        ));
+
+    if (!hasBillingPayload) {
+      await tx.patientBillingProfile.deleteMany({
+        where: {
+          tenantId,
+          patientId,
+        },
+      });
+      return;
+    }
+
+    await tx.patientBillingProfile.upsert({
+      where: {
+        patientId,
+      },
+      update: {
+        requiresInvoice: billingProfile.requiresInvoice,
+        businessName: billingProfile.businessName ?? null,
+        taxRfc: billingProfile.taxRfc ?? null,
+        taxRegime: billingProfile.taxRegime ?? null,
+        taxPostalCode: billingProfile.taxPostalCode ?? null,
+        billingEmail: billingProfile.billingEmail ?? null,
+        cfdiUse: billingProfile.cfdiUse ?? null,
+      },
+      create: {
+        tenantId,
+        patientId,
+        requiresInvoice: billingProfile.requiresInvoice,
+        businessName: billingProfile.businessName ?? null,
+        taxRfc: billingProfile.taxRfc ?? null,
+        taxRegime: billingProfile.taxRegime ?? null,
+        taxPostalCode: billingProfile.taxPostalCode ?? null,
+        billingEmail: billingProfile.billingEmail ?? null,
+        cfdiUse: billingProfile.cfdiUse ?? null,
+      },
+    });
+  }
+
+  async uploadAttachmentsForTenant(
+    tenantId: string,
+    userId: string,
+    patientId: string,
+    files: UploadedAttachmentFile[],
+  ) {
+    const patient = await this.patientRepository.findById(patientId);
+
+    if (!patient || patient.tenantId !== tenantId) {
+      throw new NotFoundException('Paciente no encontrado');
+    }
+
+    if (!files.length) {
+      throw new BadRequestException('Selecciona al menos un archivo');
+    }
+
+    const uploadRoot = join(
+      process.cwd(),
+      'uploads',
+      'patients',
+      tenantId,
+      patientId,
+    );
+    await mkdir(uploadRoot, { recursive: true });
+
+    const createdAttachments: Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSizeBytes: string;
+      uploadedAt: string;
+    }> = [];
+
+    for (const file of files) {
+      if (!file.buffer?.length) {
+        throw new BadRequestException(
+          'Uno de los archivos no contiene datos válidos',
+        );
+      }
+
+      const storedFileName = `${randomUUID()}-${this.sanitizeFileName(
+        file.originalname,
+      )}`;
+      const absoluteStoragePath = join(uploadRoot, storedFileName);
+
+      await writeFile(absoluteStoragePath, file.buffer);
+
+      const attachment = await this.prisma.attachment.create({
+        data: {
+          tenantId,
+          patientId,
+          fileName: file.originalname,
+          mimeType: file.mimetype,
+          storageKey: absoluteStoragePath,
+          fileSizeBytes: BigInt(file.size),
+          uploadedByUserId: userId,
+          metadataJson: {
+            origin: 'patient-profile',
+            section: 'documentos',
+          },
+        },
+      });
+
+      createdAttachments.push({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        fileSizeBytes: attachment.fileSizeBytes.toString(),
+        uploadedAt: attachment.uploadedAt.toISOString(),
+      });
+    }
+
+    return createdAttachments;
+  }
+
+  async deleteAttachmentForTenant(
+    tenantId: string,
+    patientId: string,
+    attachmentId: string,
+  ) {
+    const attachment = await this.prisma.attachment.findUnique({
+      where: {
+        id: attachmentId,
+      },
+    });
+
+    if (
+      !attachment ||
+      attachment.tenantId !== tenantId ||
+      attachment.patientId !== patientId
+    ) {
+      throw new NotFoundException('Adjunto no encontrado');
+    }
+
+    await this.prisma.attachment.delete({
+      where: {
+        id: attachmentId,
+      },
+    });
+
+    await unlink(attachment.storageKey).catch(() => undefined);
+
+    return { success: true };
   }
 
   /**
@@ -1206,6 +1426,10 @@ export class PatientsService {
       throw new BadRequestException('La CURP capturada no es valida');
     }
 
+    if (input.rfc && !RFC_REGEX.test(input.rfc)) {
+      throw new BadRequestException('El RFC capturado no es valido');
+    }
+
     if (input.hasKnownAllergies && !input.allergiesNotes) {
       throw new BadRequestException(
         'Debes detallar las alergias conocidas del paciente',
@@ -1218,6 +1442,29 @@ export class PatientsService {
     ) {
       throw new BadRequestException(
         'El telefono del responsable tiene formato invalido',
+      );
+    }
+
+    if (
+      input.emergencyContactPhone &&
+      !PHONE_REGEX.test(input.emergencyContactPhone)
+    ) {
+      throw new BadRequestException(
+        'El telefono de emergencia tiene formato invalido',
+      );
+    }
+
+    if (
+      input.billingProfile?.requiresInvoice &&
+      (!input.billingProfile.businessName ||
+        !input.billingProfile.taxRfc ||
+        !input.billingProfile.taxRegime ||
+        !input.billingProfile.taxPostalCode ||
+        !input.billingProfile.billingEmail ||
+        !input.billingProfile.cfdiUse)
+    ) {
+      throw new BadRequestException(
+        'Completa todos los datos fiscales cuando el paciente requiere factura',
       );
     }
 
@@ -1275,6 +1522,29 @@ export class PatientsService {
 
   private isActivePatientStatus(patientStatus: string) {
     return patientStatus.trim().toLowerCase() === 'activo';
+  }
+
+  private composeBloodType(
+    bloodType: string | undefined,
+    rhFactor: string | undefined,
+  ) {
+    if (!bloodType) {
+      return null;
+    }
+
+    if (rhFactor === 'POSITIVO') {
+      return `${bloodType}+`;
+    }
+
+    if (rhFactor === 'NEGATIVO') {
+      return `${bloodType}-`;
+    }
+
+    return bloodType;
+  }
+
+  private sanitizeFileName(fileName: string) {
+    return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   }
 
   private async resolveTargetFacility(

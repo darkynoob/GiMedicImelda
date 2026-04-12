@@ -50,3 +50,43 @@ export function updatePatient(
     body: JSON.stringify(input),
   });
 }
+
+export function uploadPatientAttachments(
+  token: string,
+  patientId: string,
+  files: File[],
+) {
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  return apiRequest<
+    Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSizeBytes: string;
+      uploadedAt: string;
+    }>
+  >(`/patients/${patientId}/attachments`, {
+    method: 'POST',
+    token,
+    body: formData,
+  });
+}
+
+export function deletePatientAttachment(
+  token: string,
+  patientId: string,
+  attachmentId: string,
+) {
+  return apiRequest<{ success: boolean }>(
+    `/patients/${patientId}/attachments/${attachmentId}`,
+    {
+      method: 'DELETE',
+      token,
+    },
+  );
+}

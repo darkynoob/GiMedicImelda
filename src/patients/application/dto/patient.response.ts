@@ -28,6 +28,7 @@ export interface PatientDetailResponse {
   lastName: string;
   middleName: string | null;
   curp: string | null;
+  rfc: string | null;
   birthDate: string | null;
   ageSnapshot: number | null;
   sexAtBirth: string;
@@ -103,6 +104,13 @@ export interface PatientDetailResponse {
     notes: string | null;
     isPrimary: boolean;
   }>;
+  attachments: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    fileSizeBytes: string;
+    uploadedAt: string;
+  }>;
   allergies: Array<{
     id: string;
     substance: string;
@@ -118,9 +126,11 @@ export interface PatientDetailResponse {
   clinicalProfile: {
     id: string;
     organDonorStatus: string | null;
+    rhFactor: string | null;
     pregnancyStatus: string | null;
     disabilityNotes: string | null;
     clinicalAlerts: string | null;
+    clinicalObservations: string | null;
     chronicConditionsNotes: string | null;
     currentMedicationsNotes: string | null;
   } | null;
@@ -133,6 +143,16 @@ export interface PatientDetailResponse {
     countryOfBirth: string | null;
     stateOfBirth: string | null;
     ethnicGroup: string | null;
+  } | null;
+  billingProfile: {
+    id: string;
+    requiresInvoice: boolean;
+    businessName: string | null;
+    taxRfc: string | null;
+    taxRegime: string | null;
+    taxPostalCode: string | null;
+    billingEmail: string | null;
+    cfdiUse: string | null;
   } | null;
   identifiers: Array<{
     id: string;

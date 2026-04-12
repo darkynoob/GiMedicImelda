@@ -4,10 +4,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   LoaderCircle,
+  Paperclip,
   Plus,
   Save,
   ShieldAlert,
   Trash2,
+  Upload,
   UserRound,
   X,
 } from 'lucide-react';
@@ -19,9 +21,14 @@ import type {
   UpdatePatientRequest,
 } from '../../../shared/types/contracts';
 import { useAuth } from '../../auth/hooks/auth-context';
-import { updatePatient } from '../api/patients.service';
+import {
+  deletePatientAttachment,
+  updatePatient,
+  uploadPatientAttachments,
+} from '../api/patients.service';
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
+const RFC_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
 const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
 
 const sexOptions = [
@@ -58,14 +65,16 @@ const maritalStatusOptions = [
 
 const bloodTypeOptions = [
   { value: '', label: 'Sin especificar' },
-  { value: 'A+', label: 'A+' },
-  { value: 'A-', label: 'A-' },
-  { value: 'B+', label: 'B+' },
-  { value: 'B-', label: 'B-' },
-  { value: 'AB+', label: 'AB+' },
-  { value: 'AB-', label: 'AB-' },
-  { value: 'O+', label: 'O+' },
-  { value: 'O-', label: 'O-' },
+  { value: 'A', label: 'A' },
+  { value: 'B', label: 'B' },
+  { value: 'AB', label: 'AB' },
+  { value: 'O', label: 'O' },
+] as const;
+
+const rhFactorOptions = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'POSITIVO', label: 'Positivo' },
+  { value: 'NEGATIVO', label: 'Negativo' },
 ] as const;
 
 const allergyOptions = [
@@ -76,6 +85,11 @@ const allergyOptions = [
 
 const booleanOptions = [
   { value: '', label: 'Sin especificar' },
+  { value: 'false', label: 'No' },
+  { value: 'true', label: 'Si' },
+] as const;
+
+const invoiceOptions = [
   { value: 'false', label: 'No' },
   { value: 'true', label: 'Si' },
 ] as const;
@@ -251,9 +265,11 @@ type ProblemFormState = {
 
 type ClinicalProfileFormState = {
   organDonorStatus: string;
+  rhFactor: string;
   pregnancyStatus: string;
   disabilityNotes: string;
   clinicalAlerts: string;
+  clinicalObservations: string;
   chronicConditionsNotes: string;
   currentMedicationsNotes: string;
 };
@@ -268,6 +284,16 @@ type DemographicProfileFormState = {
   ethnicGroup: string;
 };
 
+type BillingProfileFormState = {
+  requiresInvoiceSelection: string;
+  businessName: string;
+  taxRfc: string;
+  taxRegime: string;
+  taxPostalCode: string;
+  billingEmail: string;
+  cfdiUse: string;
+};
+
 type FormState = {
   firstName: string;
   lastName: string;
@@ -276,6 +302,7 @@ type FormState = {
   birthDate: string;
   ageSnapshot: string;
   curp: string;
+  rfc: string;
   externalCode: string;
   patientStatus: string;
   patientType: string;
@@ -283,6 +310,9 @@ type FormState = {
   phone: string;
   alternatePhone: string;
   email: string;
+  emergencyContactName: string;
+  emergencyContactRelation: string;
+  emergencyContactPhone: string;
   city: string;
   state: string;
   municipality: string;
@@ -312,6 +342,7 @@ type FormState = {
   problems: ProblemFormState[];
   clinicalProfile: ClinicalProfileFormState;
   demographicProfile: DemographicProfileFormState;
+  billingProfile: BillingProfileFormState;
 };
 
 type FormErrors = Partial<Record<string, string>>;
@@ -350,7 +381,7 @@ const modalSections = [
     id: 'documentos',
     title: 'Documentos',
     description:
-      'Documentos administrativos estructurados, distintos de adjuntos binarios.',
+      'Metadatos documentales y archivos adjuntos disponibles desde el perfil.',
   },
   {
     id: 'clinico',
@@ -422,9 +453,11 @@ const emptyProblem = (): ProblemFormState => ({
 
 const emptyClinicalProfile: ClinicalProfileFormState = {
   organDonorStatus: '',
+  rhFactor: '',
   pregnancyStatus: '',
   disabilityNotes: '',
   clinicalAlerts: '',
+  clinicalObservations: '',
   chronicConditionsNotes: '',
   currentMedicationsNotes: '',
 };
@@ -438,6 +471,47 @@ const emptyDemographicProfile: DemographicProfileFormState = {
   stateOfBirth: '',
   ethnicGroup: '',
 };
+
+const emptyBillingProfile: BillingProfileFormState = {
+  requiresInvoiceSelection: 'false',
+  businessName: '',
+  taxRfc: '',
+  taxRegime: '',
+  taxPostalCode: '',
+  billingEmail: '',
+  cfdiUse: '',
+};
+
+function splitBloodType(
+  bloodType: string | null,
+  rhFactor: string | null | undefined,
+) {
+  if (!bloodType) {
+    return {
+      bloodType: '',
+      rhFactor: rhFactor ?? '',
+    };
+  }
+
+  if (bloodType.endsWith('+')) {
+    return {
+      bloodType: bloodType.slice(0, -1),
+      rhFactor: rhFactor ?? 'POSITIVO',
+    };
+  }
+
+  if (bloodType.endsWith('-')) {
+    return {
+      bloodType: bloodType.slice(0, -1),
+      rhFactor: rhFactor ?? 'NEGATIVO',
+    };
+  }
+
+  return {
+    bloodType,
+    rhFactor: rhFactor ?? '',
+  };
+}
 
 function trimToUndefined(value: string) {
   const trimmedValue = value.trim();
@@ -485,6 +559,10 @@ function buildInitialState(patient: PatientDetailResponse): FormState {
     patient.identifiers.find((identifier) => identifier.isPrimary) ??
     patient.identifiers[0] ??
     null;
+  const bloodTypeState = splitBloodType(
+    patient.bloodType,
+    patient.clinicalProfile?.rhFactor,
+  );
 
   return {
     firstName: patient.firstName,
@@ -495,6 +573,7 @@ function buildInitialState(patient: PatientDetailResponse): FormState {
     ageSnapshot:
       patient.ageSnapshot !== null ? String(patient.ageSnapshot) : '',
     curp: patient.curp ?? '',
+    rfc: patient.rfc ?? '',
     externalCode: patient.externalCode ?? '',
     patientStatus: patient.patientStatus,
     patientType: patient.patientType ?? '',
@@ -502,6 +581,9 @@ function buildInitialState(patient: PatientDetailResponse): FormState {
     phone: patient.phone ?? '',
     alternatePhone: patient.alternatePhone ?? '',
     email: patient.email ?? '',
+    emergencyContactName: patient.emergencyContactName ?? '',
+    emergencyContactRelation: patient.emergencyContactRelation ?? '',
+    emergencyContactPhone: patient.emergencyContactPhone ?? '',
     city: patient.city ?? '',
     state: patient.state ?? '',
     municipality: patient.municipality ?? '',
@@ -512,7 +594,7 @@ function buildInitialState(patient: PatientDetailResponse): FormState {
     neighborhood: patient.neighborhood ?? '',
     postalCode: patient.postalCode ?? '',
     maritalStatus: patient.maritalStatus ?? '',
-    bloodType: patient.bloodType ?? '',
+    bloodType: bloodTypeState.bloodType,
     identifierType: primaryIdentifier?.identifierType ?? '',
     identifierValue: primaryIdentifier?.identifierValue ?? '',
     allergiesSelection:
@@ -605,9 +687,12 @@ function buildInitialState(patient: PatientDetailResponse): FormState {
     clinicalProfile: patient.clinicalProfile
       ? {
           organDonorStatus: patient.clinicalProfile.organDonorStatus ?? '',
+          rhFactor: bloodTypeState.rhFactor,
           pregnancyStatus: patient.clinicalProfile.pregnancyStatus ?? '',
           disabilityNotes: patient.clinicalProfile.disabilityNotes ?? '',
           clinicalAlerts: patient.clinicalProfile.clinicalAlerts ?? '',
+          clinicalObservations:
+            patient.clinicalProfile.clinicalObservations ?? '',
           chronicConditionsNotes:
             patient.clinicalProfile.chronicConditionsNotes ?? '',
           currentMedicationsNotes:
@@ -625,6 +710,19 @@ function buildInitialState(patient: PatientDetailResponse): FormState {
           ethnicGroup: patient.demographicProfile.ethnicGroup ?? '',
         }
       : emptyDemographicProfile,
+    billingProfile: patient.billingProfile
+      ? {
+          requiresInvoiceSelection: patient.billingProfile.requiresInvoice
+            ? 'true'
+            : 'false',
+          businessName: patient.billingProfile.businessName ?? '',
+          taxRfc: patient.billingProfile.taxRfc ?? '',
+          taxRegime: patient.billingProfile.taxRegime ?? '',
+          taxPostalCode: patient.billingProfile.taxPostalCode ?? '',
+          billingEmail: patient.billingProfile.billingEmail ?? '',
+          cfdiUse: patient.billingProfile.cfdiUse ?? '',
+        }
+      : emptyBillingProfile,
   };
 }
 
@@ -668,6 +766,17 @@ function validateForm(form: FormState): FormErrors {
     errors.curp = 'Formato CURP invalido';
   }
 
+  if (form.rfc.trim() && !RFC_REGEX.test(form.rfc.trim().toUpperCase())) {
+    errors.rfc = 'Formato RFC invalido';
+  }
+
+  if (
+    form.emergencyContactPhone.trim() &&
+    !PHONE_REGEX.test(form.emergencyContactPhone.trim())
+  ) {
+    errors.emergencyContactPhone = 'Formato invalido';
+  }
+
   if (
     Boolean(form.identifierType.trim()) !== Boolean(form.identifierValue.trim())
   ) {
@@ -686,6 +795,30 @@ function validateForm(form: FormState): FormErrors {
     !PHONE_REGEX.test(form.responsible.phone.trim())
   ) {
     errors.responsiblePhone = 'Formato invalido';
+  }
+
+  if (form.billingProfile.requiresInvoiceSelection === 'true') {
+    if (!form.billingProfile.businessName.trim()) {
+      errors.billingBusinessName = 'Obligatorio';
+    }
+    if (
+      !form.billingProfile.taxRfc.trim() ||
+      !RFC_REGEX.test(form.billingProfile.taxRfc.trim().toUpperCase())
+    ) {
+      errors.billingTaxRfc = 'RFC fiscal invalido';
+    }
+    if (!form.billingProfile.taxRegime.trim()) {
+      errors.billingTaxRegime = 'Obligatorio';
+    }
+    if (!form.billingProfile.taxPostalCode.trim()) {
+      errors.billingTaxPostalCode = 'Obligatorio';
+    }
+    if (!form.billingProfile.billingEmail.trim()) {
+      errors.billingEmail = 'Obligatorio';
+    }
+    if (!form.billingProfile.cfdiUse.trim()) {
+      errors.billingCfdiUse = 'Obligatorio';
+    }
   }
 
   const primaryCoverages = form.coverages.filter(
@@ -785,9 +918,13 @@ function buildPayload(
     maritalStatus: trimToUndefined(form.maritalStatus),
     bloodType: trimToUndefined(form.bloodType),
     curp: trimToUndefined(form.curp)?.toUpperCase(),
+    rfc: trimToUndefined(form.rfc)?.toUpperCase(),
     phone: trimToUndefined(form.phone),
     alternatePhone: trimToUndefined(form.alternatePhone),
     email: trimToUndefined(form.email),
+    emergencyContactName: trimToUndefined(form.emergencyContactName),
+    emergencyContactRelation: trimToUndefined(form.emergencyContactRelation),
+    emergencyContactPhone: trimToUndefined(form.emergencyContactPhone),
     city: trimToUndefined(form.city),
     state: trimToUndefined(form.state),
     municipality: trimToUndefined(form.municipality),
@@ -843,6 +980,7 @@ function buildPayload(
           organDonorStatus: trimToUndefined(
             form.clinicalProfile.organDonorStatus,
           ),
+          rhFactor: trimToUndefined(form.clinicalProfile.rhFactor),
           pregnancyStatus: trimToUndefined(
             form.clinicalProfile.pregnancyStatus,
           ),
@@ -850,6 +988,9 @@ function buildPayload(
             form.clinicalProfile.disabilityNotes,
           ),
           clinicalAlerts: trimToUndefined(form.clinicalProfile.clinicalAlerts),
+          clinicalObservations: trimToUndefined(
+            form.clinicalProfile.clinicalObservations,
+          ),
           chronicConditionsNotes: trimToUndefined(
             form.clinicalProfile.chronicConditionsNotes,
           ),
@@ -875,6 +1016,20 @@ function buildPayload(
           ethnicGroup: trimToUndefined(form.demographicProfile.ethnicGroup),
         }
       : undefined,
+    billingProfile:
+      form.billingProfile.requiresInvoiceSelection === 'true'
+        ? {
+            requiresInvoice: true,
+            businessName: trimToUndefined(form.billingProfile.businessName),
+            taxRfc: trimToUndefined(form.billingProfile.taxRfc)?.toUpperCase(),
+            taxRegime: trimToUndefined(form.billingProfile.taxRegime),
+            taxPostalCode: trimToUndefined(form.billingProfile.taxPostalCode),
+            billingEmail: trimToUndefined(form.billingProfile.billingEmail),
+            cfdiUse: trimToUndefined(form.billingProfile.cfdiUse),
+          }
+        : {
+            requiresInvoice: false,
+          },
   };
 }
 
@@ -1165,6 +1320,19 @@ export function PatientEditModal({
     }));
   };
 
+  const updateBillingProfileField = <K extends keyof BillingProfileFormState>(
+    key: K,
+    value: BillingProfileFormState[K],
+  ) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      billingProfile: {
+        ...currentForm.billingProfile,
+        [key]: value,
+      },
+    }));
+  };
+
   const updateCollectionItem = <
     K extends 'coverages' | 'documents' | 'allergies' | 'problems',
     T extends FormState[K][number],
@@ -1267,6 +1435,50 @@ export function PatientEditModal({
         error instanceof Error
           ? error.message
           : 'No fue posible actualizar el paciente',
+      );
+    },
+  });
+
+  const uploadAttachmentsMutation = useMutation({
+    mutationFn: async (files: File[]) => {
+      if (!session) {
+        throw new Error('La sesion no esta disponible');
+      }
+
+      return uploadPatientAttachments(session.accessToken, patient.id, files);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['patient-detail', patient.id],
+      });
+    },
+    onError: (error) => {
+      setClientError(
+        error instanceof Error
+          ? error.message
+          : 'No fue posible subir los archivos del paciente',
+      );
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: string) => {
+      if (!session) {
+        throw new Error('La sesion no esta disponible');
+      }
+
+      return deletePatientAttachment(session.accessToken, patient.id, attachmentId);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['patient-detail', patient.id],
+      });
+    },
+    onError: (error) => {
+      setClientError(
+        error instanceof Error
+          ? error.message
+          : 'No fue posible eliminar el archivo adjunto',
       );
     },
   });
@@ -1519,6 +1731,12 @@ export function PatientEditModal({
                 value={form.curp}
               />
               <TextField
+                error={formErrors.rfc}
+                label="RFC"
+                onChange={(value) => updateField('rfc', value.toUpperCase())}
+                value={form.rfc}
+              />
+              <TextField
                 label="Codigo externo"
                 onChange={(value) => updateField('externalCode', value)}
                 value={form.externalCode}
@@ -1534,6 +1752,26 @@ export function PatientEditModal({
                 label="Valor del identificador principal"
                 onChange={(value) => updateField('identifierValue', value)}
                 value={form.identifierValue}
+              />
+              <TextField
+                label="Contacto de emergencia"
+                onChange={(value) => updateField('emergencyContactName', value)}
+                value={form.emergencyContactName}
+              />
+              <TextField
+                label="Relacion de emergencia"
+                onChange={(value) =>
+                  updateField('emergencyContactRelation', value)
+                }
+                value={form.emergencyContactRelation}
+              />
+              <TextField
+                error={formErrors.emergencyContactPhone}
+                label="Telefono de emergencia"
+                onChange={(value) =>
+                  updateField('emergencyContactPhone', value)
+                }
+                value={form.emergencyContactPhone}
               />
             </Section>
 
@@ -1561,6 +1799,73 @@ export function PatientEditModal({
                 type="email"
                 value={form.email}
               />
+              <SelectField
+                label="Requiere factura"
+                onChange={(value) =>
+                  updateBillingProfileField('requiresInvoiceSelection', value)
+                }
+                options={invoiceOptions}
+                value={form.billingProfile.requiresInvoiceSelection}
+              />
+              {form.billingProfile.requiresInvoiceSelection === 'true' ? (
+                <>
+                  <TextField
+                    error={formErrors.billingBusinessName}
+                    label="Razon social"
+                    onChange={(value) =>
+                      updateBillingProfileField('businessName', value)
+                    }
+                    required
+                    value={form.billingProfile.businessName}
+                  />
+                  <TextField
+                    error={formErrors.billingTaxRfc}
+                    label="RFC fiscal"
+                    onChange={(value) =>
+                      updateBillingProfileField('taxRfc', value.toUpperCase())
+                    }
+                    required
+                    value={form.billingProfile.taxRfc}
+                  />
+                  <TextField
+                    error={formErrors.billingTaxRegime}
+                    label="Regimen fiscal"
+                    onChange={(value) =>
+                      updateBillingProfileField('taxRegime', value)
+                    }
+                    required
+                    value={form.billingProfile.taxRegime}
+                  />
+                  <TextField
+                    error={formErrors.billingTaxPostalCode}
+                    label="C.P. fiscal"
+                    onChange={(value) =>
+                      updateBillingProfileField('taxPostalCode', value)
+                    }
+                    required
+                    value={form.billingProfile.taxPostalCode}
+                  />
+                  <TextField
+                    error={formErrors.billingEmail}
+                    label="Correo de facturacion"
+                    onChange={(value) =>
+                      updateBillingProfileField('billingEmail', value)
+                    }
+                    required
+                    type="email"
+                    value={form.billingProfile.billingEmail}
+                  />
+                  <TextField
+                    error={formErrors.billingCfdiUse}
+                    label="Uso CFDI"
+                    onChange={(value) =>
+                      updateBillingProfileField('cfdiUse', value)
+                    }
+                    required
+                    value={form.billingProfile.cfdiUse}
+                  />
+                </>
+              ) : null}
             </Section>
 
             <Section
@@ -2000,6 +2305,93 @@ export function PatientEditModal({
                   <Plus className="h-4 w-4" />
                   Agregar documento
                 </Button>
+
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-slate-900">
+                        Archivos adjuntos del paciente
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Sube PDF, imagenes u otros soportes administrativos al
+                        perfil del paciente.
+                      </p>
+                    </div>
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100">
+                      <Upload className="h-4 w-4" />
+                      {uploadAttachmentsMutation.isPending
+                        ? 'Subiendo...'
+                        : 'Subir archivos'}
+                      <input
+                        className="hidden"
+                        multiple
+                        onChange={(event) => {
+                          const selectedFiles = Array.from(
+                            event.target.files ?? [],
+                          );
+
+                          if (selectedFiles.length > 0) {
+                            uploadAttachmentsMutation.mutate(selectedFiles);
+                          }
+
+                          event.currentTarget.value = '';
+                        }}
+                        type="file"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {patient.attachments.length > 0 ? (
+                      patient.attachments.map((attachment) => (
+                        <div
+                          key={attachment.id}
+                          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="rounded-full bg-slate-100 p-2 text-slate-600">
+                              <Paperclip className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900">
+                                {attachment.fileName}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {attachment.mimeType} ·{' '}
+                                {Math.max(
+                                  1,
+                                  Math.round(
+                                    Number(attachment.fileSizeBytes) / 1024,
+                                  ),
+                                )}{' '}
+                                KB ·{' '}
+                                {new Date(attachment.uploadedAt).toLocaleString(
+                                  'es-MX',
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            disabled={deleteAttachmentMutation.isPending}
+                            onClick={() =>
+                              deleteAttachmentMutation.mutate(attachment.id)
+                            }
+                            type="button"
+                            variant="outline"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Quitar
+                          </Button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-muted-foreground">
+                        Aun no hay archivos adjuntos cargados para este
+                        paciente.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </Section>
 
@@ -2013,6 +2405,14 @@ export function PatientEditModal({
                 onChange={(value) => updateField('bloodType', value)}
                 options={bloodTypeOptions}
                 value={form.bloodType}
+              />
+              <SelectField
+                label="RH"
+                onChange={(value) =>
+                  updateClinicalProfileField('rhFactor', value)
+                }
+                options={rhFactorOptions}
+                value={form.clinicalProfile.rhFactor}
               />
               <SelectField
                 error={formErrors.allergiesSelection}
@@ -2172,6 +2572,15 @@ export function PatientEditModal({
                     updateClinicalProfileField('clinicalAlerts', value)
                   }
                   value={form.clinicalProfile.clinicalAlerts}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <TextAreaField
+                  label="Observaciones clinicas"
+                  onChange={(value) =>
+                    updateClinicalProfileField('clinicalObservations', value)
+                  }
+                  value={form.clinicalProfile.clinicalObservations}
                 />
               </div>
               <div className="md:col-span-2">

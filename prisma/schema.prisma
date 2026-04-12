@@ -202,6 +202,7 @@ model Tenant {
   patientDocuments           PatientDocument[]
   patientDemographicProfiles PatientDemographicProfile[]
   patientClinicalProfiles    PatientClinicalProfile[]
+  patientBillingProfiles     PatientBillingProfile[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -594,6 +595,9 @@ model Patient {
   /// CURP.
   curp String?
 
+  /// RFC del paciente o de la persona física titular del perfil.
+  rfc String?
+
   /// Teléfono.
   phone String?
 
@@ -718,10 +722,12 @@ model Patient {
   documents            PatientDocument[]
   demographicProfile   PatientDemographicProfile?
   clinicalProfile      PatientClinicalProfile?
+  billingProfile       PatientBillingProfile?
 
   @@index([tenantId])
   @@index([fullName])
   @@index([curp])
+  @@index([rfc])
   @@index([phone])
   @@index([externalCode])
 }
@@ -936,11 +942,15 @@ model PatientClinicalProfile {
 
   organDonorStatus String?
 
+  rhFactor String?
+
   pregnancyStatus String?
 
   disabilityNotes String?
 
   clinicalAlerts String?
+
+  clinicalObservations String?
 
   chronicConditionsNotes String?
 
@@ -955,6 +965,41 @@ model PatientClinicalProfile {
 
   @@index([tenantId])
   @@index([patientId])
+}
+
+/// Perfil fiscal para facturación del paciente.
+/// Se separa del registro principal porque su uso es administrativo y opcional.
+model PatientBillingProfile {
+  id String @id @default(uuid())
+
+  tenantId String
+
+  patientId String @unique
+
+  requiresInvoice Boolean @default(false)
+
+  businessName String?
+
+  taxRfc String?
+
+  taxRegime String?
+
+  taxPostalCode String?
+
+  billingEmail String?
+
+  cfdiUse String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([requiresInvoice])
 }
 
 //////////////////////////////////////////////////////

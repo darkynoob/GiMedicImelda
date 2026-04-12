@@ -26,6 +26,7 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         maritalStatus: 'CASADA',
         bloodType: 'O+',
         curp: 'LOHA890312MDFPRN05',
+        rfc: 'LOHA890312AB1',
         phone: '5511111111',
         alternatePhone: '5511112222',
         email: 'ana.lopez@email.com',
@@ -71,6 +72,7 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         maritalStatus: 'SOLTERO',
         bloodType: 'A+',
         curp: 'MEPC781022HDFNRR02',
+        rfc: 'MEPC7810229X1',
         phone: '5533333333',
         alternatePhone: '5533330000',
         email: 'carlos.mendoza@email.com',
@@ -298,10 +300,13 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         tenantId: ids.tenants.nova,
         patientId: ids.patients.ana,
         organDonorStatus: 'SI',
+        rhFactor: 'POSITIVO',
         pregnancyStatus: 'NO',
         disabilityNotes: null,
         clinicalAlerts:
           'Riesgo elevado con penicilinas. Verificar antibióticos antes de prescribir.',
+        clinicalObservations:
+          'Paciente cooperadora. Confirmar antecedentes antes de indicar antibióticos.',
         chronicConditionsNotes:
           'Seguimiento oncológico activo por lesión mamaria.',
         currentMedicationsNotes: 'Paracetamol PRN y omeprazol 20 mg.',
@@ -311,11 +316,80 @@ export async function seedPatients({ prisma, ctx }: SeedDeps) {
         tenantId: ids.tenants.horizonte,
         patientId: ids.patients.carlos,
         organDonorStatus: 'DESCONOCIDO',
+        rhFactor: 'POSITIVO',
         pregnancyStatus: 'NO_APLICA',
         disabilityNotes: null,
         clinicalAlerts: 'Vigilar uso de AINEs por antecedente de gastritis.',
+        clinicalObservations:
+          'Paciente adherente al tratamiento. Reforzar medidas dietéticas.',
         chronicConditionsNotes: 'ERGE y dispepsia funcional en control.',
         currentMedicationsNotes: 'Omeprazol 20 mg cada 24 h.',
+      },
+    ],
+  });
+
+  await prisma.patientBillingProfile.createMany({
+    data: [
+      {
+        id: ids.patientBillingProfiles.anaBilling,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        requiresInvoice: true,
+        businessName: 'Ana López Hernández',
+        taxRfc: 'LOHA890312AB1',
+        taxRegime: '612 - Personas Físicas con Actividades Empresariales',
+        taxPostalCode: '03650',
+        billingEmail: 'facturacion.ana@email.com',
+        cfdiUse: 'G03 - Gastos en general',
+      },
+      {
+        id: ids.patientBillingProfiles.carlosBilling,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        requiresInvoice: false,
+        businessName: null,
+        taxRfc: null,
+        taxRegime: null,
+        taxPostalCode: null,
+        billingEmail: null,
+        cfdiUse: null,
+      },
+    ],
+  });
+
+  await prisma.attachment.createMany({
+    data: [
+      {
+        id: ids.attachments.anaPatientFile,
+        tenantId: ids.tenants.nova,
+        patientId: ids.patients.ana,
+        fileName: 'ana-identificacion.pdf',
+        mimeType: 'application/pdf',
+        storageKey:
+          'tenant/nova/patients/ana/attachments/ana-identificacion.pdf',
+        fileSizeBytes: BigInt(245760),
+        uploadedByUserId: ids.users.valeria,
+        uploadedAt: dates.anaUploadAt,
+        metadataJson: {
+          origin: 'patient-profile',
+          section: 'documentos',
+        },
+      },
+      {
+        id: ids.attachments.carlosPatientFile,
+        tenantId: ids.tenants.horizonte,
+        patientId: ids.patients.carlos,
+        fileName: 'carlos-poliza.pdf',
+        mimeType: 'application/pdf',
+        storageKey:
+          'tenant/horizonte/patients/carlos/attachments/carlos-poliza.pdf',
+        fileSizeBytes: BigInt(198420),
+        uploadedByUserId: ids.users.ernesto,
+        uploadedAt: dates.carlosUploadAt,
+        metadataJson: {
+          origin: 'patient-profile',
+          section: 'documentos',
+        },
       },
     ],
   });
