@@ -74,7 +74,54 @@ export function DashboardPage() {
           ))}
         </div>
 
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-1">
+          <div className="clinical-card overflow-hidden">
+            <div className="flex items-center justify-between border-b p-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-clinical-warning-foreground" />
+                <h2 className="text-sm font-semibold">Alertas clinicas</h2>
+              </div>
+            </div>
+            <div className="space-y-3 p-4">
+              {clinicalAlerts.length ? clinicalAlerts.map((alert, index) => (
+                <div className="flex items-start gap-3 rounded-md border p-3 sm:p-4" key={index}>
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-clinical-warning-foreground" />
+                  <div>
+                    <p className="text-sm font-medium leading-snug">{alert.title}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground">{alert.body}</p>
+                  </div>
+                </div>
+              )) : <div className="text-sm text-muted-foreground">Sin alertas clinicas registradas.</div>}
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="clinical-card overflow-hidden">
+            <div className="flex items-center justify-between border-b p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">Documentos pendientes</h2>
+              </div>
+              <Badge variant="warning">{pendingDocs.length}</Badge>
+            </div>
+            <div className="divide-y max-h-[300px] overflow-auto">
+              {pendingDocs.length ? pendingDocs.map((document, index) => (
+                <div className="cursor-pointer transition-all active:scale-[0.99] px-4 py-3 transition-colors hover:bg-muted/30 space-y-1" key={index}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-sm font-medium">{document.title ?? 'Sin titulo'}</p>
+                    <DocStatusBadge status={document.status ?? 'Borrador'} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {document.patient ?? 'Sin paciente'} · {document.type ?? 'Sin tipo'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{document.time ?? 'Sin fecha'}</p>
+                </div>
+              )) : <div className="px-4 py-6 text-sm text-muted-foreground">Sin documentos pendientes.</div>}
+            </div>
+          </div>
+
           <div className="clinical-card overflow-hidden lg:col-span-2">
             <div className="flex items-center justify-between border-b p-4">
               <div className="flex items-center gap-2">
@@ -115,33 +162,9 @@ export function DashboardPage() {
               )}
             </div>
           </div>
-
-          <div className="clinical-card overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">Documentos pendientes</h2>
-              </div>
-              <Badge variant="warning">{pendingDocs.length}</Badge>
-            </div>
-            <div className="divide-y max-h-[300px] overflow-auto">
-              {pendingDocs.length ? pendingDocs.map((document, index) => (
-                <div className="cursor-pointer transition-all active:scale-[0.99] px-4 py-3 transition-colors hover:bg-muted/30 space-y-1" key={index}>
-                  <div className="mb-1 flex items-center justify-between">
-                    <p className="text-sm font-medium">{document.title ?? 'Sin titulo'}</p>
-                    <DocStatusBadge status={document.status ?? 'Borrador'} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {document.patient ?? 'Sin paciente'} · {document.type ?? 'Sin tipo'}
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{document.time ?? 'Sin fecha'}</p>
-                </div>
-              )) : <div className="px-4 py-6 text-sm text-muted-foreground">Sin documentos pendientes.</div>}
-            </div>
-          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-1">
           <div className="clinical-card overflow-hidden">
             <div className="flex items-center justify-between border-b p-4">
               <div className="flex items-center gap-2">
@@ -163,26 +186,6 @@ export function DashboardPage() {
                   </div>
                 </div>
               )) : <div className="px-4 py-6 text-sm text-muted-foreground">Sin eventos de auditoria.</div>}
-            </div>
-          </div>
-
-          <div className="clinical-card overflow-hidden">
-            <div className="flex items-center justify-between border-b p-4">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-clinical-warning-foreground" />
-                <h2 className="text-sm font-semibold">Alertas clinicas</h2>
-              </div>
-            </div>
-            <div className="space-y-3 p-4">
-              {clinicalAlerts.length ? clinicalAlerts.map((alert, index) => (
-                <div className="flex items-start gap-3 rounded-md border p-3 sm:p-4" key={index}>
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-clinical-warning-foreground" />
-                  <div>
-                    <p className="text-sm font-medium leading-snug">{alert.title}</p>
-                    <p className="text-xs sm:text-sm text-muted-foreground">{alert.body}</p>
-                  </div>
-                </div>
-              )) : <div className="text-sm text-muted-foreground">Sin alertas clinicas registradas.</div>}
             </div>
           </div>
         </div>

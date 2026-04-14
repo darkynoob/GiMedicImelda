@@ -44,8 +44,6 @@ bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hi
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900/85 via-slate-900/60 to-slate-900/90" />
         </div>
 
-
-
         <div className="relative z-10 flex flex-col justify-between h-full">
 
           <div className="flex items-center gap-3">
@@ -74,7 +72,6 @@ bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hi
             </div>
           </div>
        
-
           <div className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="rounded-lg border border-white/10 bg-white/5 backdrop-blur-md p-4 hover:bg-white/10 transition">
               <p className="font-medium text-sidebar-primary">Usuario seed</p>
@@ -142,11 +139,7 @@ bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hi
             </div>
 
             {error ? (
-              <div className="rounded-md border 
-border-clinical-alert-foreground/30 
-bg-clinical-alert 
-text-clinical-alert-foreground 
-px-3 py-2 text-sm">
+              <div className="rounded-md border border-clinical-alert-foreground/30 bg-clinical-alert text-clinical-alert-foreground px-3 py-2 text-sm">
                 {error}
               </div>
             ) : null}
