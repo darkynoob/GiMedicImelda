@@ -4,8 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   AdmissionSource,
+  EncounterRecordStatus,
   EncounterStatus,
   EncounterType,
   Prisma,
@@ -20,6 +24,7 @@ import { PrismaService } from '../../../shared/persistence/prisma/prisma.service
 import { CreateEncounterDto } from '../../create-encounter.dto';
 import { UpdateEncounterDto } from '../../update-encounter.dto';
 import { EncountersQueryDto } from '../dto/encounters-query.dto';
+import { EncounterSectionRecordMutationDto } from '../dto/encounter-section-record.dto';
 import type {
   EncounterDetailResponse,
   EncounterListItemResponse,
@@ -88,8 +93,26 @@ type TenantEncounterRecord = Prisma.EncounterGetPayload<{
       };
     };
     attachments: {
+      orderBy: {
+        uploadedAt: 'desc';
+      };
       select: {
         id: true;
+        fileName: true;
+        mimeType: true;
+        fileSizeBytes: true;
+        uploadedAt: true;
+      };
+    };
+    sectionRecords: {
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }];
+      include: {
+        authoredByUser: {
+          select: {
+            fullName: true;
+            professionalLicense: true;
+          };
+        };
       };
     };
     profile: true;
@@ -99,6 +122,13 @@ type TenantEncounterRecord = Prisma.EncounterGetPayload<{
 type CreateContext = {
   tenantId: string;
   userId: string;
+};
+
+type UploadedAttachmentFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
 };
 
 const encounterTypeLabels: Record<EncounterType, string> = {
@@ -668,6 +698,199 @@ export class EncountersService {
     );
   }
 
+  async createSectionRecordForTenant(
+    tenantId: string,
+    userId: string,
+    encounterNumber: string,
+    input: EncounterSectionRecordMutationDto,
+  ): Promise<EncounterDetailResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
+
+    await this.prisma.encounterSectionRecord.create({
+      data: {
+        tenantId,
+        encounterId: encounter.id,
+        patientId: encounter.patientId,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        noteType: input.noteType,
+        title:
+          input.title ??
+          this.buildDefaultRecordTitle(input.noteType, encounter.encounterNumber),
+        status: input.status ?? EncounterRecordStatus.DRAFT,
+        recordedAt: input.recordedAt ? new Date(input.recordedAt) : new Date(),
+        authoredByUserId: userId,
+        formDataJson: input.formData as Prisma.InputJsonValue,
+        signedAt:
+          (input.status ?? EncounterRecordStatus.DRAFT) ===
+          EncounterRecordStatus.SIGNED
+            ? new Date()
+            : null,
+      },
+    });
+
+    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    return this.toEncounterDetailResponse(
+      updatedEncounter,
+      updatedEncounter.attendingUserId
+        ? await this.userRepository.findById(updatedEncounter.attendingUserId)
+        : null,
+    );
+  }
+
+  async updateSectionRecordForTenant(
+    tenantId: string,
+    userId: string,
+    encounterNumber: string,
+    recordId: string,
+    input: EncounterSectionRecordMutationDto,
+  ): Promise<EncounterDetailResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const currentRecord = await this.prisma.encounterSectionRecord.findUnique({
+      where: { id: recordId },
+    });
+
+    if (
+      !currentRecord ||
+      currentRecord.tenantId !== tenantId ||
+      currentRecord.encounterId !== encounter.id
+    ) {
+      throw new NotFoundException('Registro del episodio no encontrado');
+    }
+
+    this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
+
+    await this.prisma.encounterSectionRecord.update({
+      where: { id: recordId },
+      data: {
+        tabKey: input.tabKey,
+        noteType: input.noteType,
+        title:
+          input.title ??
+          currentRecord.title ??
+          this.buildDefaultRecordTitle(input.noteType, encounter.encounterNumber),
+        status: input.status ?? currentRecord.status,
+        recordedAt: input.recordedAt
+          ? new Date(input.recordedAt)
+          : currentRecord.recordedAt,
+        authoredByUserId: userId,
+        formDataJson: input.formData as Prisma.InputJsonValue,
+        signedAt:
+          (input.status ?? currentRecord.status) === EncounterRecordStatus.SIGNED
+            ? currentRecord.signedAt ?? new Date()
+            : null,
+      },
+    });
+
+    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    return this.toEncounterDetailResponse(
+      updatedEncounter,
+      updatedEncounter.attendingUserId
+        ? await this.userRepository.findById(updatedEncounter.attendingUserId)
+        : null,
+    );
+  }
+
+  async uploadAttachmentsForTenant(
+    tenantId: string,
+    userId: string,
+    encounterNumber: string,
+    files: UploadedAttachmentFile[],
+  ) {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+
+    if (!files.length) {
+      throw new BadRequestException('Selecciona al menos un archivo');
+    }
+
+    const uploadRoot = join(
+      process.cwd(),
+      'uploads',
+      'encounters',
+      tenantId,
+      encounter.id,
+    );
+    await mkdir(uploadRoot, { recursive: true });
+
+    const createdAttachments: Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSizeBytes: string;
+      uploadedAt: string;
+    }> = [];
+
+    for (const file of files) {
+      if (!file.buffer?.length) {
+        throw new BadRequestException(
+          'Uno de los archivos no contiene datos válidos',
+        );
+      }
+
+      const storedFileName = `${randomUUID()}-${this.sanitizeFileName(
+        file.originalname,
+      )}`;
+      const absoluteStoragePath = join(uploadRoot, storedFileName);
+
+      await writeFile(absoluteStoragePath, file.buffer);
+
+      const attachment = await this.prisma.attachment.create({
+        data: {
+          tenantId,
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          fileName: file.originalname,
+          mimeType: file.mimetype,
+          storageKey: absoluteStoragePath,
+          fileSizeBytes: BigInt(file.size),
+          uploadedByUserId: userId,
+          metadataJson: {
+            origin: 'encounter-detail',
+            section: 'documentos',
+            encounterNumber: encounter.encounterNumber,
+          },
+        },
+      });
+
+      createdAttachments.push({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        fileSizeBytes: attachment.fileSizeBytes.toString(),
+        uploadedAt: attachment.uploadedAt.toISOString(),
+      });
+    }
+
+    return createdAttachments;
+  }
+
+  async deleteAttachmentForTenant(
+    tenantId: string,
+    encounterNumber: string,
+    attachmentId: string,
+  ) {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const attachment = await this.prisma.attachment.findUnique({
+      where: { id: attachmentId },
+    });
+
+    if (
+      !attachment ||
+      attachment.tenantId !== tenantId ||
+      attachment.encounterId !== encounter.id
+    ) {
+      throw new NotFoundException('Adjunto no encontrado');
+    }
+
+    await this.prisma.attachment.delete({
+      where: { id: attachmentId },
+    });
+    await unlink(attachment.storageKey).catch(() => undefined);
+
+    return { success: true };
+  }
+
   private buildEncounterSearchWhere(
     tenantId: string,
     query: EncountersQueryDto,
@@ -923,8 +1146,26 @@ export class EncountersService {
         },
       },
       attachments: {
+        orderBy: {
+          uploadedAt: 'desc' as const,
+        },
         select: {
           id: true,
+          fileName: true,
+          mimeType: true,
+          fileSizeBytes: true,
+          uploadedAt: true,
+        },
+      },
+      sectionRecords: {
+        orderBy: [{ recordedAt: 'desc' as const }, { createdAt: 'desc' as const }],
+        include: {
+          authoredByUser: {
+            select: {
+              fullName: true,
+              professionalLicense: true,
+            },
+          },
         },
       },
       profile: true,
@@ -940,6 +1181,31 @@ export class EncountersService {
     } | null,
   ): EncounterDetailResponse {
     const latestVitalSign = encounter.vitalSigns[0] ?? null;
+    const sectionRecords = encounter.sectionRecords.map((record) => ({
+      id: record.id,
+      tabKey: record.tabKey,
+      noteType: record.noteType,
+      title: record.title,
+      status: record.status,
+      recordedAt: record.recordedAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+      signedAt: record.signedAt?.toISOString() ?? null,
+      authorName: record.authoredByUser?.fullName ?? null,
+      authorLicense: record.authoredByUser?.professionalLicense ?? null,
+      formData:
+        record.formDataJson &&
+        typeof record.formDataJson === 'object' &&
+        !Array.isArray(record.formDataJson)
+          ? (record.formDataJson as Record<string, unknown>)
+          : {},
+    }));
+    const attachments = encounter.attachments.map((attachment) => ({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      fileSizeBytes: attachment.fileSizeBytes.toString(),
+      uploadedAt: attachment.uploadedAt.toISOString(),
+    }));
     const timeline = [
       {
         id: `${encounter.id}-created`,
@@ -954,6 +1220,20 @@ export class EncountersService {
         timestamp: document.documentDate.toISOString(),
         detail: document.author?.fullName ?? 'Sin autor',
         kind: 'document' as const,
+      })),
+      ...sectionRecords.slice(0, 8).map((record) => ({
+        id: record.id,
+        label: record.title,
+        timestamp: record.updatedAt,
+        detail: `${record.noteType} · ${record.authorName ?? 'Sin autor'}`,
+        kind: 'record' as const,
+      })),
+      ...attachments.slice(0, 8).map((attachment) => ({
+        id: attachment.id,
+        label: attachment.fileName,
+        timestamp: attachment.uploadedAt,
+        detail: 'Adjunto del episodio',
+        kind: 'attachment' as const,
       })),
       ...encounter.diagnoses.slice(0, 3).map((diagnosis) => ({
         id: diagnosis.id,
@@ -1079,6 +1359,8 @@ export class EncountersService {
         documentDate: document.documentDate.toISOString(),
         authorName: document.author?.fullName ?? null,
       })),
+      sectionRecords,
+      attachments,
       timeline,
       profile: {
         encounterType: encounter.profile?.encounterType ?? encounter.encounterType,
@@ -1124,6 +1406,20 @@ export class EncountersService {
     };
   }
 
+  private assertRecordTabAllowed(encounterType: EncounterType, tabKey: string) {
+    const allowedTabs = encounterTabsByType[encounterType] ?? [];
+
+    if (!allowedTabs.includes(tabKey) || tabKey === 'Resumen') {
+      throw new BadRequestException(
+        'La pestaña seleccionada no es válida para este tipo de episodio',
+      );
+    }
+  }
+
+  private buildDefaultRecordTitle(noteType: string, encounterNumber: string) {
+    return `${noteType} · ${encounterNumber}`;
+  }
+
   private normalizeProfileAlerts(rawAlerts: Prisma.JsonValue | null | undefined) {
     if (!Array.isArray(rawAlerts)) {
       return [];
@@ -1143,6 +1439,10 @@ export class EncountersService {
     ].filter(Boolean);
 
     return parts.join(' · ') || 'Sin valores destacados';
+  }
+
+  private sanitizeFileName(fileName: string) {
+    return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   }
 
   private toVitalSignsSummary(

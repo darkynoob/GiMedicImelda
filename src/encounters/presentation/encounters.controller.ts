@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -8,13 +9,24 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { AuthenticatedRequest } from '../../auth/application/interfaces/authenticated-request.interface';
 import { JwtAuthGuard } from '../../auth/infrastructure/jwt-auth.guard';
 import { CreateEncounterDto } from '../create-encounter.dto';
 import { UpdateEncounterDto } from '../update-encounter.dto';
 import { EncountersQueryDto } from '../application/dto/encounters-query.dto';
+import { EncounterSectionRecordMutationDto } from '../application/dto/encounter-section-record.dto';
 import { EncountersService } from '../application/services/encounters.service';
+
+type UploadedAttachmentFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
 
 @Controller('encounters')
 @UseGuards(JwtAuthGuard)
@@ -72,6 +84,64 @@ export class EncountersController {
       request.user.tenantId,
       encounterNumber,
       input,
+    );
+  }
+
+  @Post(':encounterNumber/records')
+  createSectionRecord(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Body() input: EncounterSectionRecordMutationDto,
+  ) {
+    return this.encountersService.createSectionRecordForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      encounterNumber,
+      input,
+    );
+  }
+
+  @Patch(':encounterNumber/records/:recordId')
+  updateSectionRecord(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Param('recordId') recordId: string,
+    @Body() input: EncounterSectionRecordMutationDto,
+  ) {
+    return this.encountersService.updateSectionRecordForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      encounterNumber,
+      recordId,
+      input,
+    );
+  }
+
+  @Post(':encounterNumber/attachments')
+  @UseInterceptors(FilesInterceptor('files', 10))
+  uploadAttachments(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @UploadedFiles() files: UploadedAttachmentFile[],
+  ) {
+    return this.encountersService.uploadAttachmentsForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      encounterNumber,
+      files,
+    );
+  }
+
+  @Delete(':encounterNumber/attachments/:attachmentId')
+  removeAttachment(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Param('attachmentId') attachmentId: string,
+  ) {
+    return this.encountersService.deleteAttachmentForTenant(
+      request.user.tenantId,
+      encounterNumber,
+      attachmentId,
     );
   }
 }

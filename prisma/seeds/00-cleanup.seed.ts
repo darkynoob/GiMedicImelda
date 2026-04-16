@@ -23,6 +23,8 @@ export async function cleanupSeed({ prisma }: SeedDeps) {
   await prisma.documentVersion.deleteMany();
   await prisma.clinicalDocument.deleteMany();
   await prisma.documentType.deleteMany();
+  await prisma.encounterSectionRecord.deleteMany();
+  await prisma.encounterProfile.deleteMany();
   await prisma.encounter.deleteMany();
   await prisma.medicalRecord.deleteMany();
   await prisma.patientClinicalProfile.deleteMany();

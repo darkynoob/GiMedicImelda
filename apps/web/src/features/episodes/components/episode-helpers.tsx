@@ -4,6 +4,8 @@ import {
   BedDouble,
   CalendarClock,
   CircleAlert,
+  FileUp,
+  NotebookPen,
   Scissors,
   Siren,
   Stethoscope,
@@ -108,6 +110,16 @@ export const timelineKindConfig: Record<
     label: 'Diagnostico',
     icon: CircleAlert,
     className: 'bg-violet-50 text-violet-700 border-violet-200',
+  },
+  record: {
+    label: 'Registro',
+    icon: NotebookPen,
+    className: 'bg-slate-50 text-slate-700 border-slate-200',
+  },
+  attachment: {
+    label: 'Adjunto',
+    icon: FileUp,
+    className: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   },
 };
 
