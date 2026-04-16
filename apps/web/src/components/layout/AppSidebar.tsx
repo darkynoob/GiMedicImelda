@@ -49,15 +49,26 @@ const navSections = [
   },
 ];
 
-export function AppSidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+type Props = {
+  isOpen: boolean;
+};
+
+export function AppSidebar({ isOpen }: Props) {
+  const [collapsed, setCollapsed] = useState(false); // desktop
+  // const [isOpen, setIsOpen] = useState(false); // mobile
   const location = useLocation();
 
   return (
     <aside
       className={cn(
-        'sticky top-0 z-30 flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200',
-        collapsed ? 'w-16' : 'w-60',
+        'fixed inset-y-0 left-0 z-50 flex h-full flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300',
+        
+        // Desktop
+        'md:sticky md:translate-x-0 md:z-30 md:h-screen md:border-r md:border-sidebar-border',
+        collapsed ? 'md:w-16' : 'md:w-60',
+
+        // Mobile behavior
+        isOpen ? 'translate-x-0 w-60' : '-translate-x-full w-60'
       )}
     >
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
