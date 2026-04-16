@@ -50,12 +50,11 @@ const navSections = [
 ];
 
 type Props = {
-  isOpen: boolean;
+  isOpen: boolean; // mobile
 };
 
 export function AppSidebar({ isOpen }: Props) {
   const [collapsed, setCollapsed] = useState(false); // desktop
-  // const [isOpen, setIsOpen] = useState(false); // mobile
   const location = useLocation();
 
   return (
