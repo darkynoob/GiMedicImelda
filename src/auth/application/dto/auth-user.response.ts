@@ -28,6 +28,7 @@ export interface CurrentUserResponse {
 
 export interface AuthLoginResponse {
   accessToken: string;
+  refreshToken: string;
   expiresIn: string;
   user: CurrentUserResponse;
 }

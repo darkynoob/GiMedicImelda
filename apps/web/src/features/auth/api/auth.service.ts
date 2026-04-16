@@ -16,6 +16,13 @@ export function loginRequest(payload: LoginPayload) {
   });
 }
 
+export function refreshSessionRequest(refreshToken: string) {
+  return apiRequest<AuthLoginResponse>('/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  });
+}
+
 export function fetchCurrentUser(token: string) {
   return apiRequest<CurrentUserResponse>('/auth/me', {
     token,

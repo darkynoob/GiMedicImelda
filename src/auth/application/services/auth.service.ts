@@ -15,6 +15,7 @@ import type {
 } from '../dto/auth-user.response';
 import { PasswordService } from './password.service';
 import type { AuthJwtPayload } from '../../domain/auth-jwt-payload.interface';
+import { ConfigService } from '@nestjs/config';
 
 type AuthUserRecord = Prisma.UserGetPayload<{
   include: {
@@ -43,6 +44,7 @@ export class AuthService {
     private readonly userRepository: UserRepository,
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   async login(input: LoginDto): Promise<AuthLoginResponse> {
@@ -69,13 +71,37 @@ export class AuthService {
       roleCodes: user.roles.map((assignment) => assignment.role.code),
     };
 
-    const accessToken = await this.jwtService.signAsync(payload);
+    return this.buildAuthResponse(payload, user);
+  }
 
-    return {
-      accessToken,
-      expiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-      user: this.toCurrentUserResponse(user),
+  async refresh(refreshToken: string): Promise<AuthLoginResponse> {
+    let payload: AuthJwtPayload;
+
+    try {
+      payload = await this.jwtService.verifyAsync<AuthJwtPayload>(refreshToken, {
+        secret:
+          this.configService.get<string>('JWT_REFRESH_SECRET') ??
+          'gimedic-dev-refresh-secret',
+      });
+    } catch {
+      throw new UnauthorizedException('Refresh token inválido o expirado');
+    }
+
+    const user = await this.findAccessUserById(payload.sub);
+
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedException('Usuario no disponible para refrescar sesión');
+    }
+
+    const nextPayload: AuthJwtPayload = {
+      sub: user.id,
+      email: user.email,
+      tenantId: user.tenantId,
+      fullName: user.fullName,
+      roleCodes: user.roles.map((assignment) => assignment.role.code),
     };
+
+    return this.buildAuthResponse(nextPayload, user);
   }
 
   async getCurrentUser(userId: string): Promise<CurrentUserResponse> {
@@ -180,6 +206,38 @@ export class AuthService {
         name: assignment.role.name,
       })),
       permissions: [...permissions].sort(),
+    };
+  }
+
+  private async buildAuthResponse(
+    payload: AuthJwtPayload,
+    user: AuthUserRecord,
+  ): Promise<AuthLoginResponse> {
+    const accessExpiresIn =
+      this.configService.get<string>('JWT_ACCESS_EXPIRES_IN') ?? '15m';
+    const refreshExpiresIn =
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret:
+          this.configService.get<string>('JWT_ACCESS_SECRET') ??
+          'gimedic-dev-access-secret',
+        expiresIn: accessExpiresIn as never,
+      }),
+      this.jwtService.signAsync(payload, {
+        secret:
+          this.configService.get<string>('JWT_REFRESH_SECRET') ??
+          'gimedic-dev-refresh-secret',
+        expiresIn: refreshExpiresIn as never,
+      }),
+    ]);
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: accessExpiresIn,
+      user: this.toCurrentUserResponse(user),
     };
   }
 }
