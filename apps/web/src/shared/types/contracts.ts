@@ -226,18 +226,47 @@ export interface EncounterDetailResponse {
     documentDate: string;
     authorName: string | null;
   }>;
+  sectionRecords: Array<{
+    id: string;
+    tabKey: string;
+    noteType: string;
+    title: string;
+    status: string;
+    recordedAt: string;
+    updatedAt: string;
+    signedAt: string | null;
+    authorName: string | null;
+    authorLicense: string | null;
+    formData: Record<string, unknown>;
+  }>;
+  attachments: Array<{
+    id: string;
+    fileName: string;
+    mimeType: string;
+    fileSizeBytes: string;
+    uploadedAt: string;
+  }>;
   timeline: Array<{
     id: string;
     label: string;
     timestamp: string;
     detail: string;
-    kind: 'episode' | 'document' | 'vital' | 'diagnosis';
+    kind: 'episode' | 'document' | 'vital' | 'diagnosis' | 'record' | 'attachment';
   }>;
   profile: {
     encounterType: string;
     sections: Record<string, unknown>;
     alerts: string[];
   };
+}
+
+export interface EncounterSectionRecordMutationRequest {
+  tabKey: string;
+  noteType: string;
+  title?: string;
+  status?: string;
+  recordedAt?: string;
+  formData: Record<string, unknown>;
 }
 
 export interface PatientsListResponse {

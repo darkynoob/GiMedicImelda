@@ -58,6 +58,14 @@ enum EncounterStatus {
   CANCELLED
 }
 
+/// Estado operativo/legal de un registro puntual del episodio.
+enum EncounterRecordStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  SIGNED
+}
+
 /// Categoría funcional del documento.
 /// Esto NO es la especialidad.
 /// La especialidad va en Specialty.
@@ -204,6 +212,7 @@ model Tenant {
   patientClinicalProfiles    PatientClinicalProfile[]
   patientBillingProfiles     PatientBillingProfile[]
   encounterProfiles          EncounterProfile[]
+  encounterSectionRecords    EncounterSectionRecord[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -440,6 +449,7 @@ model User {
   nursingNotes         NursingNote[]
   uploadedAttachments  Attachment[]
   auditLogs            AuditLog[]
+  authoredEncounterSectionRecords EncounterSectionRecord[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -724,6 +734,7 @@ model Patient {
   demographicProfile   PatientDemographicProfile?
   clinicalProfile      PatientClinicalProfile?
   billingProfile       PatientBillingProfile?
+  encounterSectionRecords EncounterSectionRecord[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1140,6 +1151,7 @@ model Encounter {
   attachments          Attachment[]
   auditLogs            AuditLog[]
   profile              EncounterProfile?
+  sectionRecords       EncounterSectionRecord[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1183,6 +1195,73 @@ model EncounterProfile {
 
   @@index([tenantId])
   @@index([encounterType])
+}
+
+/// Registro flexible ligado a una pestaña o subsección del episodio.
+/// Permite capturar múltiples notas, borradores y variantes por tipo de episodio.
+model EncounterSectionRecord {
+  /// ID único del registro.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del registro.
+  tenantId String
+
+  /// Episodio relacionado.
+  encounterId String
+
+  /// Paciente relacionado.
+  patientId String
+
+  /// Tipo de episodio al crear el registro.
+  encounterType EncounterType
+
+  /// Pestaña funcional del episodio.
+  tabKey String
+
+  /// Tipo de nota o documento dentro de la pestaña.
+  noteType String
+
+  /// Título visible del registro.
+  title String
+
+  /// Estado operativo/legal del registro.
+  status EncounterRecordStatus @default(DRAFT)
+
+  /// Fecha/hora clínica del registro.
+  recordedAt DateTime @default(now())
+
+  /// Usuario autor principal.
+  authoredByUserId String?
+
+  /// Carga estructurada editable del formulario.
+  formDataJson Json
+
+  /// Metadatos auxiliares para UI, auditoría ligera o relaciones futuras.
+  metadataJson Json?
+
+  /// Fecha de firma, si aplica.
+  signedAt DateTime?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter      Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient        Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  authoredByUser User?     @relation(fields: [authoredByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([encounterType])
+  @@index([tabKey])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([authoredByUserId])
 }
 
 //////////////////////////////////////////////////////

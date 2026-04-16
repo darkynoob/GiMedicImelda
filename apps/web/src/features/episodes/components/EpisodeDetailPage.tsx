@@ -5,12 +5,16 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardList,
+  FileUp,
   FileText,
   HeartPulse,
   LoaderCircle,
+  PencilLine,
+  Plus,
   Save,
   ShieldAlert,
   Stethoscope,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -26,9 +30,13 @@ import type {
 } from '../../../shared/types/contracts';
 import { useAuth } from '../../auth/hooks/auth-context';
 import {
+  createEncounterSectionRecord,
+  deleteEncounterAttachment,
   fetchEncounterDetail,
   fetchEncounterMeta,
+  updateEncounterSectionRecord,
   updateEncounter,
+  uploadEncounterAttachments,
 } from '../api/encounters.service';
 import {
   admissionSourceLabels,
@@ -40,7 +48,13 @@ import {
 import {
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  type EpisodeTabDefinition,
 } from './episode-profile-schema';
+import {
+  buildDefaultRecordTitle,
+  encounterRecordStatusConfig,
+  getEpisodeRecordPanelConfig,
+} from './episode-record-config';
 
 type FormState = {
   facilityId: string;
@@ -57,6 +71,14 @@ type FormState = {
 };
 
 type StructuredSectionsState = Record<string, Record<string, string>>;
+
+type RecordFormState = {
+  noteType: string;
+  title: string;
+  status: string;
+  recordedAt: string;
+  formData: Record<string, string>;
+};
 
 function buildFormState(detail: EncounterDetailResponse): FormState {
   return {
@@ -111,6 +133,45 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function normalizeRecordFormData(
+  tabDefinition: EpisodeTabDefinition | undefined,
+  rawFormData?: Record<string, unknown>,
+) {
+  const normalizedFormData: Record<string, string> = {};
+
+  if (!tabDefinition) {
+    return normalizedFormData;
+  }
+
+  for (const section of tabDefinition.sections) {
+    for (const field of section.fields) {
+      normalizedFormData[field.key] =
+        typeof rawFormData?.[field.key] === 'string'
+          ? (rawFormData[field.key] as string)
+          : '';
+    }
+  }
+
+  return normalizedFormData;
+}
+
+function buildRecordFormState(args: {
+  tabDefinition: EpisodeTabDefinition | undefined;
+  noteType: string;
+  title: string;
+  status: string;
+  recordedAt: string;
+  rawFormData?: Record<string, unknown>;
+}): RecordFormState {
+  return {
+    noteType: args.noteType,
+    title: args.title,
+    status: args.status,
+    recordedAt: args.recordedAt,
+    formData: normalizeRecordFormData(args.tabDefinition, args.rawFormData),
+  };
+}
+
 function SectionCard({
   title,
   description,
@@ -142,6 +203,10 @@ export function EpisodeDetailPage() {
   const [form, setForm] = useState<FormState | null>(null);
   const [structuredSections, setStructuredSections] =
     useState<StructuredSectionsState>({});
+  const [recordForm, setRecordForm] = useState<RecordFormState | null>(null);
+  const [activeRecordId, setActiveRecordId] = useState<string | null>(null);
+  const [isCreatingRecord, setIsCreatingRecord] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const detailQuery = useQuery({
@@ -244,6 +309,97 @@ export function EpisodeDetailPage() {
     },
   });
 
+  const refreshEncounterData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['encounter-detail', episodeNumber] }),
+      queryClient.invalidateQueries({ queryKey: ['encounters'] }),
+      queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] }),
+    ]);
+  };
+
+  const createRecordMutation = useMutation({
+    mutationFn: (payload: {
+      tabKey: string;
+      noteType: string;
+      title?: string;
+      status?: string;
+      recordedAt?: string;
+      formData: Record<string, unknown>;
+    }) => createEncounterSectionRecord(session!.accessToken, episodeNumber, payload),
+    onSuccess: async () => {
+      setFeedback('Registro creado correctamente.');
+      setIsCreatingRecord(false);
+      setActiveRecordId(null);
+      setRecordForm(null);
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
+  const updateRecordMutation = useMutation({
+    mutationFn: (payload: {
+      recordId: string;
+      tabKey: string;
+      noteType: string;
+      title?: string;
+      status?: string;
+      recordedAt?: string;
+      formData: Record<string, unknown>;
+    }) =>
+      updateEncounterSectionRecord(session!.accessToken, episodeNumber, payload.recordId, {
+        tabKey: payload.tabKey,
+        noteType: payload.noteType,
+        title: payload.title,
+        status: payload.status,
+        recordedAt: payload.recordedAt,
+        formData: payload.formData,
+      }),
+    onSuccess: async () => {
+      setFeedback('Registro actualizado correctamente.');
+      setIsCreatingRecord(false);
+      setActiveRecordId(null);
+      setRecordForm(null);
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
+  const uploadAttachmentsMutation = useMutation({
+    mutationFn: (files: File[]) =>
+      uploadEncounterAttachments(session!.accessToken, episodeNumber, files),
+    onSuccess: async () => {
+      setFeedback('Archivos cargados correctamente.');
+      setPendingFiles([]);
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: (attachmentId: string) =>
+      deleteEncounterAttachment(session!.accessToken, episodeNumber, attachmentId),
+    onSuccess: async () => {
+      setFeedback('Adjunto eliminado correctamente.');
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
+  useEffect(() => {
+    setIsCreatingRecord(false);
+    setActiveRecordId(null);
+    setRecordForm(null);
+    setPendingFiles([]);
+  }, [activeTab, detail?.id]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -281,6 +437,138 @@ export function EpisodeDetailPage() {
   };
 
   const activeTabDefinition = getEpisodeTabDefinition(detail.encounterType, activeTab);
+  const activeTabPanelConfig = getEpisodeRecordPanelConfig(
+    detail.encounterType,
+    activeTab,
+  );
+  const activeTabRecords = detail.sectionRecords.filter(
+    (record) => record.tabKey === activeTab,
+  );
+  const selectedRecord =
+    activeRecordId === null
+      ? null
+      : activeTabRecords.find((record) => record.id === activeRecordId) ?? null;
+  const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
+
+  const startCreatingRecord = (noteType?: string) => {
+    const nextNoteType =
+      noteType ??
+      activeTabPanelConfig?.noteTypes?.[0] ??
+      activeTabPanelConfig?.defaultActionLabel.replace(/^Nueva\s+/i, '') ??
+      activeTab;
+
+    setFeedback(null);
+    setActiveRecordId(null);
+    setIsCreatingRecord(true);
+    setRecordForm(
+      buildRecordFormState({
+        tabDefinition: activeTabDefinition,
+        noteType: nextNoteType,
+        title: buildDefaultRecordTitle(nextNoteType),
+        status: 'DRAFT',
+        recordedAt: new Date().toISOString().slice(0, 16),
+        rawFormData:
+          structuredSections[activeTab] ??
+          normalizeStructuredSections(detail)[activeTab] ??
+          {},
+      }),
+    );
+  };
+
+  const openExistingRecord = (recordId: string) => {
+    const record = activeTabRecords.find((item) => item.id === recordId);
+
+    if (!record) {
+      return;
+    }
+
+    setFeedback(null);
+    setIsCreatingRecord(false);
+    setActiveRecordId(record.id);
+    setRecordForm(
+      buildRecordFormState({
+        tabDefinition: activeTabDefinition,
+        noteType: record.noteType,
+        title: record.title,
+        status: record.status,
+        recordedAt: record.recordedAt.slice(0, 16),
+        rawFormData: record.formData,
+      }),
+    );
+  };
+
+  const closeRecordWorkspace = () => {
+    setIsCreatingRecord(false);
+    setActiveRecordId(null);
+    setRecordForm(null);
+  };
+
+  const updateRecordFormField = <K extends keyof RecordFormState>(
+    field: K,
+    value: RecordFormState[K],
+  ) => {
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            [field]: value,
+          }
+        : currentValue,
+    );
+  };
+
+  const updateRecordFormDataField = (fieldKey: string, value: string) => {
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            formData: {
+              ...currentValue.formData,
+              [fieldKey]: value,
+            },
+          }
+        : currentValue,
+    );
+  };
+
+  const saveRecord = () => {
+    if (!recordForm) {
+      return;
+    }
+
+    setFeedback(null);
+
+    const payload = {
+      tabKey: activeTab,
+      noteType: recordForm.noteType.trim(),
+      title: recordForm.title.trim() || undefined,
+      status: recordForm.status || undefined,
+      recordedAt: recordForm.recordedAt
+        ? new Date(recordForm.recordedAt).toISOString()
+        : undefined,
+      formData: recordForm.formData,
+    };
+
+    if (selectedRecord) {
+      updateRecordMutation.mutate({
+        recordId: selectedRecord.id,
+        ...payload,
+      });
+      return;
+    }
+
+    createRecordMutation.mutate(payload);
+  };
+
+  const submitPendingFiles = () => {
+    if (!pendingFiles.length) {
+      setFeedback('Selecciona al menos un archivo para cargar.');
+      return;
+    }
+
+    setFeedback(null);
+    uploadAttachmentsMutation.mutate(pendingFiles);
+  };
 
   return (
     <AppLayout>
@@ -692,100 +980,391 @@ export function EpisodeDetailPage() {
                   title={activeTabDefinition.title}
                 >
                   <div className="space-y-5">
-                    {activeTabDefinition.sections.map((section) => (
-                      <div
-                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                        key={section.key}
-                      >
-                        <div className="mb-3">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {section.title}
-                          </p>
-                          {section.description ? (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {section.description}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {section.fields.map((field) => {
-                            const fieldValue =
-                              structuredSections[activeTab]?.[field.key] ?? '';
-
-                            if (field.type === 'textarea') {
-                              return (
-                                <label
-                                  className="space-y-2 text-sm md:col-span-2"
-                                  key={field.key}
-                                >
-                                  <span className="font-medium text-slate-900">
-                                    {field.label}
-                                  </span>
-                                  <Textarea
-                                    onChange={(event) =>
-                                      updateStructuredField(
-                                        activeTab,
-                                        field.key,
-                                        event.target.value,
-                                      )
-                                    }
-                                    placeholder={field.placeholder}
-                                    value={fieldValue}
-                                  />
-                                </label>
-                              );
+                    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {activeTabPanelConfig?.contextLabel ?? 'Registros de la sección'}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Antes de capturar se muestra el estado vacío; cuando ya
+                          existen registros puedes retomarlos o crear uno nuevo,
+                          como en Nexus.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {(activeTabPanelConfig?.noteTypes?.length
+                          ? activeTabPanelConfig.noteTypes
+                          : [
+                              activeTabPanelConfig?.defaultActionLabel.replace(
+                                /^Nueva[s]?\s+/i,
+                                '',
+                              ) ?? activeTab,
+                            ]
+                        ).map((noteType) => (
+                          <Button
+                            className="gap-2"
+                            key={noteType}
+                            onClick={() => startCreatingRecord(noteType)}
+                            type="button"
+                            variant={
+                              activeTabPanelConfig?.noteTypes?.length ? 'outline' : 'default'
                             }
+                          >
+                            <Plus className="h-4 w-4" />
+                            {activeTabPanelConfig?.noteTypes?.length
+                              ? noteType
+                              : activeTabPanelConfig?.defaultActionLabel ?? 'Nuevo registro'}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
 
-                            if (field.type === 'select') {
-                              return (
-                                <label className="space-y-2 text-sm" key={field.key}>
-                                  <span className="font-medium text-slate-900">
-                                    {field.label}
-                                  </span>
-                                  <select
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                    onChange={(event) =>
-                                      updateStructuredField(
-                                        activeTab,
-                                        field.key,
-                                        event.target.value,
-                                      )
-                                    }
-                                    value={fieldValue}
-                                  >
-                                    {(field.options ?? []).map((option) => (
-                                      <option key={option.value || 'empty'} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                              );
-                            }
+                    {!isShowingRecordForm ? (
+                      activeTabRecords.length > 0 ? (
+                        <div className="space-y-3">
+                          {activeTabRecords.map((record) => {
+                            const recordStatusConfig =
+                              encounterRecordStatusConfig[record.status] ??
+                              encounterRecordStatusConfig.DRAFT;
 
                             return (
-                              <label className="space-y-2 text-sm" key={field.key}>
-                                <span className="font-medium text-slate-900">
-                                  {field.label}
-                                </span>
-                                <Input
-                                  onChange={(event) =>
-                                    updateStructuredField(
-                                      activeTab,
-                                      field.key,
-                                      event.target.value,
-                                    )
-                                  }
-                                  placeholder={field.placeholder}
-                                  type={field.type}
-                                  value={fieldValue}
-                                />
-                              </label>
+                              <button
+                                className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-primary/30 hover:bg-slate-50"
+                                key={record.id}
+                                onClick={() => openExistingRecord(record.id)}
+                                type="button"
+                              >
+                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-sm font-semibold text-slate-900">
+                                        {record.title}
+                                      </p>
+                                      <Badge variant="secondary">
+                                        {record.noteType}
+                                      </Badge>
+                                      <Badge variant={recordStatusConfig.badgeVariant}>
+                                        {recordStatusConfig.label}
+                                      </Badge>
+                                    </div>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                      {record.authorName ?? 'Sin autor'} ·{' '}
+                                      {formatDateTime(record.recordedAt)} · última
+                                      actualización {formatDateTime(record.updatedAt)}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-primary">
+                                    <PencilLine className="h-4 w-4" />
+                                    <span className="text-xs font-medium">
+                                      Ver o continuar captura
+                                    </span>
+                                  </div>
+                                </div>
+                              </button>
                             );
                           })}
                         </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-10 text-center">
+                          <FileText className="mx-auto h-8 w-8 text-slate-400" />
+                          <p className="mt-3 text-sm font-medium text-slate-900">
+                            Esta subsección todavía no tiene registros
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Usa el botón superior para crear la primera captura de{' '}
+                            {activeTab.toLowerCase()}.
+                          </p>
+                        </div>
+                      )
+                    ) : recordForm ? (
+                      <div className="space-y-5">
+                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {selectedRecord ? 'Editar registro' : 'Nuevo registro'}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {selectedRecord
+                                ? 'Puedes continuar la captura, ajustar campos y guardar la nueva versión operativa del registro.'
+                                : 'Se abrió la captura contextual de la subsección siguiendo el flujo esperado por tipo de episodio.'}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={closeRecordWorkspace}
+                              type="button"
+                              variant="outline"
+                            >
+                              Cancelar
+                            </Button>
+                            <Button
+                              className="gap-2"
+                              disabled={
+                                createRecordMutation.isPending ||
+                                updateRecordMutation.isPending
+                              }
+                              onClick={saveRecord}
+                              type="button"
+                            >
+                              <Save className="h-4 w-4" />
+                              {createRecordMutation.isPending ||
+                              updateRecordMutation.isPending
+                                ? 'Guardando...'
+                                : 'Guardar registro'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="space-y-2 text-sm">
+                            <span className="font-medium text-slate-900">Tipo de registro</span>
+                            <select
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                              onChange={(event) =>
+                                updateRecordFormField('noteType', event.target.value)
+                              }
+                              value={recordForm.noteType}
+                            >
+                              {(
+                                activeTabPanelConfig?.noteTypes?.length
+                                  ? activeTabPanelConfig.noteTypes
+                                  : [recordForm.noteType]
+                              ).map((noteType) => (
+                                <option key={noteType} value={noteType}>
+                                  {noteType}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="space-y-2 text-sm">
+                            <span className="font-medium text-slate-900">Estado</span>
+                            <select
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                              onChange={(event) =>
+                                updateRecordFormField('status', event.target.value)
+                              }
+                              value={recordForm.status}
+                            >
+                              {Object.entries(encounterRecordStatusConfig).map(
+                                ([value, config]) => (
+                                  <option key={value} value={value}>
+                                    {config.label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+
+                          <label className="space-y-2 text-sm md:col-span-2">
+                            <span className="font-medium text-slate-900">Título</span>
+                            <Input
+                              onChange={(event) =>
+                                updateRecordFormField('title', event.target.value)
+                              }
+                              value={recordForm.title}
+                            />
+                          </label>
+
+                          <label className="space-y-2 text-sm md:col-span-2">
+                            <span className="font-medium text-slate-900">
+                              Fecha clínica del registro
+                            </span>
+                            <Input
+                              onChange={(event) =>
+                                updateRecordFormField('recordedAt', event.target.value)
+                              }
+                              type="datetime-local"
+                              value={recordForm.recordedAt}
+                            />
+                          </label>
+                        </div>
+
+                        {activeTabDefinition.sections.map((section) => (
+                          <div
+                            className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                            key={section.key}
+                          >
+                            <div className="mb-3">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {section.title}
+                              </p>
+                              {section.description ? (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {section.description}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                              {section.fields.map((field) => {
+                                const fieldValue = recordForm.formData[field.key] ?? '';
+
+                                if (field.type === 'textarea') {
+                                  return (
+                                    <label
+                                      className="space-y-2 text-sm md:col-span-2"
+                                      key={field.key}
+                                    >
+                                      <span className="font-medium text-slate-900">
+                                        {field.label}
+                                      </span>
+                                      <Textarea
+                                        onChange={(event) =>
+                                          updateRecordFormDataField(
+                                            field.key,
+                                            event.target.value,
+                                          )
+                                        }
+                                        placeholder={field.placeholder}
+                                        value={fieldValue}
+                                      />
+                                    </label>
+                                  );
+                                }
+
+                                if (field.type === 'select') {
+                                  return (
+                                    <label className="space-y-2 text-sm" key={field.key}>
+                                      <span className="font-medium text-slate-900">
+                                        {field.label}
+                                      </span>
+                                      <select
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                        onChange={(event) =>
+                                          updateRecordFormDataField(
+                                            field.key,
+                                            event.target.value,
+                                          )
+                                        }
+                                        value={fieldValue}
+                                      >
+                                        {(field.options ?? []).map((option) => (
+                                          <option
+                                            key={option.value || 'empty'}
+                                            value={option.value}
+                                          >
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  );
+                                }
+
+                                return (
+                                  <label className="space-y-2 text-sm" key={field.key}>
+                                    <span className="font-medium text-slate-900">
+                                      {field.label}
+                                    </span>
+                                    <Input
+                                      onChange={(event) =>
+                                        updateRecordFormDataField(
+                                          field.key,
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder={field.placeholder}
+                                      type={field.type}
+                                      value={fieldValue}
+                                    />
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : null}
+
+                    {activeTab === 'Documentos' ? (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              Archivos del episodio
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Esta sección ya soporta el flujo vacío, carga de archivos y
+                              listado persistente por episodio.
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <Input
+                              multiple
+                              onChange={(event) =>
+                                setPendingFiles(Array.from(event.target.files ?? []))
+                              }
+                              type="file"
+                            />
+                            <Button
+                              className="gap-2"
+                              disabled={uploadAttachmentsMutation.isPending}
+                              onClick={submitPendingFiles}
+                              type="button"
+                            >
+                              <FileUp className="h-4 w-4" />
+                              {uploadAttachmentsMutation.isPending
+                                ? 'Cargando...'
+                                : 'Subir archivos'}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {pendingFiles.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {pendingFiles.map((file) => (
+                              <Badge key={file.name} variant="secondary">
+                                {file.name}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 space-y-3">
+                          {detail.attachments.length > 0 ? (
+                            detail.attachments.map((attachment) => (
+                              <div
+                                className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
+                                key={attachment.id}
+                              >
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900">
+                                    {attachment.fileName}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {attachment.mimeType} ·{' '}
+                                    {Number(attachment.fileSizeBytes).toLocaleString('es-MX')}{' '}
+                                    bytes · {formatDateTime(attachment.uploadedAt)}
+                                  </p>
+                                </div>
+                                <Button
+                                  className="gap-2"
+                                  disabled={deleteAttachmentMutation.isPending}
+                                  onClick={() =>
+                                    deleteAttachmentMutation.mutate(attachment.id)
+                                  }
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Quitar
+                                </Button>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-8 text-center">
+                              <p className="text-sm font-medium text-slate-900">
+                                No hay archivos cargados todavía
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Cuando agregues documentos del episodio aquí se
+                                listarán para consulta posterior.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </SectionCard>
 

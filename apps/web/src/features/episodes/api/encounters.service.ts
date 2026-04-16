@@ -1,6 +1,7 @@
 import { apiRequest } from '../../../shared/http/api-client';
 import type {
   CreateEncounterRequest,
+  EncounterSectionRecordMutationRequest,
   EncounterDetailResponse,
   EncounterMetaResponse,
   EncountersListResponse,
@@ -68,4 +69,75 @@ export function updateEncounter(
     token,
     body: JSON.stringify(input),
   });
+}
+
+export function createEncounterSectionRecord(
+  token: string,
+  encounterNumber: string,
+  input: EncounterSectionRecordMutationRequest,
+) {
+  return apiRequest<EncounterDetailResponse>(
+    `/encounters/${encounterNumber}/records`,
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateEncounterSectionRecord(
+  token: string,
+  encounterNumber: string,
+  recordId: string,
+  input: EncounterSectionRecordMutationRequest,
+) {
+  return apiRequest<EncounterDetailResponse>(
+    `/encounters/${encounterNumber}/records/${recordId}`,
+    {
+      method: 'PATCH',
+      token,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function uploadEncounterAttachments(
+  token: string,
+  encounterNumber: string,
+  files: File[],
+) {
+  const formData = new FormData();
+
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  return apiRequest<
+    Array<{
+      id: string;
+      fileName: string;
+      mimeType: string;
+      fileSizeBytes: string;
+      uploadedAt: string;
+    }>
+  >(`/encounters/${encounterNumber}/attachments`, {
+    method: 'POST',
+    token,
+    body: formData,
+  });
+}
+
+export function deleteEncounterAttachment(
+  token: string,
+  encounterNumber: string,
+  attachmentId: string,
+) {
+  return apiRequest<{ success: boolean }>(
+    `/encounters/${encounterNumber}/attachments/${attachmentId}`,
+    {
+      method: 'DELETE',
+      token,
+    },
+  );
 }
