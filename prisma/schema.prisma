@@ -203,6 +203,7 @@ model Tenant {
   patientDemographicProfiles PatientDemographicProfile[]
   patientClinicalProfiles    PatientClinicalProfile[]
   patientBillingProfiles     PatientBillingProfile[]
+  encounterProfiles          EncounterProfile[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -1138,6 +1139,7 @@ model Encounter {
   deathRecords         DeathRecord[]
   attachments          Attachment[]
   auditLogs            AuditLog[]
+  profile              EncounterProfile?
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1146,6 +1148,41 @@ model Encounter {
   @@index([specialtyId])
   @@index([medicalRecordId])
   @@index([patientId])
+}
+
+/// Perfil estructurado complementario del episodio.
+/// Permite capturar secciones variables por tipo sin rigidizar el modelo base.
+model EncounterProfile {
+  /// ID único del perfil.
+  id String @id @default(uuid())
+
+  /// Tenant dueño del perfil.
+  tenantId String
+
+  /// Episodio asociado.
+  encounterId String @unique
+
+  /// Tipo de episodio al momento de captura.
+  encounterType EncounterType
+
+  /// Secciones dinámicas estructuradas por pestaña/formato.
+  sectionsJson Json
+
+  /// Alertas o banderas derivadas de la captura.
+  alertsJson Json?
+
+  /// Fecha de creación.
+  createdAt DateTime @default(now())
+
+  /// Fecha de actualización.
+  updatedAt DateTime @updatedAt
+
+  /// Relaciones.
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterType])
 }
 
 //////////////////////////////////////////////////////

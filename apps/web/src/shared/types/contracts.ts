@@ -232,6 +232,11 @@ export interface EncounterDetailResponse {
     detail: string;
     kind: 'episode' | 'document' | 'vital' | 'diagnosis';
   }>;
+  profile: {
+    encounterType: string;
+    sections: Record<string, unknown>;
+    alerts: string[];
+  };
 }
 
 export interface PatientsListResponse {
@@ -498,6 +503,7 @@ export interface UpdateEncounterRequest {
   closedAt?: string;
   reasonForVisit?: string;
   notes?: string;
+  structuredSections?: Record<string, unknown>;
 }
 
 export interface UpdatePatientRequest {
