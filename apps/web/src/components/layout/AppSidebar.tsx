@@ -43,11 +43,13 @@ const navSections = [
   {
     label: 'Sistema',
     items: [
-      { title: 'Auditoria', icon: ShieldCheck, path: '/auditoria' },
+      { title: 'Auditoria', icon: ShieldCheck, path: '/auditoria', hidden: true, roles: ['Administrador del Tenant'] },
       { title: 'Administracion', icon: Settings, path: '/administracion' },
     ],
   },
 ];
+
+import { useAuth } from '../../features/auth/hooks/auth-context';
 
 type Props = {
   isOpen: boolean; // mobile
@@ -56,6 +58,8 @@ type Props = {
 export function AppSidebar({ isOpen }: Props) {
   const [collapsed, setCollapsed] = useState(false); // desktop
   const location = useLocation();
+  const { session } = useAuth();
+  const userRole = session?.user.roles[0]?.name ?? '';
 
   return (
     <aside
@@ -88,7 +92,11 @@ export function AppSidebar({ isOpen }: Props) {
               </p>
             ) : null}
             <ul className="space-y-0.5">
-              {section.items.map((item) => {
+              {section.items.filter((item) => {
+                  if (item.hidden) return false
+                  if (item.roles && !item.roles.includes(userRole)) return false
+                  return true
+                }).map((item) => {
                 const isActive =
                   location.pathname === item.path ||
                   (item.path !== '/' && location.pathname.startsWith(item.path));

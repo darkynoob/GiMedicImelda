@@ -483,7 +483,7 @@ function SelectField({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       <select
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -499,7 +499,7 @@ function SelectField({
           </option>
         ))}
       </select>
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
@@ -536,7 +536,7 @@ function TextField({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       <Input
         disabled={disabled}
@@ -547,7 +547,7 @@ function TextField({
         type={type}
         value={value}
       />
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
@@ -576,7 +576,7 @@ function TextAreaField({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       <Textarea
         className="min-h-[88px]"
@@ -584,7 +584,7 @@ function TextAreaField({
         placeholder={placeholder}
         value={value}
       />
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
