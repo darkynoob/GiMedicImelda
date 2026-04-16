@@ -2,6 +2,8 @@ import { Navigate, Outlet, createBrowserRouter } from 'react-router-dom';
 import { LoginPage } from '../features/auth/components/LoginPage';
 import { useAuth } from '../features/auth/hooks/auth-context';
 import { DashboardPage } from '../features/dashboard/components/DashboardPage';
+import { EpisodeDetailPage } from '../features/episodes/components/EpisodeDetailPage';
+import { EpisodesPage } from '../features/episodes/components/EpisodesPage';
 import { PatientDetailPage } from '../features/patients/components/PatientDetailPage';
 import { NewPatientPage } from '../features/patients/components/NewPatientPage';
 import { PatientsPage } from '../features/patients/components/PatientsPage';
@@ -50,7 +52,11 @@ export const router = createBrowserRouter([
       },
       {
         path: 'episodios',
-        element: placeholder('Episodios', 'Vista homologada al proyecto de referencia.'),
+        element: <EpisodesPage />,
+      },
+      {
+        path: 'episodios/:episodeNumber',
+        element: <EpisodeDetailPage />,
       },
       {
         path: 'documentos',
