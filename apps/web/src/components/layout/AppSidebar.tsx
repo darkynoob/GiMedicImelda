@@ -87,7 +87,7 @@ export function AppSidebar({ isOpen }: Props) {
         {navSections.map((section) => (
           <div className="mb-4" key={section.label}>
             {!collapsed ? (
-              <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted">
+              <p className="text-sidebar-muted text-[10px] uppercase tracking-wider">
                 {section.label}
               </p>
             ) : null}
@@ -107,7 +107,7 @@ export function AppSidebar({ isOpen }: Props) {
                       className={cn(
                         'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                         isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          ? 'bg-clinical-info text-white'
                           : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
                       )}
                       to={item.path}
