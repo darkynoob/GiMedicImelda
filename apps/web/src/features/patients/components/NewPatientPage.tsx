@@ -36,7 +36,8 @@ import { useAuth } from '../../auth/hooks/auth-context';
 import { createPatient, fetchPatients } from '../api/patients.service';
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+const PHONE_REGEX = /^[\d\s\-+()]{10,20}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const MEXICAN_STATES = [
   'Aguascalientes',
@@ -376,6 +377,12 @@ function validateForm(form: FormState): FormErrors {
     !PHONE_REGEX.test(form.alternatePhone.trim())
   ) {
     errors.alternatePhone = 'Formato invalido';
+  }
+
+  if (form.email.trim()) {
+    if (!EMAIL_REGEX.test(form.email.trim())) {
+      errors.email = 'Formato invalido';
+    }
   }
 
   if (!form.city.trim()) errors.city = 'Obligatorio';
@@ -1038,6 +1045,7 @@ export function NewPatientPage() {
                 value={form.alternatePhone}
               />
               <TextField
+                error={formErrors.email}
                 label="Correo electronico"
                 onChange={(value) => updateField('email', value)}
                 placeholder="paciente@correo.com"
