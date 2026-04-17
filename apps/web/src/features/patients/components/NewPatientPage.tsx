@@ -942,7 +942,7 @@ export function NewPatientPage() {
             }}
           >
             <SectionCard
-              description="Replica la estructura de identidad del alta rapida de Nexus, pero usando el shell actual de gi medic."
+              description="Datos básicos para identificar al paciente en el sistema."
               icon={UserRound}
               title="Identidad del paciente"
             >
@@ -1050,7 +1050,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Canales para comunicacion y acompanamiento inmediato del paciente."
+              description="Información de contacto del paciente."
               icon={HeartHandshake}
               title="Contacto y acompanamiento"
             >
@@ -1105,7 +1105,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Domicilio minimo y direccion estructurada para admision y seguimiento."
+              description="Dirección del paciente para contacto y seguimiento."
               icon={MapPin}
               title="Domicilio"
             >
@@ -1176,8 +1176,9 @@ export function NewPatientPage() {
                 />
               </div>
             </SectionCard>
+            
             <SectionCard
-              description="El flujo de Nexus exige dejar claro si existen alergias al momento del alta."
+              description="Registro de alergias y datos clave para la seguridad del paciente."
               icon={ShieldAlert}
               title="Seguridad clinica"
             >
@@ -1208,7 +1209,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Datos administrativos y sociales que Nexus deja listos desde el registro inicial."
+              description="Información adicional del paciente para completar su perfil."
               icon={Building2}
               title="Datos adicionales"
             >
@@ -1275,7 +1276,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Se conserva el flujo actual de expediente e identificador principal de gi medic."
+              description="Datos de expediente e identificadores del paciente."
               icon={FilePlus2}
               title="Expediente e identificadores"
             >
