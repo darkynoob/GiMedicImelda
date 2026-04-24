@@ -21,6 +21,7 @@ import type { FacilityRepository } from '../../../shared/persistence/repositorie
 import type { PatientRepository } from '../../../shared/persistence/repositories/patient.repository';
 import type { UserRepository } from '../../../shared/persistence/repositories/user.repository';
 import { PrismaService } from '../../../shared/persistence/prisma/prisma.service';
+import { PasswordService } from '../../../auth/application/services/password.service';
 import { CreateEncounterDto } from '../../create-encounter.dto';
 import { UpdateEncounterDto } from '../../update-encounter.dto';
 import { EncountersQueryDto } from '../dto/encounters-query.dto';
@@ -219,6 +220,7 @@ export class EncountersService {
     private readonly facilityRepository: FacilityRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
+    private readonly passwordService: PasswordService,
   ) {}
 
   async listByTenant(
@@ -713,7 +715,15 @@ export class EncountersService {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
     const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
+    const responsibleUser = encounter.attendingUserId
+      ? await this.userRepository.findById(encounter.attendingUserId)
+      : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+    });
+    const consultationVersionContext = await this.resolveConsultationVersionContext({
       encounterId: encounter.id,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
@@ -724,6 +734,8 @@ export class EncountersService {
       recordedAt,
       currentRecord: null,
       historyVersionContext,
+      consultationVersionContext,
+      responsibleUser,
     });
 
     await this.prisma.encounterSectionRecord.create({
@@ -776,11 +788,26 @@ export class EncountersService {
       throw new NotFoundException('Registro del episodio no encontrado');
     }
 
+    if (currentRecord.status === EncounterRecordStatus.SIGNED) {
+      throw new BadRequestException(
+        'El registro ya fue firmado y no puede modificarse',
+      );
+    }
+
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
     const recordedAt = input.recordedAt
       ? new Date(input.recordedAt)
       : currentRecord.recordedAt;
+    const responsibleUser = encounter.attendingUserId
+      ? await this.userRepository.findById(encounter.attendingUserId)
+      : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+      currentRecordId: currentRecord.id,
+    });
+    const consultationVersionContext = await this.resolveConsultationVersionContext({
       encounterId: encounter.id,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
@@ -792,6 +819,8 @@ export class EncountersService {
       recordedAt,
       currentRecord,
       historyVersionContext,
+      consultationVersionContext,
+      responsibleUser,
     });
 
     await this.prisma.encounterSectionRecord.update({
@@ -809,6 +838,71 @@ export class EncountersService {
           normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
             ? currentRecord.signedAt ?? new Date()
             : null,
+      },
+    });
+
+    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    return this.toEncounterDetailResponse(
+      updatedEncounter,
+      updatedEncounter.attendingUserId
+        ? await this.userRepository.findById(updatedEncounter.attendingUserId)
+        : null,
+    );
+  }
+
+  async signSectionRecordForTenant(
+    tenantId: string,
+    userId: string,
+    encounterNumber: string,
+    recordId: string,
+    password: string,
+  ): Promise<EncounterDetailResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const [currentRecord, currentUser] = await Promise.all([
+      this.prisma.encounterSectionRecord.findUnique({
+        where: { id: recordId },
+      }),
+      this.userRepository.findById(userId),
+    ]);
+
+    if (
+      !currentRecord ||
+      currentRecord.tenantId !== tenantId ||
+      currentRecord.encounterId !== encounter.id
+    ) {
+      throw new NotFoundException('Registro del episodio no encontrado');
+    }
+
+    if (!currentUser) {
+      throw new NotFoundException('Usuario firmante no encontrado');
+    }
+
+    if (currentRecord.status === EncounterRecordStatus.SIGNED) {
+      throw new BadRequestException('El registro ya fue firmado');
+    }
+
+    const passwordMatches = await this.passwordService.compare(
+      password,
+      currentUser.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      throw new BadRequestException('La contraseña capturada no es correcta');
+    }
+
+    const currentMetadata = this.normalizeRecordMetadata(currentRecord.metadataJson) ?? {};
+
+    await this.prisma.encounterSectionRecord.update({
+      where: { id: recordId },
+      data: {
+        status: EncounterRecordStatus.SIGNED,
+        signedAt: new Date(),
+        metadataJson: {
+          ...currentMetadata,
+          signedByUserId: currentUser.id,
+          signedByUserName: currentUser.fullName,
+          signedWithPasswordValidation: true,
+        } as Prisma.InputJsonValue,
       },
     });
 
@@ -1227,7 +1321,7 @@ export class EncountersService {
         !Array.isArray(record.formDataJson)
           ? (record.formDataJson as Record<string, unknown>)
           : {},
-      metadata: this.extractHistoryVersionMetadata(record.metadataJson),
+      metadata: this.extractRecordVersionMetadata(record.metadataJson),
     }));
     const attachments = encounter.attachments.map((attachment) => ({
       id: attachment.id,
@@ -1474,6 +1568,44 @@ export class EncountersService {
     };
   }
 
+  private async resolveConsultationVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }) {
+    if (!this.isConsultationCurrentRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: input.tabKey,
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractConsultationVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -1488,11 +1620,23 @@ export class EncountersService {
     historyVersionContext: Awaited<
       ReturnType<EncountersService['resolveHistoryVersionContext']>
     >;
+    consultationVersionContext: Awaited<
+      ReturnType<EncountersService['resolveConsultationVersionContext']>
+    >;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
     if (
       !this.isConsultationHistoryRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      ) &&
+      !this.isConsultationCurrentRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       )
@@ -1514,6 +1658,77 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isConsultationCurrentRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractConsultationVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.consultationVersionContext?.nextVersionNumber ??
+        1;
+      const consultationType =
+        versionNumber === 1 ? 'PRIMERA_VEZ' : 'SUBSECUENTE';
+      const latestHistoryRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Historia clínica',
+      );
+      const latestConsultationRecord =
+        input.consultationVersionContext?.latestRecord ?? null;
+      const referenceSnapshot = this.buildConsultationReferenceSnapshot(
+        input.encounter,
+        latestHistoryRecord?.formDataJson ?? null,
+      );
+      const longitudinalResultsSummary = this.resolveConsultationResultsSummary({
+        incomingFormData: input.input.formData,
+        currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+        latestConsultationFormData: latestConsultationRecord?.formDataJson ?? null,
+        latestHistoryFormData: latestHistoryRecord?.formDataJson ?? null,
+      });
+      const calculatedImc = this.calculateBodyMassIndex(
+        input.input.formData,
+        input.currentRecord?.formDataJson ?? null,
+      );
+
+      return {
+        tabKey: input.input.tabKey,
+        noteType: 'Consulta actual',
+        title: `Consulta versión ${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData: {
+          ...input.input.formData,
+          tipoConsultaActual: consultationType,
+          referenciaAlergiasCriticas: referenceSnapshot.allergies,
+          referenciaCronicos: referenceSnapshot.chronicConditions,
+          referenciaMedicacionCronica: referenceSnapshot.chronicMedication,
+          consultaResultadosPreviosResumen: longitudinalResultsSummary,
+          svImc: calculatedImc,
+          consultaLegalMedico:
+            input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+          consultaLegalCedula:
+            input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+          consultaLegalEspecialidad:
+            input.encounter.specialty?.name ?? 'Sin especialidad',
+        },
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          consultationType,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            input.consultationVersionContext?.latestRecord?.id ??
+            null,
+        },
+      };
+    }
+
     const currentRecordMetadata = this.extractHistoryVersionMetadata(
       input.currentRecord?.metadataJson,
     );
@@ -1532,6 +1747,10 @@ export class EncountersService {
         ...input.input.formData,
         tipoHistoriaClinica: historyType,
         fechaHistoria: input.recordedAt.toISOString().slice(0, 16),
+        legalMedico:
+          input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+        legalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+        legalEspecialidad: input.encounter.specialty?.name ?? 'Sin especialidad',
       },
       metadata: {
         ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -1552,6 +1771,111 @@ export class EncountersService {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Historia clínica';
   }
 
+  private isConsultationCurrentRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.OUTPATIENT && tabKey === 'Consulta actual';
+  }
+
+  private findLatestSectionRecord(
+    records: TenantEncounterRecord['sectionRecords'],
+    tabKey: string,
+  ) {
+    return records.find((record) => record.tabKey === tabKey) ?? null;
+  }
+
+  private buildConsultationReferenceSnapshot(
+    encounter: TenantEncounterRecord,
+    historyFormData: Prisma.JsonValue | null,
+  ) {
+    const normalizedHistory =
+      historyFormData &&
+      typeof historyFormData === 'object' &&
+      !Array.isArray(historyFormData)
+        ? (historyFormData as Record<string, unknown>)
+        : {};
+
+    return {
+      allergies:
+        this.readStringValue(normalizedHistory.appAlergias) ||
+        encounter.patient.allergiesNotes ||
+        encounter.allergies
+          .map((allergy) => allergy.substance)
+          .slice(0, 3)
+          .join(', ') ||
+        'Sin alergias críticas registradas',
+      chronicConditions:
+        this.readStringValue(normalizedHistory.appEnfermedadesCronicas) ||
+        'Sin enfermedades crónicas registradas',
+      chronicMedication: this.stringifyMedicationSummary(
+        normalizedHistory.medicacionCronicaActual,
+      ),
+    };
+  }
+
+  private resolveConsultationResultsSummary(input: {
+    incomingFormData: Record<string, unknown>;
+    currentRecordFormData: Prisma.JsonValue | null;
+    latestConsultationFormData: Prisma.JsonValue | null;
+    latestHistoryFormData: Prisma.JsonValue | null;
+  }) {
+    const directValue = this.readStringValue(
+      input.incomingFormData.consultaResultadosPreviosResumen,
+    );
+
+    if (directValue) {
+      return directValue;
+    }
+
+    const currentRecordValue = this.readStringValueFromJson(
+      input.currentRecordFormData,
+      'consultaResultadosPreviosResumen',
+    );
+
+    if (currentRecordValue) {
+      return currentRecordValue;
+    }
+
+    const latestConsultationValue = this.readStringValueFromJson(
+      input.latestConsultationFormData,
+      'consultaResultadosPreviosResumen',
+    );
+
+    if (latestConsultationValue) {
+      return latestConsultationValue;
+    }
+
+    return (
+      this.readStringValueFromJson(
+        input.latestHistoryFormData,
+        'resultadosPreviosResumen',
+      ) || ''
+    );
+  }
+
+  private calculateBodyMassIndex(
+    incomingFormData: Record<string, unknown>,
+    currentRecordFormData: Prisma.JsonValue | null,
+  ) {
+    const weightKg = this.readNumericValue(incomingFormData.svPeso)
+      ?? this.readNumericValueFromJson(currentRecordFormData, 'svPeso');
+    const heightCm = this.readNumericValue(incomingFormData.svTalla)
+      ?? this.readNumericValueFromJson(currentRecordFormData, 'svTalla');
+
+    if (!weightKg || !heightCm) {
+      return '';
+    }
+
+    const heightMeters = heightCm / 100;
+
+    if (heightMeters <= 0) {
+      return '';
+    }
+
+    return (weightKg / (heightMeters * heightMeters)).toFixed(1);
+  }
+
   private extractHistoryVersionMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {
     const normalizedMetadata = this.normalizeRecordMetadata(rawMetadata);
 
@@ -1569,6 +1893,109 @@ export class EncountersService {
           ? normalizedMetadata.inheritedFromRecordId
           : null,
     };
+  }
+
+  private extractConsultationVersionMetadata(
+    rawMetadata: Prisma.JsonValue | null | undefined,
+  ) {
+    const normalizedMetadata = this.normalizeRecordMetadata(rawMetadata);
+
+    return {
+      versionNumber:
+        typeof normalizedMetadata?.versionNumber === 'number'
+          ? normalizedMetadata.versionNumber
+          : null,
+      consultationType:
+        typeof normalizedMetadata?.consultationType === 'string'
+          ? normalizedMetadata.consultationType
+          : null,
+      inheritedFromRecordId:
+        typeof normalizedMetadata?.inheritedFromRecordId === 'string'
+          ? normalizedMetadata.inheritedFromRecordId
+          : null,
+    };
+  }
+
+  private extractRecordVersionMetadata(
+    rawMetadata: Prisma.JsonValue | null | undefined,
+  ) {
+    const historyMetadata = this.extractHistoryVersionMetadata(rawMetadata);
+    const consultationMetadata = this.extractConsultationVersionMetadata(rawMetadata);
+
+    return {
+      versionNumber:
+        historyMetadata.versionNumber ?? consultationMetadata.versionNumber ?? null,
+      historyType: historyMetadata.historyType,
+      consultationType: consultationMetadata.consultationType,
+      inheritedFromRecordId:
+        historyMetadata.inheritedFromRecordId ??
+        consultationMetadata.inheritedFromRecordId ??
+        null,
+    };
+  }
+
+  private readStringValue(value: unknown) {
+    return typeof value === 'string' ? value : '';
+  }
+
+  private readStringValueFromJson(
+    rawValue: Prisma.JsonValue | null,
+    key: string,
+  ) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      return '';
+    }
+
+    return this.readStringValue((rawValue as Record<string, unknown>)[key]);
+  }
+
+  private readNumericValue(value: unknown) {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsedValue = Number(value);
+      return Number.isFinite(parsedValue) ? parsedValue : null;
+    }
+
+    return null;
+  }
+
+  private readNumericValueFromJson(
+    rawValue: Prisma.JsonValue | null,
+    key: string,
+  ) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      return null;
+    }
+
+    return this.readNumericValue((rawValue as Record<string, unknown>)[key]);
+  }
+
+  private stringifyMedicationSummary(value: unknown) {
+    if (!Array.isArray(value)) {
+      return 'Sin medicación crónica registrada';
+    }
+
+    const medicationLines = value
+      .filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      )
+      .map((item) => {
+        const name = this.readStringValue(item.medicamento);
+        const route = this.readStringValue(item.via);
+        const frequency = this.readStringValue(item.frecuencia);
+        const indication = this.readStringValue(item.indicacion);
+
+        return [name, route, frequency, indication].filter(Boolean).join(' · ');
+      })
+      .filter(Boolean);
+
+    return medicationLines.length > 0
+      ? medicationLines.join('\n')
+      : 'Sin medicación crónica registrada';
   }
 
   private normalizeRecordMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {

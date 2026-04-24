@@ -34,6 +34,7 @@ import {
   deleteEncounterAttachment,
   fetchEncounterDetail,
   fetchEncounterMeta,
+  signEncounterSectionRecord,
   updateEncounterSectionRecord,
   updateEncounter,
   uploadEncounterAttachments,
@@ -50,8 +51,8 @@ import {
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
-  isConsultationHistoryTab,
   type EpisodeFieldDefinition,
+  isConsultationHistoryTab,
   type EpisodeTabDefinition,
 } from './episode-profile-schema';
 import {
@@ -131,6 +132,113 @@ function mergeHistoryReadOnlyFields(
     ...formData,
     ...buildHistoryLegalSnapshot(detail),
   };
+}
+
+function isConsultationCurrentTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'OUTPATIENT' && tabTitle === 'Consulta actual';
+}
+
+function getConsultationTypeLabel(
+  consultationType: string | null | undefined,
+) {
+  if (consultationType === 'PRIMERA_VEZ') {
+    return 'Primera vez';
+  }
+
+  if (consultationType === 'SUBSECUENTE') {
+    return 'Subsecuente';
+  }
+
+  return 'Sin clasificar';
+}
+
+function buildConsultationReferenceSnapshot(detail: EncounterDetailResponse) {
+  const historyRecord = getLatestHistoryRecord(
+    detail.sectionRecords.filter((record) => record.tabKey === 'Historia clínica'),
+  );
+  const historyFormData = (historyRecord?.formData ?? {}) as Record<string, unknown>;
+  const medicationList = Array.isArray(historyFormData.medicacionCronicaActual)
+    ? historyFormData.medicacionCronicaActual
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+        )
+        .map((item) =>
+          [
+            typeof item.medicamento === 'string' ? item.medicamento : '',
+            typeof item.via === 'string' ? item.via : '',
+            typeof item.frecuencia === 'string' ? item.frecuencia : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        )
+        .filter(Boolean)
+        .join('\n')
+    : '';
+
+  return {
+    referenciaAlergiasCriticas:
+      (typeof historyFormData.appAlergias === 'string' && historyFormData.appAlergias) ||
+      detail.patient.allergiesSummary.join(', ') ||
+      'Sin alergias críticas registradas',
+    referenciaCronicos:
+      (typeof historyFormData.appEnfermedadesCronicas === 'string' &&
+        historyFormData.appEnfermedadesCronicas) ||
+      'Sin enfermedades crónicas registradas',
+    referenciaMedicacionCronica:
+      medicationList || 'Sin medicación crónica registrada',
+    consultaResultadosPreviosResumen:
+      (typeof historyFormData.resultadosPreviosResumen === 'string' &&
+        historyFormData.resultadosPreviosResumen) ||
+      '',
+  };
+}
+
+function buildConsultationLegalSnapshot(detail: EncounterDetailResponse) {
+  return {
+    consultaLegalMedico:
+      detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    consultaLegalCedula:
+      detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    consultaLegalEspecialidad: detail.specialty?.name ?? 'Sin especialidad',
+  };
+}
+
+function mergeConsultationSystemFields(
+  formData: Record<string, RecordFieldValue>,
+  detail: EncounterDetailResponse,
+) {
+  return {
+    ...formData,
+    ...buildConsultationReferenceSnapshot(detail),
+    ...buildConsultationLegalSnapshot(detail),
+  };
+}
+
+function calculateImcValue(
+  weightValue: RecordFieldValue,
+  heightValue: RecordFieldValue,
+) {
+  const parsedWeight =
+    typeof weightValue === 'string' && weightValue.trim()
+      ? Number(weightValue)
+      : null;
+  const parsedHeight =
+    typeof heightValue === 'string' && heightValue.trim()
+      ? Number(heightValue)
+      : null;
+
+  if (!parsedWeight || !parsedHeight) {
+    return '';
+  }
+
+  const heightMeters = parsedHeight / 100;
+
+  if (heightMeters <= 0) {
+    return '';
+  }
+
+  return (parsedWeight / (heightMeters * heightMeters)).toFixed(1);
 }
 
 function buildFormState(detail: EncounterDetailResponse): FormState {
@@ -251,6 +359,35 @@ function buildRecordFormState(args: {
   };
 }
 
+function buildConsultationVersionPrefill(args: {
+  tabDefinition: EpisodeTabDefinition;
+  previousConsultationFormData?: Record<string, unknown>;
+  detail: EncounterDetailResponse;
+  nextConsultationType: 'PRIMERA_VEZ' | 'SUBSECUENTE';
+}) {
+  const nextFormData = normalizeRecordFormData(
+    args.tabDefinition,
+    args.previousConsultationFormData,
+  );
+
+  for (const section of args.tabDefinition.sections) {
+    for (const field of section.fields) {
+      const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
+
+      if (field.key === 'tipoConsultaActual') {
+        nextFormData[field.key] = args.nextConsultationType;
+        continue;
+      }
+
+      if (inheritanceMode !== 'carry_forward') {
+        nextFormData[field.key] = buildDefaultFieldValue(field) as RecordFieldValue;
+      }
+    }
+  }
+
+  return mergeConsultationSystemFields(nextFormData, args.detail);
+}
+
 function SectionCard({
   title,
   description,
@@ -287,6 +424,8 @@ export function EpisodeDetailPage() {
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isSigningRecord, setIsSigningRecord] = useState(false);
+  const [signaturePassword, setSignaturePassword] = useState('');
 
   const detailQuery = useQuery({
     queryKey: ['encounter-detail', episodeNumber],
@@ -447,6 +586,22 @@ export function EpisodeDetailPage() {
     },
   });
 
+  const signRecordMutation = useMutation({
+    mutationFn: (payload: { recordId: string; password: string }) =>
+      signEncounterSectionRecord(session!.accessToken, episodeNumber, payload.recordId, {
+        password: payload.password,
+      }),
+    onSuccess: async () => {
+      setFeedback('Registro firmado correctamente.');
+      setIsSigningRecord(false);
+      setSignaturePassword('');
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
   const uploadAttachmentsMutation = useMutation({
     mutationFn: (files: File[]) =>
       uploadEncounterAttachments(session!.accessToken, episodeNumber, files),
@@ -477,7 +632,36 @@ export function EpisodeDetailPage() {
     setActiveRecordId(null);
     setRecordForm(null);
     setPendingFiles([]);
+    setIsSigningRecord(false);
+    setSignaturePassword('');
   }, [activeTab, detail?.id]);
+
+  useEffect(() => {
+    if (!recordForm || !detail || !isConsultationCurrentTab(detail.encounterType, activeTab)) {
+      return;
+    }
+
+    const calculatedImc = calculateImcValue(
+      recordForm.formData.svPeso ?? '',
+      recordForm.formData.svTalla ?? '',
+    );
+
+    if (recordForm.formData.svImc === calculatedImc) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            formData: {
+              ...currentValue.formData,
+              svImc: calculatedImc,
+            },
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
 
   if (!detail || !form) {
     return (
@@ -527,13 +711,33 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isConsultationCurrentSection = isConsultationCurrentTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
+    : null;
+  const latestConsultationRecord = isConsultationCurrentSection
+    ? [...activeTabRecords].sort((left, right) => {
+        const leftVersion = left.metadata.versionNumber ?? 0;
+        const rightVersion = right.metadata.versionNumber ?? 0;
+
+        if (leftVersion !== rightVersion) {
+          return rightVersion - leftVersion;
+        }
+
+        return right.recordedAt.localeCompare(left.recordedAt);
+      })[0] ?? null
     : null;
   const nextHistoryVersionNumber =
     (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
   const nextHistoryType =
     nextHistoryVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+  const nextConsultationVersionNumber =
+    (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextConsultationType =
+    nextConsultationVersionNumber === 1 ? 'PRIMERA_VEZ' : 'SUBSECUENTE';
   const selectedRecord =
     activeRecordId === null
       ? null
@@ -567,6 +771,32 @@ export function EpisodeDetailPage() {
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
+        }),
+      );
+      return;
+    }
+
+    if (isConsultationCurrentSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Consulta actual',
+          title: `Consulta versión ${nextConsultationVersionNumber}`,
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildConsultationVersionPrefill({
+            tabDefinition: activeTabDefinition,
+            previousConsultationFormData: latestConsultationRecord?.formData,
+            detail,
+            nextConsultationType,
+          }),
         }),
       );
       return;
@@ -618,7 +848,12 @@ export function EpisodeDetailPage() {
               record.formData as Record<string, RecordFieldValue>,
               detail,
             )
-          : record.formData,
+          : isConsultationCurrentSection
+            ? mergeConsultationSystemFields(
+                record.formData as Record<string, RecordFieldValue>,
+                detail,
+              )
+            : record.formData,
       }),
     );
   };
@@ -674,7 +909,9 @@ export function EpisodeDetailPage() {
         : undefined,
       formData: isConsultationHistorySection
         ? mergeHistoryReadOnlyFields(recordForm.formData, detail)
-        : recordForm.formData,
+        : isConsultationCurrentSection
+          ? mergeConsultationSystemFields(recordForm.formData, detail)
+          : recordForm.formData,
     };
 
     if (selectedRecord) {
@@ -686,6 +923,30 @@ export function EpisodeDetailPage() {
     }
 
     createRecordMutation.mutate(payload);
+  };
+
+  const openSignModal = () => {
+    setFeedback(null);
+    setSignaturePassword('');
+    setIsSigningRecord(true);
+  };
+
+  const confirmSignature = () => {
+    if (!selectedRecord) {
+      setFeedback('Guarda el registro antes de firmarlo.');
+      return;
+    }
+
+    if (!signaturePassword.trim()) {
+      setFeedback('Captura tu contraseña para firmar el registro.');
+      return;
+    }
+
+    setFeedback(null);
+    signRecordMutation.mutate({
+      recordId: selectedRecord.id,
+      password: signaturePassword,
+    });
   };
 
   const historyVersionNumber =
@@ -702,6 +963,15 @@ export function EpisodeDetailPage() {
       : selectedRecord?.metadata.inheritedFromRecordId
         ? `Heredada de una versión previa`
         : null;
+  const consultationVersionNumber =
+    selectedRecord?.metadata.versionNumber ?? nextConsultationVersionNumber;
+  const currentConsultationType =
+    (selectedRecord?.metadata.consultationType as
+      | 'PRIMERA_VEZ'
+      | 'SUBSECUENTE'
+      | null) ?? nextConsultationType;
+  const consultationTypeLabel = getConsultationTypeLabel(currentConsultationType);
+  const isRecordLocked = recordForm?.status === 'SIGNED';
 
   const submitPendingFiles = () => {
     if (!pendingFiles.length) {
@@ -1244,7 +1514,8 @@ export function EpisodeDetailPage() {
                               className="gap-2"
                               disabled={
                                 createRecordMutation.isPending ||
-                                updateRecordMutation.isPending
+                                updateRecordMutation.isPending ||
+                                isRecordLocked
                               }
                               onClick={saveRecord}
                               type="button"
@@ -1279,11 +1550,29 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isConsultationCurrentSection ? (
+                            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {`Consulta versión ${consultationVersionNumber}`}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    La consulta actual registra el evento clínico del día y
+                                    mantiene su propio histórico por episodio.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">{consultationTypeLabel}</Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
                               <select
                                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                disabled={isRecordLocked}
                                 onChange={(event) =>
                                   updateRecordFormField('noteType', event.target.value)
                                 }
@@ -1306,6 +1595,7 @@ export function EpisodeDetailPage() {
                             <span className="font-medium text-slate-900">Estado</span>
                             <select
                               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                              disabled={isRecordLocked}
                               onChange={(event) =>
                                 updateRecordFormField('status', event.target.value)
                               }
@@ -1321,10 +1611,11 @@ export function EpisodeDetailPage() {
                             </select>
                           </label>
 
-                          {isConsultationHistorySection ? null : (
+                          {isConsultationHistorySection || isConsultationCurrentSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
+                                disabled={isRecordLocked}
                                 onChange={(event) =>
                                   updateRecordFormField('title', event.target.value)
                                 }
@@ -1338,6 +1629,7 @@ export function EpisodeDetailPage() {
                               Fecha clínica del registro
                             </span>
                             <Input
+                              disabled={isRecordLocked}
                               onChange={(event) =>
                                 updateRecordFormField('recordedAt', event.target.value)
                               }
@@ -1349,16 +1641,14 @@ export function EpisodeDetailPage() {
 
                         {activeTabDefinition.sections
                           .filter((section) => {
-                            if (!isConsultationHistorySection) {
-                              return true;
-                            }
+                            if (isConsultationHistorySection) {
+                              if (section.historyVisibility === 'initial_only') {
+                                return currentHistoryType === 'INICIAL';
+                              }
 
-                            if (section.historyVisibility === 'initial_only') {
-                              return currentHistoryType === 'INICIAL';
-                            }
-
-                            if (section.historyVisibility === 'subsequent_only') {
-                              return currentHistoryType === 'SUBSECUENTE';
+                              if (section.historyVisibility === 'subsequent_only') {
+                                return currentHistoryType === 'SUBSECUENTE';
+                              }
                             }
 
                             return true;
@@ -1380,10 +1670,14 @@ export function EpisodeDetailPage() {
                             </div>
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
-                                if (
-                                  isConsultationHistorySection &&
-                                  field.inheritanceMode === 'system'
-                                ) {
+                                if (field.inheritanceMode === 'system') {
+                                  if (
+                                    field.type !== 'readonly' &&
+                                    field.type !== 'action'
+                                  ) {
+                                    return null;
+                                  }
+
                                   if (field.type === 'readonly') {
                                     const readonlyValue =
                                       typeof recordForm.formData[field.key] === 'string'
@@ -1421,9 +1715,8 @@ export function EpisodeDetailPage() {
                                             </>
                                           ) : (
                                             <Button
-                                              onClick={() =>
-                                                updateRecordFormField('status', 'SIGNED')
-                                              }
+                                              disabled={!selectedRecord}
+                                              onClick={openSignModal}
                                               type="button"
                                               variant="outline"
                                             >
@@ -1450,6 +1743,7 @@ export function EpisodeDetailPage() {
                                         {field.label}
                                       </span>
                                       <Textarea
+                                        disabled={isRecordLocked}
                                         onChange={(event) =>
                                           updateRecordFormDataField(
                                             field.key,
@@ -1471,6 +1765,7 @@ export function EpisodeDetailPage() {
                                       </span>
                                       <select
                                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                        disabled={isRecordLocked}
                                         onChange={(event) =>
                                           updateRecordFormDataField(
                                             field.key,
@@ -1501,6 +1796,7 @@ export function EpisodeDetailPage() {
                                       <input
                                         checked={Boolean(fieldValue)}
                                         className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                        disabled={isRecordLocked}
                                         onChange={(event) =>
                                           updateRecordFormDataField(
                                             field.key,
@@ -1533,6 +1829,7 @@ export function EpisodeDetailPage() {
                                           {field.label}
                                         </span>
                                         <Button
+                                          disabled={isRecordLocked}
                                           onClick={() =>
                                             updateRecordFormDataField(field.key, [...items, ''])
                                           }
@@ -1551,6 +1848,7 @@ export function EpisodeDetailPage() {
                                               key={`${field.key}-${itemIndex}`}
                                             >
                                               <Input
+                                                disabled={isRecordLocked}
                                                 onChange={(event) => {
                                                   const nextItems = [...items];
                                                   nextItems[itemIndex] = event.target.value;
@@ -1559,6 +1857,7 @@ export function EpisodeDetailPage() {
                                                 value={item}
                                               />
                                               <Button
+                                                disabled={isRecordLocked}
                                                 onClick={() =>
                                                   updateRecordFormDataField(
                                                     field.key,
@@ -1606,6 +1905,7 @@ export function EpisodeDetailPage() {
                                           {field.label}
                                         </span>
                                         <Button
+                                          disabled={isRecordLocked}
                                           onClick={() =>
                                             updateRecordFormDataField(field.key, [
                                               ...items,
@@ -1636,6 +1936,7 @@ export function EpisodeDetailPage() {
                                                   {`${field.label} ${itemIndex + 1}`}
                                                 </p>
                                                 <Button
+                                                  disabled={isRecordLocked}
                                                   onClick={() =>
                                                     updateRecordFormDataField(
                                                       field.key,
@@ -1667,6 +1968,7 @@ export function EpisodeDetailPage() {
                                                         </span>
                                                         <select
                                                           className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                          disabled={isRecordLocked}
                                                           onChange={(event) => {
                                                             const nextItems = [...items];
                                                             nextItems[itemIndex] = {
@@ -1706,6 +2008,7 @@ export function EpisodeDetailPage() {
                                                         {itemField.label}
                                                       </span>
                                                       <Input
+                                                        disabled={isRecordLocked}
                                                         onChange={(event) => {
                                                           const nextItems = [...items];
                                                           nextItems[itemIndex] = {
@@ -1750,6 +2053,7 @@ export function EpisodeDetailPage() {
                                       {field.label}
                                     </span>
                                     <Input
+                                      disabled={isRecordLocked}
                                       onChange={(event) =>
                                         updateRecordFormDataField(
                                           field.key,
@@ -1985,6 +2289,64 @@ export function EpisodeDetailPage() {
             </SectionCard>
           </div>
         </div>
+
+        {isSigningRecord ? (
+          <div
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4"
+            role="dialog"
+          >
+            <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl">
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Confirmar firma clínica
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Esta acción valida clínicamente el documento y lo dejará bloqueado
+                  para edición. Ingresa tu contraseña para continuar.
+                </p>
+              </div>
+
+              <label className="mt-5 block space-y-2 text-sm">
+                <span className="font-medium text-slate-900">Contraseña</span>
+                <Input
+                  autoFocus
+                  onChange={(event) => setSignaturePassword(event.target.value)}
+                  type="password"
+                  value={signaturePassword}
+                />
+              </label>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <Button
+                  onClick={() => {
+                    setIsSigningRecord(false);
+                    setSignaturePassword('');
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="gap-2"
+                  disabled={signRecordMutation.isPending}
+                  onClick={confirmSignature}
+                  type="button"
+                >
+                  {signRecordMutation.isPending ? (
+                    <>
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      Validando...
+                    </>
+                  ) : (
+                    'Firmar documento'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </AppLayout>
   );

@@ -19,6 +19,7 @@ import { CreateEncounterDto } from '../create-encounter.dto';
 import { UpdateEncounterDto } from '../update-encounter.dto';
 import { EncountersQueryDto } from '../application/dto/encounters-query.dto';
 import { EncounterSectionRecordMutationDto } from '../application/dto/encounter-section-record.dto';
+import { SignEncounterRecordDto } from '../application/dto/sign-encounter-record.dto';
 import { EncountersService } from '../application/services/encounters.service';
 
 type UploadedAttachmentFile = {
@@ -114,6 +115,22 @@ export class EncountersController {
       encounterNumber,
       recordId,
       input,
+    );
+  }
+
+  @Post(':encounterNumber/records/:recordId/sign')
+  signSectionRecord(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Param('recordId') recordId: string,
+    @Body() input: SignEncounterRecordDto,
+  ) {
+    return this.encountersService.signSectionRecordForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      encounterNumber,
+      recordId,
+      input.password,
     );
   }
 
