@@ -76,6 +76,7 @@ export interface EncounterMetaResponse {
     id: string;
     code: string;
     name: string;
+    category: string;
   }>;
   clinicians: Array<{
     id: string;
@@ -509,12 +510,9 @@ export interface CreatePatientRequest {
 export interface CreateEncounterRequest {
   patientId: string;
   facilityId?: string;
-  serviceAreaId?: string;
   specialtyId?: string;
   attendingUserId?: string;
   encounterType: string;
-  status?: string;
-  admissionSource?: string;
   openedAt?: string;
   closedAt?: string;
   reasonForVisit?: string;

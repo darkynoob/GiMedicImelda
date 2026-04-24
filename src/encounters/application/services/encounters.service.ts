@@ -364,6 +364,12 @@ export class EncountersService {
             tenantId,
             isActive: true,
           },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            category: true,
+          },
           orderBy: { name: 'asc' },
         }),
         this.userRepository.findMany({
@@ -422,6 +428,7 @@ export class EncountersService {
         id: specialty.id,
         code: specialty.code,
         name: specialty.name,
+        category: specialty.category,
       })),
       clinicians: clinicians.map((clinician) => ({
         id: clinician.id,
@@ -465,13 +472,12 @@ export class EncountersService {
     const relatedCatalogs = await this.resolveEncounterRelations({
       tenantId: context.tenantId,
       facilityId: facility.id,
-      serviceAreaId: input.serviceAreaId,
       specialtyId: input.specialtyId,
       attendingUserId: input.attendingUserId,
     });
 
     const openedAt = input.openedAt ? new Date(input.openedAt) : new Date();
-    const status = input.status ?? EncounterStatus.OPEN;
+    const status = EncounterStatus.OPEN;
     const closedAt =
       input.closedAt !== undefined
         ? new Date(input.closedAt)
@@ -528,7 +534,7 @@ export class EncountersService {
           encounterNumber,
           encounterType: input.encounterType,
           status,
-          admissionSource: input.admissionSource,
+          admissionSource: null,
           openedAt,
           closedAt,
           attendingUserId: relatedCatalogs.attendingUserId,

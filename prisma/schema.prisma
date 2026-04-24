@@ -35,6 +35,15 @@ enum FacilityType {
   OTHER
 }
 
+/// Categoría funcional de especialidad médica.
+enum SpecialtyCategory {
+  BASIC
+  CLINICAL
+  SURGICAL
+  DIAGNOSTIC_SUPPORT
+  COMPLEMENTARY
+}
+
 /// Estado del expediente clínico.
 enum MedicalRecordStatus {
   ACTIVE
@@ -231,6 +240,9 @@ model Specialty {
   /// Nombre visible de la especialidad.
   /// Ejemplo: Oncología, Gastroenterología.
   name String
+
+  /// Categoría clínica/operativa de la especialidad.
+  category SpecialtyCategory @default(CLINICAL)
 
   /// Descripción opcional.
   description String?

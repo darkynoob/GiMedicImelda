@@ -29,6 +29,7 @@ export interface EncounterMetaResponse {
     id: string;
     code: string;
     name: string;
+    category: string;
   }>;
   clinicians: Array<{
     id: string;
