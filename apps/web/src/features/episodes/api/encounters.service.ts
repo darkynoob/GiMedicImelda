@@ -5,6 +5,7 @@ import type {
   EncounterDetailResponse,
   EncounterMetaResponse,
   EncountersListResponse,
+  SignEncounterSectionRecordRequest,
   UpdateEncounterRequest,
 } from '../../../shared/types/contracts';
 
@@ -96,6 +97,22 @@ export function updateEncounterSectionRecord(
     `/encounters/${encounterNumber}/records/${recordId}`,
     {
       method: 'PATCH',
+      token,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function signEncounterSectionRecord(
+  token: string,
+  encounterNumber: string,
+  recordId: string,
+  input: SignEncounterSectionRecordRequest,
+) {
+  return apiRequest<EncounterDetailResponse>(
+    `/encounters/${encounterNumber}/records/${recordId}/sign`,
+    {
+      method: 'POST',
       token,
       body: JSON.stringify(input),
     },

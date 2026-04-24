@@ -242,6 +242,7 @@ export interface EncounterDetailResponse {
     metadata: {
       versionNumber: number | null;
       historyType: string | null;
+      consultationType: string | null;
       inheritedFromRecordId: string | null;
     };
   }>;
@@ -273,6 +274,10 @@ export interface EncounterSectionRecordMutationRequest {
   status?: string;
   recordedAt?: string;
   formData: Record<string, unknown>;
+}
+
+export interface SignEncounterSectionRecordRequest {
+  password: string;
 }
 
 export interface PatientsListResponse {

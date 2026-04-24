@@ -195,6 +195,7 @@ export interface EncounterDetailResponse {
     metadata: {
       versionNumber: number | null;
       historyType: string | null;
+      consultationType: string | null;
       inheritedFromRecordId: string | null;
     };
   }>;
