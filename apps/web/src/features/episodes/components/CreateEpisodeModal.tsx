@@ -29,12 +29,9 @@ type CreateEpisodeModalProps = {
 type FormState = {
   patientId: string;
   facilityId: string;
-  serviceAreaId: string;
   specialtyId: string;
   attendingUserId: string;
   encounterType: string;
-  status: string;
-  admissionSource: string;
   openedAt: string;
   reasonForVisit: string;
   notes: string;
@@ -43,16 +40,25 @@ type FormState = {
 const initialState = (): FormState => ({
   patientId: '',
   facilityId: '',
-  serviceAreaId: '',
   specialtyId: '',
   attendingUserId: '',
   encounterType: 'OUTPATIENT',
-  status: 'OPEN',
-  admissionSource: 'CONSULTATION',
   openedAt: new Date().toISOString().slice(0, 16),
   reasonForVisit: '',
   notes: '',
 });
+
+const hiddenSpecialtyNamesForEpisodeCreation = new Set([
+  'Medicina general',
+  'Medicina familiar',
+  'Medicina preventiva',
+  'Salud pública',
+  'Odontología / Estomatología',
+  'Psicología clínica',
+  'Terapia física',
+  'Terapia respiratoria',
+  'Trabajo social',
+]);
 
 export function CreateEpisodeModal({
   isOpen,
@@ -101,25 +107,31 @@ export function CreateEpisodeModal({
     (patient) => patient.id === form.patientId,
   );
 
-  const availableServiceAreas = useMemo(
+  const availableSpecialties = useMemo(
     () =>
-      (meta?.serviceAreas ?? []).filter(
-        (serviceArea) => serviceArea.facilityId === form.facilityId,
-      ),
-    [form.facilityId, meta],
+      (meta?.specialties ?? [])
+        .filter((specialty) => {
+          if (hiddenSpecialtyNamesForEpisodeCreation.has(specialty.name)) {
+            return false;
+          }
+
+          return specialty.category !== 'COMPLEMENTARY' && specialty.category !== 'BASIC';
+        })
+        .sort((left, right) => left.name.localeCompare(right.name, 'es')),
+    [meta],
   );
 
   useEffect(() => {
     if (
-      form.serviceAreaId &&
-      !availableServiceAreas.some((serviceArea) => serviceArea.id === form.serviceAreaId)
+      form.specialtyId &&
+      !availableSpecialties.some((specialty) => specialty.id === form.specialtyId)
     ) {
       setForm((currentValue) => ({
         ...currentValue,
-        serviceAreaId: '',
+        specialtyId: '',
       }));
     }
-  }, [availableServiceAreas, form.serviceAreaId]);
+  }, [availableSpecialties, form.specialtyId]);
 
   const createMutation = useMutation({
     mutationFn: (payload: CreateEncounterRequest) =>
@@ -149,12 +161,9 @@ export function CreateEpisodeModal({
     createMutation.mutate({
       patientId: form.patientId,
       facilityId: form.facilityId,
-      serviceAreaId: form.serviceAreaId || undefined,
       specialtyId: form.specialtyId || undefined,
       attendingUserId: form.attendingUserId || undefined,
       encounterType: form.encounterType,
-      status: form.status || undefined,
-      admissionSource: form.admissionSource || undefined,
       openedAt: form.openedAt ? new Date(form.openedAt).toISOString() : undefined,
       reasonForVisit: form.reasonForVisit.trim() || undefined,
       notes: form.notes.trim() || undefined,
@@ -359,27 +368,6 @@ export function CreateEpisodeModal({
                   </label>
 
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Area de servicio</span>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      onChange={(event) =>
-                        setForm((currentValue) => ({
-                          ...currentValue,
-                          serviceAreaId: event.target.value,
-                        }))
-                      }
-                      value={form.serviceAreaId}
-                    >
-                      <option value="">Sin area especifica</option>
-                      {availableServiceAreas.map((serviceArea) => (
-                        <option key={serviceArea.id} value={serviceArea.id}>
-                          {serviceArea.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
                     <span className="font-medium text-slate-900">Especialidad</span>
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -392,7 +380,7 @@ export function CreateEpisodeModal({
                       value={form.specialtyId}
                     >
                       <option value="">Sin especialidad especifica</option>
-                      {(meta?.specialties ?? []).map((specialty) => (
+                      {availableSpecialties.map((specialty) => (
                         <option key={specialty.id} value={specialty.id}>
                           {specialty.name}
                         </option>
@@ -424,43 +412,8 @@ export function CreateEpisodeModal({
                   </label>
 
                   <label className="space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Origen</span>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      onChange={(event) =>
-                        setForm((currentValue) => ({
-                          ...currentValue,
-                          admissionSource: event.target.value,
-                        }))
-                      }
-                      value={form.admissionSource}
-                    >
-                      {(meta?.admissionSources ?? []).map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
                     <span className="font-medium text-slate-900">Estado inicial</span>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      onChange={(event) =>
-                        setForm((currentValue) => ({
-                          ...currentValue,
-                          status: event.target.value,
-                        }))
-                      }
-                      value={form.status}
-                    >
-                      {(meta?.encounterStatuses ?? []).map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                    <Input disabled readOnly value="Abierto" />
                   </label>
                 </div>
 

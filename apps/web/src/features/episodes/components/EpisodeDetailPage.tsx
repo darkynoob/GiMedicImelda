@@ -46,8 +46,12 @@ import {
   timelineKindConfig,
 } from './episode-helpers';
 import {
+  buildDefaultFieldValue,
+  buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  isConsultationHistoryTab,
+  type EpisodeFieldDefinition,
   type EpisodeTabDefinition,
 } from './episode-profile-schema';
 import {
@@ -71,14 +75,63 @@ type FormState = {
 };
 
 type StructuredSectionsState = Record<string, Record<string, string>>;
+type RecordFieldValue =
+  | string
+  | boolean
+  | string[]
+  | Array<Record<string, unknown>>
+  | null;
 
 type RecordFormState = {
   noteType: string;
   title: string;
   status: string;
   recordedAt: string;
-  formData: Record<string, string>;
+  formData: Record<string, RecordFieldValue>;
 };
+
+function getHistoryTypeLabel(historyType: string | null | undefined) {
+  if (historyType === 'INICIAL') {
+    return 'Inicial';
+  }
+
+  if (historyType === 'SUBSECUENTE') {
+    return 'Subsecuente';
+  }
+
+  return 'Sin clasificar';
+}
+
+function getLatestHistoryRecord(records: EncounterDetailResponse['sectionRecords']) {
+  return [...records].sort((left, right) => {
+    const leftVersion = left.metadata.versionNumber ?? 0;
+    const rightVersion = right.metadata.versionNumber ?? 0;
+
+    if (leftVersion !== rightVersion) {
+      return rightVersion - leftVersion;
+    }
+
+    return right.recordedAt.localeCompare(left.recordedAt);
+  })[0] ?? null;
+}
+
+function buildHistoryLegalSnapshot(detail: EncounterDetailResponse) {
+  return {
+    legalMedico: detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    legalCedula: detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    legalEspecialidad: detail.specialty?.name ?? 'Sin especialidad',
+  };
+}
+
+function mergeHistoryReadOnlyFields(
+  formData: Record<string, RecordFieldValue>,
+  detail: EncounterDetailResponse,
+) {
+  return {
+    ...formData,
+    ...buildHistoryLegalSnapshot(detail),
+  };
+}
 
 function buildFormState(detail: EncounterDetailResponse): FormState {
   return {
@@ -137,7 +190,7 @@ function normalizeRecordFormData(
   tabDefinition: EpisodeTabDefinition | undefined,
   rawFormData?: Record<string, unknown>,
 ) {
-  const normalizedFormData: Record<string, string> = {};
+  const normalizedFormData: Record<string, RecordFieldValue> = {};
 
   if (!tabDefinition) {
     return normalizedFormData;
@@ -145,10 +198,36 @@ function normalizeRecordFormData(
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
+      const rawFieldValue = rawFormData?.[field.key];
+
+      if (field.type === 'checkbox') {
+        normalizedFormData[field.key] = Boolean(rawFieldValue);
+        continue;
+      }
+
+      if (field.type === 'string-array') {
+        normalizedFormData[field.key] = Array.isArray(rawFieldValue)
+          ? rawFieldValue.filter((value): value is string => typeof value === 'string')
+          : [];
+        continue;
+      }
+
+      if (field.type === 'object-array') {
+        normalizedFormData[field.key] = Array.isArray(rawFieldValue)
+          ? rawFieldValue
+              .filter(
+                (value): value is Record<string, unknown> =>
+                  Boolean(value) && typeof value === 'object' && !Array.isArray(value),
+              )
+              .map((item) => ({ ...item }))
+          : [];
+        continue;
+      }
+
       normalizedFormData[field.key] =
-        typeof rawFormData?.[field.key] === 'string'
-          ? (rawFormData[field.key] as string)
-          : '';
+        typeof rawFieldValue === 'string'
+          ? rawFieldValue
+          : (buildDefaultFieldValue(field) as RecordFieldValue);
     }
   }
 
@@ -444,6 +523,17 @@ export function EpisodeDetailPage() {
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeTab,
   );
+  const isConsultationHistorySection = isConsultationHistoryTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const latestHistoryRecord = isConsultationHistorySection
+    ? getLatestHistoryRecord(activeTabRecords)
+    : null;
+  const nextHistoryVersionNumber =
+    (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextHistoryType =
+    nextHistoryVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
   const selectedRecord =
     activeRecordId === null
       ? null
@@ -451,6 +541,37 @@ export function EpisodeDetailPage() {
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
 
   const startCreatingRecord = (noteType?: string) => {
+    const nextRecordedAt = new Date().toISOString().slice(0, 16);
+
+    if (isConsultationHistorySection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Historia clínica',
+          title: `Historia clínica versión ${nextHistoryVersionNumber}`,
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: mergeHistoryReadOnlyFields(
+            buildHistoryVersionPrefill(
+              activeTabDefinition,
+              latestHistoryRecord?.formData,
+              nextHistoryType,
+              nextRecordedAt,
+            ) as Record<string, RecordFieldValue>,
+            detail,
+          ),
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -466,7 +587,7 @@ export function EpisodeDetailPage() {
         noteType: nextNoteType,
         title: buildDefaultRecordTitle(nextNoteType),
         status: 'DRAFT',
-        recordedAt: new Date().toISOString().slice(0, 16),
+        recordedAt: nextRecordedAt,
         rawFormData:
           structuredSections[activeTab] ??
           normalizeStructuredSections(detail)[activeTab] ??
@@ -492,7 +613,12 @@ export function EpisodeDetailPage() {
         title: record.title,
         status: record.status,
         recordedAt: record.recordedAt.slice(0, 16),
-        rawFormData: record.formData,
+        rawFormData: isConsultationHistorySection
+          ? mergeHistoryReadOnlyFields(
+              record.formData as Record<string, RecordFieldValue>,
+              detail,
+            )
+          : record.formData,
       }),
     );
   };
@@ -517,7 +643,7 @@ export function EpisodeDetailPage() {
     );
   };
 
-  const updateRecordFormDataField = (fieldKey: string, value: string) => {
+  const updateRecordFormDataField = (fieldKey: string, value: RecordFieldValue) => {
     setRecordForm((currentValue) =>
       currentValue
         ? {
@@ -546,7 +672,9 @@ export function EpisodeDetailPage() {
       recordedAt: recordForm.recordedAt
         ? new Date(recordForm.recordedAt).toISOString()
         : undefined,
-      formData: recordForm.formData,
+      formData: isConsultationHistorySection
+        ? mergeHistoryReadOnlyFields(recordForm.formData, detail)
+        : recordForm.formData,
     };
 
     if (selectedRecord) {
@@ -559,6 +687,21 @@ export function EpisodeDetailPage() {
 
     createRecordMutation.mutate(payload);
   };
+
+  const historyVersionNumber =
+    selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
+  const currentHistoryType =
+    (selectedRecord?.metadata.historyType as 'INICIAL' | 'SUBSECUENTE' | null) ??
+    nextHistoryType;
+  const historyTypeLabel = getHistoryTypeLabel(
+    currentHistoryType,
+  );
+  const inheritedFromLabel =
+    isConsultationHistorySection && !selectedRecord && latestHistoryRecord
+      ? `Precargada desde ${latestHistoryRecord.title}`
+      : selectedRecord?.metadata.inheritedFromRecordId
+        ? `Heredada de una versión previa`
+        : null;
 
   const submitPendingFiles = () => {
     if (!pendingFiles.length) {
@@ -1116,26 +1259,48 @@ export function EpisodeDetailPage() {
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-2">
-                          <label className="space-y-2 text-sm">
-                            <span className="font-medium text-slate-900">Tipo de registro</span>
-                            <select
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                              onChange={(event) =>
-                                updateRecordFormField('noteType', event.target.value)
-                              }
-                              value={recordForm.noteType}
-                            >
-                              {(
-                                activeTabPanelConfig?.noteTypes?.length
-                                  ? activeTabPanelConfig.noteTypes
-                                  : [recordForm.noteType]
-                              ).map((noteType) => (
-                                <option key={noteType} value={noteType}>
-                                  {noteType}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                          {isConsultationHistorySection ? (
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {`Historia clínica versión ${historyVersionNumber}`}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    El título y el tipo se generan automáticamente para
+                                    conservar el histórico clínico del episodio.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">{historyTypeLabel}</Badge>
+                                  {inheritedFromLabel ? (
+                                    <Badge variant="success">{inheritedFromLabel}</Badge>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <label className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">Tipo de registro</span>
+                              <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                onChange={(event) =>
+                                  updateRecordFormField('noteType', event.target.value)
+                                }
+                                value={recordForm.noteType}
+                              >
+                                {(
+                                  activeTabPanelConfig?.noteTypes?.length
+                                    ? activeTabPanelConfig.noteTypes
+                                    : [recordForm.noteType]
+                                ).map((noteType) => (
+                                  <option key={noteType} value={noteType}>
+                                    {noteType}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
 
                           <label className="space-y-2 text-sm">
                             <span className="font-medium text-slate-900">Estado</span>
@@ -1156,15 +1321,17 @@ export function EpisodeDetailPage() {
                             </select>
                           </label>
 
-                          <label className="space-y-2 text-sm md:col-span-2">
-                            <span className="font-medium text-slate-900">Título</span>
-                            <Input
-                              onChange={(event) =>
-                                updateRecordFormField('title', event.target.value)
-                              }
-                              value={recordForm.title}
-                            />
-                          </label>
+                          {isConsultationHistorySection ? null : (
+                            <label className="space-y-2 text-sm md:col-span-2">
+                              <span className="font-medium text-slate-900">Título</span>
+                              <Input
+                                onChange={(event) =>
+                                  updateRecordFormField('title', event.target.value)
+                                }
+                                value={recordForm.title}
+                              />
+                            </label>
+                          )}
 
                           <label className="space-y-2 text-sm md:col-span-2">
                             <span className="font-medium text-slate-900">
@@ -1180,7 +1347,23 @@ export function EpisodeDetailPage() {
                           </label>
                         </div>
 
-                        {activeTabDefinition.sections.map((section) => (
+                        {activeTabDefinition.sections
+                          .filter((section) => {
+                            if (!isConsultationHistorySection) {
+                              return true;
+                            }
+
+                            if (section.historyVisibility === 'initial_only') {
+                              return currentHistoryType === 'INICIAL';
+                            }
+
+                            if (section.historyVisibility === 'subsequent_only') {
+                              return currentHistoryType === 'SUBSECUENTE';
+                            }
+
+                            return true;
+                          })
+                          .map((section) => (
                           <div
                             className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                             key={section.key}
@@ -1197,7 +1380,65 @@ export function EpisodeDetailPage() {
                             </div>
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
-                                const fieldValue = recordForm.formData[field.key] ?? '';
+                                if (
+                                  isConsultationHistorySection &&
+                                  field.inheritanceMode === 'system'
+                                ) {
+                                  if (field.type === 'readonly') {
+                                    const readonlyValue =
+                                      typeof recordForm.formData[field.key] === 'string'
+                                        ? (recordForm.formData[field.key] as string)
+                                        : '';
+
+                                    return (
+                                      <label className="space-y-2 text-sm" key={field.key}>
+                                        <span className="font-medium text-slate-900">
+                                          {field.label}
+                                        </span>
+                                        <Input disabled value={readonlyValue} />
+                                      </label>
+                                    );
+                                  }
+
+                                  if (field.type === 'action') {
+                                    return (
+                                      <div
+                                        className="space-y-2 text-sm md:col-span-2"
+                                        key={field.key}
+                                      >
+                                        <span className="font-medium text-slate-900">
+                                          {field.label}
+                                        </span>
+                                        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                          {recordForm.status === 'SIGNED' ? (
+                                            <>
+                                              <Badge variant="signed">Documento firmado</Badge>
+                                              {selectedRecord?.signedAt ? (
+                                                <span className="text-xs text-muted-foreground">
+                                                  {formatDateTime(selectedRecord.signedAt)}
+                                                </span>
+                                              ) : null}
+                                            </>
+                                          ) : (
+                                            <Button
+                                              onClick={() =>
+                                                updateRecordFormField('status', 'SIGNED')
+                                              }
+                                              type="button"
+                                              variant="outline"
+                                            >
+                                              {field.actionLabel ?? 'Firmar'}
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
+                                  return null;
+                                }
+
+                                const fieldValue = recordForm.formData[field.key];
 
                                 if (field.type === 'textarea') {
                                   return (
@@ -1216,7 +1457,7 @@ export function EpisodeDetailPage() {
                                           )
                                         }
                                         placeholder={field.placeholder}
-                                        value={fieldValue}
+                                        value={typeof fieldValue === 'string' ? fieldValue : ''}
                                       />
                                     </label>
                                   );
@@ -1236,7 +1477,7 @@ export function EpisodeDetailPage() {
                                             event.target.value,
                                           )
                                         }
-                                        value={fieldValue}
+                                        value={typeof fieldValue === 'string' ? fieldValue : ''}
                                       >
                                         {(field.options ?? []).map((option) => (
                                           <option
@@ -1248,6 +1489,258 @@ export function EpisodeDetailPage() {
                                         ))}
                                       </select>
                                     </label>
+                                  );
+                                }
+
+                                if (field.type === 'checkbox') {
+                                  return (
+                                    <label
+                                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+                                      key={field.key}
+                                    >
+                                      <input
+                                        checked={Boolean(fieldValue)}
+                                        className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                                        onChange={(event) =>
+                                          updateRecordFormDataField(
+                                            field.key,
+                                            event.target.checked,
+                                          )
+                                        }
+                                        type="checkbox"
+                                      />
+                                      <span className="font-medium text-slate-900">
+                                        {field.label}
+                                      </span>
+                                    </label>
+                                  );
+                                }
+
+                                if (field.type === 'string-array') {
+                                  const items = Array.isArray(fieldValue)
+                                    ? fieldValue.filter(
+                                        (value): value is string => typeof value === 'string',
+                                      )
+                                    : [];
+
+                                  return (
+                                    <div
+                                      className="space-y-3 text-sm md:col-span-2"
+                                      key={field.key}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium text-slate-900">
+                                          {field.label}
+                                        </span>
+                                        <Button
+                                          onClick={() =>
+                                            updateRecordFormDataField(field.key, [...items, ''])
+                                          }
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          {field.itemAddLabel ?? 'Agregar'}
+                                        </Button>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {items.length > 0 ? (
+                                          items.map((item, itemIndex) => (
+                                            <div
+                                              className="flex gap-2"
+                                              key={`${field.key}-${itemIndex}`}
+                                            >
+                                              <Input
+                                                onChange={(event) => {
+                                                  const nextItems = [...items];
+                                                  nextItems[itemIndex] = event.target.value;
+                                                  updateRecordFormDataField(field.key, nextItems);
+                                                }}
+                                                value={item}
+                                              />
+                                              <Button
+                                                onClick={() =>
+                                                  updateRecordFormDataField(
+                                                    field.key,
+                                                    items.filter(
+                                                      (_, currentIndex) =>
+                                                        currentIndex !== itemIndex,
+                                                    ),
+                                                  )
+                                                }
+                                                size="icon"
+                                                type="button"
+                                                variant="outline"
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </Button>
+                                            </div>
+                                          ))
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">
+                                            Aún no hay elementos agregados.
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                if (field.type === 'object-array') {
+                                  const items = Array.isArray(fieldValue)
+                                    ? fieldValue.filter(
+                                        (value): value is Record<string, unknown> =>
+                                          Boolean(value) &&
+                                          typeof value === 'object' &&
+                                          !Array.isArray(value),
+                                      )
+                                    : [];
+
+                                  return (
+                                    <div
+                                      className="space-y-3 text-sm md:col-span-2"
+                                      key={field.key}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium text-slate-900">
+                                          {field.label}
+                                        </span>
+                                        <Button
+                                          onClick={() =>
+                                            updateRecordFormDataField(field.key, [
+                                              ...items,
+                                              Object.fromEntries(
+                                                (field.itemFields ?? []).map((itemField) => [
+                                                  itemField.key,
+                                                  buildDefaultFieldValue(itemField),
+                                                ]),
+                                              ),
+                                            ])
+                                          }
+                                          size="sm"
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          {field.itemAddLabel ?? 'Agregar'}
+                                        </Button>
+                                      </div>
+                                      <div className="space-y-3">
+                                        {items.length > 0 ? (
+                                          items.map((item, itemIndex) => (
+                                            <div
+                                              className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                                              key={`${field.key}-${itemIndex}`}
+                                            >
+                                              <div className="flex items-center justify-between">
+                                                <p className="text-sm font-semibold text-slate-900">
+                                                  {`${field.label} ${itemIndex + 1}`}
+                                                </p>
+                                                <Button
+                                                  onClick={() =>
+                                                    updateRecordFormDataField(
+                                                      field.key,
+                                                      items.filter(
+                                                        (_, currentIndex) =>
+                                                          currentIndex !== itemIndex,
+                                                      ),
+                                                    )
+                                                  }
+                                                  size="sm"
+                                                  type="button"
+                                                  variant="outline"
+                                                >
+                                                  Eliminar
+                                                </Button>
+                                              </div>
+                                              <div className="grid gap-3 md:grid-cols-2">
+                                                {(field.itemFields ?? []).map((itemField) => {
+                                                  const itemFieldValue = item[itemField.key];
+
+                                                  if (itemField.type === 'select') {
+                                                    return (
+                                                      <label
+                                                        className="space-y-2 text-sm"
+                                                        key={`${field.key}-${itemIndex}-${itemField.key}`}
+                                                      >
+                                                        <span className="font-medium text-slate-900">
+                                                          {itemField.label}
+                                                        </span>
+                                                        <select
+                                                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                          onChange={(event) => {
+                                                            const nextItems = [...items];
+                                                            nextItems[itemIndex] = {
+                                                              ...nextItems[itemIndex],
+                                                              [itemField.key]: event.target.value,
+                                                            };
+                                                            updateRecordFormDataField(
+                                                              field.key,
+                                                              nextItems,
+                                                            );
+                                                          }}
+                                                          value={
+                                                            typeof itemFieldValue === 'string'
+                                                              ? itemFieldValue
+                                                              : ''
+                                                          }
+                                                        >
+                                                          {(itemField.options ?? []).map((option) => (
+                                                            <option
+                                                              key={option.value || 'empty'}
+                                                              value={option.value}
+                                                            >
+                                                              {option.label}
+                                                            </option>
+                                                          ))}
+                                                        </select>
+                                                      </label>
+                                                    );
+                                                  }
+
+                                                  return (
+                                                    <label
+                                                      className="space-y-2 text-sm"
+                                                      key={`${field.key}-${itemIndex}-${itemField.key}`}
+                                                    >
+                                                      <span className="font-medium text-slate-900">
+                                                        {itemField.label}
+                                                      </span>
+                                                      <Input
+                                                        onChange={(event) => {
+                                                          const nextItems = [...items];
+                                                          nextItems[itemIndex] = {
+                                                            ...nextItems[itemIndex],
+                                                            [itemField.key]: event.target.value,
+                                                          };
+                                                          updateRecordFormDataField(
+                                                            field.key,
+                                                            nextItems,
+                                                          );
+                                                        }}
+                                                        type={
+                                                          itemField.type === 'date'
+                                                            ? 'date'
+                                                            : itemField.type
+                                                        }
+                                                        value={
+                                                          typeof itemFieldValue === 'string'
+                                                            ? itemFieldValue
+                                                            : ''
+                                                        }
+                                                      />
+                                                    </label>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          ))
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">
+                                            Aún no hay elementos agregados.
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
                                   );
                                 }
 
@@ -1264,8 +1757,8 @@ export function EpisodeDetailPage() {
                                         )
                                       }
                                       placeholder={field.placeholder}
-                                      type={field.type}
-                                      value={fieldValue}
+                                      type={field.type === 'date' ? 'date' : field.type}
+                                      value={typeof fieldValue === 'string' ? fieldValue : ''}
                                     />
                                   </label>
                                 );

@@ -364,6 +364,12 @@ export class EncountersService {
             tenantId,
             isActive: true,
           },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            category: true,
+          },
           orderBy: { name: 'asc' },
         }),
         this.userRepository.findMany({
@@ -422,6 +428,7 @@ export class EncountersService {
         id: specialty.id,
         code: specialty.code,
         name: specialty.name,
+        category: specialty.category,
       })),
       clinicians: clinicians.map((clinician) => ({
         id: clinician.id,
@@ -465,13 +472,12 @@ export class EncountersService {
     const relatedCatalogs = await this.resolveEncounterRelations({
       tenantId: context.tenantId,
       facilityId: facility.id,
-      serviceAreaId: input.serviceAreaId,
       specialtyId: input.specialtyId,
       attendingUserId: input.attendingUserId,
     });
 
     const openedAt = input.openedAt ? new Date(input.openedAt) : new Date();
-    const status = input.status ?? EncounterStatus.OPEN;
+    const status = EncounterStatus.OPEN;
     const closedAt =
       input.closedAt !== undefined
         ? new Date(input.closedAt)
@@ -528,7 +534,7 @@ export class EncountersService {
           encounterNumber,
           encounterType: input.encounterType,
           status,
-          admissionSource: input.admissionSource,
+          admissionSource: null,
           openedAt,
           closedAt,
           attendingUserId: relatedCatalogs.attendingUserId,
@@ -706,6 +712,19 @@ export class EncountersService {
   ): Promise<EncounterDetailResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
+    const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
+    const historyVersionContext = await this.resolveHistoryVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+    });
+    const normalizedRecordPayload = this.normalizeSectionRecordPayload({
+      encounter,
+      input,
+      recordedAt,
+      currentRecord: null,
+      historyVersionContext,
+    });
 
     await this.prisma.encounterSectionRecord.create({
       data: {
@@ -713,18 +732,16 @@ export class EncountersService {
         encounterId: encounter.id,
         patientId: encounter.patientId,
         encounterType: encounter.encounterType,
-        tabKey: input.tabKey,
-        noteType: input.noteType,
-        title:
-          input.title ??
-          this.buildDefaultRecordTitle(input.noteType, encounter.encounterNumber),
-        status: input.status ?? EncounterRecordStatus.DRAFT,
-        recordedAt: input.recordedAt ? new Date(input.recordedAt) : new Date(),
+        tabKey: normalizedRecordPayload.tabKey,
+        noteType: normalizedRecordPayload.noteType,
+        title: normalizedRecordPayload.title,
+        status: normalizedRecordPayload.status,
+        recordedAt,
         authoredByUserId: userId,
-        formDataJson: input.formData as Prisma.InputJsonValue,
+        formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
+        metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
         signedAt:
-          (input.status ?? EncounterRecordStatus.DRAFT) ===
-          EncounterRecordStatus.SIGNED
+          normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
             ? new Date()
             : null,
       },
@@ -760,24 +777,36 @@ export class EncountersService {
     }
 
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
+    const recordedAt = input.recordedAt
+      ? new Date(input.recordedAt)
+      : currentRecord.recordedAt;
+    const historyVersionContext = await this.resolveHistoryVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+      currentRecordId: currentRecord.id,
+    });
+    const normalizedRecordPayload = this.normalizeSectionRecordPayload({
+      encounter,
+      input,
+      recordedAt,
+      currentRecord,
+      historyVersionContext,
+    });
 
     await this.prisma.encounterSectionRecord.update({
       where: { id: recordId },
       data: {
-        tabKey: input.tabKey,
-        noteType: input.noteType,
-        title:
-          input.title ??
-          currentRecord.title ??
-          this.buildDefaultRecordTitle(input.noteType, encounter.encounterNumber),
-        status: input.status ?? currentRecord.status,
-        recordedAt: input.recordedAt
-          ? new Date(input.recordedAt)
-          : currentRecord.recordedAt,
+        tabKey: normalizedRecordPayload.tabKey,
+        noteType: normalizedRecordPayload.noteType,
+        title: normalizedRecordPayload.title,
+        status: normalizedRecordPayload.status,
+        recordedAt,
         authoredByUserId: userId,
-        formDataJson: input.formData as Prisma.InputJsonValue,
+        formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
+        metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
         signedAt:
-          (input.status ?? currentRecord.status) === EncounterRecordStatus.SIGNED
+          normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
             ? currentRecord.signedAt ?? new Date()
             : null,
       },
@@ -1198,6 +1227,7 @@ export class EncountersService {
         !Array.isArray(record.formDataJson)
           ? (record.formDataJson as Record<string, unknown>)
           : {},
+      metadata: this.extractHistoryVersionMetadata(record.metadataJson),
     }));
     const attachments = encounter.attachments.map((attachment) => ({
       id: attachment.id,
@@ -1404,6 +1434,149 @@ export class EncountersService {
       ...defaultSections,
       ...(rawSections as Record<string, unknown>),
     };
+  }
+
+  private async resolveHistoryVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }) {
+    if (!this.isConsultationHistoryRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: input.tabKey,
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractHistoryVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+    const nextVersionNumber = latestVersionNumber + 1;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber,
+    };
+  }
+
+  private normalizeSectionRecordPayload(input: {
+    encounter: TenantEncounterRecord;
+    currentRecord:
+      | {
+          title: string;
+          noteType: string;
+          status: EncounterRecordStatus;
+          formDataJson: Prisma.JsonValue;
+          metadataJson: Prisma.JsonValue | null;
+        }
+      | null;
+    historyVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHistoryVersionContext']>
+    >;
+    input: EncounterSectionRecordMutationDto;
+    recordedAt: Date;
+  }) {
+    if (
+      !this.isConsultationHistoryRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      return {
+        tabKey: input.input.tabKey,
+        noteType: input.input.noteType,
+        title:
+          input.input.title ??
+          input.currentRecord?.title ??
+          this.buildDefaultRecordTitle(
+            input.input.noteType,
+            input.encounter.encounterNumber,
+          ),
+        status: input.input.status ?? input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        formData: input.input.formData,
+        metadata:
+          this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      };
+    }
+
+    const currentRecordMetadata = this.extractHistoryVersionMetadata(
+      input.currentRecord?.metadataJson,
+    );
+    const versionNumber =
+      currentRecordMetadata.versionNumber ??
+      input.historyVersionContext?.nextVersionNumber ??
+      1;
+    const historyType = versionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+
+    return {
+      tabKey: input.input.tabKey,
+      noteType: 'Historia clínica',
+      title: `Historia clínica versión ${versionNumber}`,
+      status: input.input.status ?? input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+      formData: {
+        ...input.input.formData,
+        tipoHistoriaClinica: historyType,
+        fechaHistoria: input.recordedAt.toISOString().slice(0, 16),
+      },
+      metadata: {
+        ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+        versionNumber,
+        historyType,
+        inheritedFromRecordId:
+          currentRecordMetadata.inheritedFromRecordId ??
+          input.historyVersionContext?.latestRecord?.id ??
+          null,
+      },
+    };
+  }
+
+  private isConsultationHistoryRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.OUTPATIENT && tabKey === 'Historia clínica';
+  }
+
+  private extractHistoryVersionMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {
+    const normalizedMetadata = this.normalizeRecordMetadata(rawMetadata);
+
+    return {
+      versionNumber:
+        typeof normalizedMetadata?.versionNumber === 'number'
+          ? normalizedMetadata.versionNumber
+          : null,
+      historyType:
+        typeof normalizedMetadata?.historyType === 'string'
+          ? normalizedMetadata.historyType
+          : null,
+      inheritedFromRecordId:
+        typeof normalizedMetadata?.inheritedFromRecordId === 'string'
+          ? normalizedMetadata.inheritedFromRecordId
+          : null,
+    };
+  }
+
+  private normalizeRecordMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {
+    if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
+      return null;
+    }
+
+    return rawMetadata as Record<string, unknown>;
   }
 
   private assertRecordTabAllowed(encounterType: EncounterType, tabKey: string) {

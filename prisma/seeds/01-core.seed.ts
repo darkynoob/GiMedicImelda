@@ -1,5 +1,135 @@
-import { FacilityType, TenantStatus } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { FacilityType, SpecialtyCategory, TenantStatus } from '@prisma/client';
 import type { SeedDeps } from './_context';
+
+type SeedSpecialtyDefinition = {
+  category: SpecialtyCategory;
+  name: string;
+};
+
+const seedSpecialtyCatalog: SeedSpecialtyDefinition[] = [
+  { category: SpecialtyCategory.BASIC, name: 'Medicina general' },
+  { category: SpecialtyCategory.BASIC, name: 'Medicina familiar' },
+  {
+    category: SpecialtyCategory.CLINICAL,
+    name: 'Alergología e inmunología',
+  },
+  { category: SpecialtyCategory.CLINICAL, name: 'Cardiología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Dermatología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Endocrinología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Gastroenterología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Geriatría' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Hematología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Infectología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Medicina interna' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Nefrología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Neumología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Neurología' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Oncología médica' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Psiquiatría' },
+  { category: SpecialtyCategory.CLINICAL, name: 'Reumatología' },
+  {
+    category: SpecialtyCategory.SURGICAL,
+    name: 'Cirugía cardiovascular',
+  },
+  { category: SpecialtyCategory.SURGICAL, name: 'Cirugía general' },
+  { category: SpecialtyCategory.SURGICAL, name: 'Cirugía oncológica' },
+  { category: SpecialtyCategory.SURGICAL, name: 'Cirugía pediátrica' },
+  {
+    category: SpecialtyCategory.SURGICAL,
+    name: 'Cirugía plástica y reconstructiva',
+  },
+  { category: SpecialtyCategory.SURGICAL, name: 'Cirugía torácica' },
+  {
+    category: SpecialtyCategory.SURGICAL,
+    name: 'Ginecología y obstetricia',
+  },
+  { category: SpecialtyCategory.SURGICAL, name: 'Neurocirugía' },
+  { category: SpecialtyCategory.SURGICAL, name: 'Oftalmología' },
+  { category: SpecialtyCategory.SURGICAL, name: 'Otorrinolaringología' },
+  {
+    category: SpecialtyCategory.SURGICAL,
+    name: 'Traumatología y ortopedia',
+  },
+  { category: SpecialtyCategory.SURGICAL, name: 'Urología' },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Anestesiología',
+  },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Medicina del deporte',
+  },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Medicina del dolor',
+  },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Medicina de rehabilitación',
+  },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Medicina nuclear',
+  },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Medicina preventiva',
+  },
+  { category: SpecialtyCategory.DIAGNOSTIC_SUPPORT, name: 'Patología' },
+  {
+    category: SpecialtyCategory.DIAGNOSTIC_SUPPORT,
+    name: 'Radiología e imagen',
+  },
+  { category: SpecialtyCategory.DIAGNOSTIC_SUPPORT, name: 'Salud pública' },
+  {
+    category: SpecialtyCategory.COMPLEMENTARY,
+    name: 'Nutriología clínica',
+  },
+  {
+    category: SpecialtyCategory.COMPLEMENTARY,
+    name: 'Odontología / Estomatología',
+  },
+  {
+    category: SpecialtyCategory.COMPLEMENTARY,
+    name: 'Psicología clínica',
+  },
+  { category: SpecialtyCategory.COMPLEMENTARY, name: 'Terapia física' },
+  {
+    category: SpecialtyCategory.COMPLEMENTARY,
+    name: 'Terapia respiratoria',
+  },
+  { category: SpecialtyCategory.COMPLEMENTARY, name: 'Trabajo social' },
+];
+
+const tenantSeedSpecialties = [
+  {
+    tenantId: 'nova',
+    preferredIds: {
+      'Oncología médica': 'onco',
+    },
+  },
+  {
+    tenantId: 'horizonte',
+    preferredIds: {
+      Gastroenterología: 'gastro',
+    },
+  },
+] as const;
+
+function buildSpecialtyCode(name: string) {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase()
+    .slice(0, 40);
+}
+
+function buildSpecialtyDescription(category: SpecialtyCategory, name: string) {
+  return `Especialidad ${name} clasificada en ${category}`;
+}
 
 export async function seedCore({ prisma, ctx }: SeedDeps) {
   const { ids } = ctx;
@@ -27,26 +157,47 @@ export async function seedCore({ prisma, ctx }: SeedDeps) {
     ],
   });
 
-  await prisma.specialty.createMany({
-    data: [
-      {
-        id: ids.specialties.onco,
-        tenantId: ids.tenants.nova,
-        code: 'ONCO',
-        name: 'Oncología',
-        description: 'Especialidad para diagnóstico y tratamiento oncológico',
-        isActive: true,
-      },
-      {
-        id: ids.specialties.gastro,
-        tenantId: ids.tenants.horizonte,
-        code: 'GASTRO',
-        name: 'Gastroenterología',
-        description: 'Especialidad para aparato digestivo',
-        isActive: true,
-      },
-    ],
-  });
+  for (const tenantSeed of tenantSeedSpecialties) {
+    const tenantId = ids.tenants[tenantSeed.tenantId];
+
+    for (const specialty of seedSpecialtyCatalog) {
+      const code = buildSpecialtyCode(specialty.name);
+      const preferredIdKey =
+        tenantSeed.preferredIds[
+          specialty.name as keyof typeof tenantSeed.preferredIds
+        ];
+
+      await prisma.specialty.upsert({
+        where: {
+          tenantId_code: {
+            tenantId,
+            code,
+          },
+        },
+        update: {
+          name: specialty.name,
+          category: specialty.category,
+          description: buildSpecialtyDescription(
+            specialty.category,
+            specialty.name,
+          ),
+          isActive: true,
+        },
+        create: {
+          id: preferredIdKey ? ids.specialties[preferredIdKey] : randomUUID(),
+          tenantId,
+          code,
+          name: specialty.name,
+          category: specialty.category,
+          description: buildSpecialtyDescription(
+            specialty.category,
+            specialty.name,
+          ),
+          isActive: true,
+        },
+      });
+    }
+  }
 
   await prisma.facility.createMany({
     data: [

@@ -1,8 +1,4 @@
-import {
-  AdmissionSource,
-  EncounterStatus,
-  EncounterType,
-} from '@prisma/client';
+import { EncounterType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   IsDateString,
@@ -13,9 +9,6 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-
-const trimValue = ({ value }: { value: unknown }) =>
-  typeof value === 'string' ? value.trim() : value;
 
 const trimToUndefined = ({ value }: { value: unknown }) => {
   if (typeof value !== 'string') {
@@ -36,10 +29,6 @@ export class CreateEncounterDto {
 
   @IsOptional()
   @IsUUID()
-  serviceAreaId?: string;
-
-  @IsOptional()
-  @IsUUID()
   specialtyId?: string;
 
   @IsOptional()
@@ -48,14 +37,6 @@ export class CreateEncounterDto {
 
   @IsEnum(EncounterType)
   encounterType!: EncounterType;
-
-  @IsOptional()
-  @IsEnum(EncounterStatus)
-  status?: EncounterStatus;
-
-  @IsOptional()
-  @IsEnum(AdmissionSource)
-  admissionSource?: AdmissionSource;
 
   @IsOptional()
   @IsDateString()
