@@ -728,6 +728,11 @@ export class EncountersService {
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
+    const evolutionVersionContext = await this.resolveEvolutionVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+    });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -735,6 +740,7 @@ export class EncountersService {
       currentRecord: null,
       historyVersionContext,
       consultationVersionContext,
+      evolutionVersionContext,
       responsibleUser,
     });
 
@@ -813,6 +819,12 @@ export class EncountersService {
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
     });
+    const evolutionVersionContext = await this.resolveEvolutionVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+      currentRecordId: currentRecord.id,
+    });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -820,6 +832,7 @@ export class EncountersService {
       currentRecord,
       historyVersionContext,
       consultationVersionContext,
+      evolutionVersionContext,
       responsibleUser,
     });
 
@@ -1606,6 +1619,43 @@ export class EncountersService {
     };
   }
 
+  private async resolveEvolutionVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }) {
+    if (!this.isConsultationEvolutionRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: input.tabKey,
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -1623,6 +1673,9 @@ export class EncountersService {
     consultationVersionContext: Awaited<
       ReturnType<EncountersService['resolveConsultationVersionContext']>
     >;
+    evolutionVersionContext: Awaited<
+      ReturnType<EncountersService['resolveEvolutionVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -1637,6 +1690,10 @@ export class EncountersService {
         input.input.tabKey,
       ) &&
       !this.isConsultationCurrentRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      ) &&
+      !this.isConsultationEvolutionRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       )
@@ -1729,6 +1786,69 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isConsultationEvolutionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.evolutionVersionContext?.nextVersionNumber ??
+        1;
+      const previousEvolutionRecord = input.evolutionVersionContext?.latestRecord ?? null;
+      const latestConsultationRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Consulta actual',
+      );
+      const diagnosisBaseline = this.buildEvolutionDiagnosesBaseline({
+        previousEvolutionFormData: previousEvolutionRecord?.formDataJson ?? null,
+        latestConsultationFormData: latestConsultationRecord?.formDataJson ?? null,
+      });
+      const treatmentBaseline = this.resolveEvolutionTreatmentBaseline({
+        incomingFormData: input.input.formData,
+        currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+        previousEvolutionFormData: previousEvolutionRecord?.formDataJson ?? null,
+      });
+      const comparisonSnapshot = this.buildEvolutionComparisonSnapshot(
+        previousEvolutionRecord,
+      );
+
+      return {
+        tabKey: input.input.tabKey,
+        noteType: 'Evolución',
+        title: `Evolución V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData: {
+          ...input.input.formData,
+          evolucionDiagnosticos: diagnosisBaseline,
+          evolucionTratamiento: treatmentBaseline,
+          evolucionPreviaTitulo: comparisonSnapshot.previousTitle,
+          evolucionPreviaEstado: comparisonSnapshot.previousStatus,
+          evolucionLegalMedico:
+            input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+          evolucionLegalCedula:
+            input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+          evolucionLegalEspecialidad:
+            input.encounter.specialty?.name ?? 'Sin especialidad',
+        },
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            previousEvolutionRecord?.id ??
+            null,
+        },
+      };
+    }
+
     const currentRecordMetadata = this.extractHistoryVersionMetadata(
       input.currentRecord?.metadataJson,
     );
@@ -1776,6 +1896,13 @@ export class EncountersService {
     tabKey: string,
   ) {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Consulta actual';
+  }
+
+  private isConsultationEvolutionRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.OUTPATIENT && tabKey === 'Evolución';
   }
 
   private findLatestSectionRecord(
@@ -1996,6 +2123,130 @@ export class EncountersService {
     return medicationLines.length > 0
       ? medicationLines.join('\n')
       : 'Sin medicación crónica registrada';
+  }
+
+  private buildEvolutionDiagnosesBaseline(input: {
+    previousEvolutionFormData: Prisma.JsonValue | null;
+    latestConsultationFormData: Prisma.JsonValue | null;
+  }) {
+    const previousEvolutionDiagnoses = this.readDiagnosesArrayFromJson(
+      input.previousEvolutionFormData,
+      'evolucionDiagnosticos',
+    );
+
+    if (previousEvolutionDiagnoses.length > 0) {
+      return previousEvolutionDiagnoses;
+    }
+
+    return this.readConsultationDiagnosesFromJson(input.latestConsultationFormData);
+  }
+
+  private resolveEvolutionTreatmentBaseline(input: {
+    incomingFormData: Record<string, unknown>;
+    currentRecordFormData: Prisma.JsonValue | null;
+    previousEvolutionFormData: Prisma.JsonValue | null;
+  }) {
+    const directValue = this.readStringValue(input.incomingFormData.evolucionTratamiento);
+
+    if (directValue) {
+      return directValue;
+    }
+
+    const currentValue = this.readStringValueFromJson(
+      input.currentRecordFormData,
+      'evolucionTratamiento',
+    );
+
+    if (currentValue) {
+      return currentValue;
+    }
+
+    return (
+      this.readStringValueFromJson(
+        input.previousEvolutionFormData,
+        'evolucionTratamiento',
+      ) || ''
+    );
+  }
+
+  private buildEvolutionComparisonSnapshot(
+    previousEvolutionRecord:
+      | {
+          title: string;
+          formDataJson: Prisma.JsonValue;
+        }
+      | null
+      | undefined,
+  ) {
+    if (!previousEvolutionRecord) {
+      return {
+        previousTitle: 'Sin evolución previa registrada',
+        previousStatus: 'Sin estado previo',
+      };
+    }
+
+    const previousStatus =
+      this.readStringValueFromJson(
+        previousEvolutionRecord.formDataJson,
+        'evolucionEstadoClinicoGeneral',
+      ) || 'Sin estado previo';
+
+    return {
+      previousTitle: previousEvolutionRecord.title,
+      previousStatus,
+    };
+  }
+
+  private readDiagnosesArrayFromJson(
+    rawValue: Prisma.JsonValue | null,
+    key: string,
+  ) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      return [];
+    }
+
+    const value = (rawValue as Record<string, unknown>)[key];
+
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      )
+      .map((item) => ({
+        diagnostico: this.readStringValue(item.diagnostico),
+        cie10: this.readStringValue(item.cie10),
+        estado: this.readStringValue(item.estado),
+      }))
+      .filter((item) => item.diagnostico || item.cie10 || item.estado);
+  }
+
+  private readConsultationDiagnosesFromJson(rawValue: Prisma.JsonValue | null) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      return [];
+    }
+
+    const record = rawValue as Record<string, unknown>;
+    const diagnoses: Array<Record<string, unknown>> = [];
+
+    const primaryDiagnosis = this.readStringValue(record.idDiagnosticoPrincipal);
+    const primaryCie10 = this.readStringValue(record.idCie10);
+    const primaryState = this.readStringValue(record.idEstado);
+
+    if (primaryDiagnosis || primaryCie10 || primaryState) {
+      diagnoses.push({
+        diagnostico: primaryDiagnosis,
+        cie10: primaryCie10,
+        estado: primaryState,
+      });
+    }
+
+    const secondaryDiagnoses = this.readDiagnosesArrayFromJson(rawValue, 'idSecundarios');
+
+    return [...diagnoses, ...secondaryDiagnoses];
   }
 
   private normalizeRecordMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {

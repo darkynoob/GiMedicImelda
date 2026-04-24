@@ -138,6 +138,10 @@ function isConsultationCurrentTab(encounterType: string, tabTitle: string) {
   return encounterType === 'OUTPATIENT' && tabTitle === 'Consulta actual';
 }
 
+function isConsultationEvolutionTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'OUTPATIENT' && tabTitle === 'Evolución';
+}
+
 function getConsultationTypeLabel(
   consultationType: string | null | undefined,
 ) {
@@ -212,6 +216,69 @@ function mergeConsultationSystemFields(
     ...formData,
     ...buildConsultationReferenceSnapshot(detail),
     ...buildConsultationLegalSnapshot(detail),
+  };
+}
+
+function buildEvolutionLegalSnapshot(detail: EncounterDetailResponse) {
+  return {
+    evolucionLegalMedico:
+      detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    evolucionLegalCedula:
+      detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    evolucionLegalEspecialidad: detail.specialty?.name ?? 'Sin especialidad',
+  };
+}
+
+function buildEvolutionDiagnosesBaseline(
+  previousEvolutionRecord?: EncounterDetailResponse['sectionRecords'][number] | null,
+  latestConsultationRecord?: EncounterDetailResponse['sectionRecords'][number] | null,
+) {
+  const previousDiagnoses = Array.isArray(previousEvolutionRecord?.formData.evolucionDiagnosticos)
+    ? (previousEvolutionRecord?.formData.evolucionDiagnosticos as Array<Record<string, unknown>>)
+    : [];
+
+  if (previousDiagnoses.length > 0) {
+    return previousDiagnoses.map((diagnosis) => ({ ...diagnosis }));
+  }
+
+  const consultationDiagnoses: Array<Record<string, unknown>> = [];
+
+  if (latestConsultationRecord?.formData.idDiagnosticoPrincipal) {
+    consultationDiagnoses.push({
+      diagnostico: latestConsultationRecord.formData.idDiagnosticoPrincipal,
+      cie10: latestConsultationRecord.formData.idCie10 ?? '',
+      estado: latestConsultationRecord.formData.idEstado ?? '',
+    });
+  }
+
+  if (Array.isArray(latestConsultationRecord?.formData.idSecundarios)) {
+    consultationDiagnoses.push(
+      ...(latestConsultationRecord?.formData.idSecundarios as Array<Record<string, unknown>>).map(
+        (diagnosis) => ({
+          diagnostico: diagnosis.diagnostico ?? '',
+          cie10: diagnosis.cie10 ?? '',
+          estado: diagnosis.estado ?? '',
+        }),
+      ),
+    );
+  }
+
+  return consultationDiagnoses;
+}
+
+function mergeEvolutionSystemFields(
+  formData: Record<string, RecordFieldValue>,
+  detail: EncounterDetailResponse,
+  previousEvolutionRecord?: EncounterDetailResponse['sectionRecords'][number] | null,
+) {
+  return {
+    ...formData,
+    evolucionPreviaTitulo:
+      previousEvolutionRecord?.title ?? 'Sin evolución previa registrada',
+    evolucionPreviaEstado:
+      (previousEvolutionRecord?.formData.evolucionEstadoClinicoGeneral as string | undefined) ??
+      'Sin estado previo',
+    ...buildEvolutionLegalSnapshot(detail),
   };
 }
 
@@ -386,6 +453,29 @@ function buildConsultationVersionPrefill(args: {
   }
 
   return mergeConsultationSystemFields(nextFormData, args.detail);
+}
+
+function buildEvolutionVersionPrefill(args: {
+  tabDefinition: EpisodeTabDefinition;
+  previousEvolutionRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  latestConsultationRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  detail: EncounterDetailResponse;
+}) {
+  const nextFormData = normalizeRecordFormData(args.tabDefinition, undefined);
+
+  nextFormData.evolucionDiagnosticos = buildEvolutionDiagnosesBaseline(
+    args.previousEvolutionRecord,
+    args.latestConsultationRecord,
+  ) as RecordFieldValue;
+
+  nextFormData.evolucionTratamiento =
+    (args.previousEvolutionRecord?.formData.evolucionTratamiento as string | undefined) ?? '';
+
+  return mergeEvolutionSystemFields(
+    nextFormData,
+    args.detail,
+    args.previousEvolutionRecord,
+  );
 }
 
 function SectionCard({
@@ -715,10 +805,26 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isConsultationEvolutionSection = isConsultationEvolutionTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
   const latestConsultationRecord = isConsultationCurrentSection
+    ? [...activeTabRecords].sort((left, right) => {
+        const leftVersion = left.metadata.versionNumber ?? 0;
+        const rightVersion = right.metadata.versionNumber ?? 0;
+
+        if (leftVersion !== rightVersion) {
+          return rightVersion - leftVersion;
+        }
+
+        return right.recordedAt.localeCompare(left.recordedAt);
+      })[0] ?? null
+    : null;
+  const latestEvolutionRecord = isConsultationEvolutionSection
     ? [...activeTabRecords].sort((left, right) => {
         const leftVersion = left.metadata.versionNumber ?? 0;
         const rightVersion = right.metadata.versionNumber ?? 0;
@@ -738,6 +844,8 @@ export function EpisodeDetailPage() {
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
     nextConsultationVersionNumber === 1 ? 'PRIMERA_VEZ' : 'SUBSECUENTE';
+  const nextEvolutionVersionNumber =
+    (latestEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
   const selectedRecord =
     activeRecordId === null
       ? null
@@ -802,6 +910,34 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isConsultationEvolutionSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Evolución',
+          title: `Evolución V${nextEvolutionVersionNumber}`,
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildEvolutionVersionPrefill({
+            tabDefinition: activeTabDefinition,
+            previousEvolutionRecord: latestEvolutionRecord,
+            latestConsultationRecord: detail.sectionRecords.find(
+              (record) => record.tabKey === 'Consulta actual',
+            ),
+            detail,
+          }),
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -853,6 +989,21 @@ export function EpisodeDetailPage() {
                 record.formData as Record<string, RecordFieldValue>,
                 detail,
               )
+            : isConsultationEvolutionSection
+              ? mergeEvolutionSystemFields(
+                  record.formData as Record<string, RecordFieldValue>,
+                  detail,
+                  latestEvolutionRecord?.id === record.id
+                    ? detail.sectionRecords
+                        .filter(
+                          (item) =>
+                            item.tabKey === 'Evolución' && item.id !== record.id,
+                        )
+                        .sort((left, right) =>
+                          right.recordedAt.localeCompare(left.recordedAt),
+                        )[0] ?? null
+                    : latestEvolutionRecord,
+                )
             : record.formData,
       }),
     );
@@ -911,6 +1062,12 @@ export function EpisodeDetailPage() {
         ? mergeHistoryReadOnlyFields(recordForm.formData, detail)
         : isConsultationCurrentSection
           ? mergeConsultationSystemFields(recordForm.formData, detail)
+          : isConsultationEvolutionSection
+            ? mergeEvolutionSystemFields(
+                recordForm.formData,
+                detail,
+                latestEvolutionRecord,
+              )
           : recordForm.formData,
     };
 
@@ -971,6 +1128,8 @@ export function EpisodeDetailPage() {
       | 'SUBSECUENTE'
       | null) ?? nextConsultationType;
   const consultationTypeLabel = getConsultationTypeLabel(currentConsultationType);
+  const evolutionVersionNumber =
+    selectedRecord?.metadata.versionNumber ?? nextEvolutionVersionNumber;
   const isRecordLocked = recordForm?.status === 'SIGNED';
 
   const submitPendingFiles = () => {
@@ -1567,6 +1726,23 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isConsultationEvolutionSection ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {`Evolución V${evolutionVersionNumber}`}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Cada evolución documenta el seguimiento clínico del
+                                    episodio sin sobrescribir evoluciones previas.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">SOAP</Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -1611,7 +1787,9 @@ export function EpisodeDetailPage() {
                             </select>
                           </label>
 
-                          {isConsultationHistorySection || isConsultationCurrentSection ? null : (
+                          {isConsultationHistorySection ||
+                          isConsultationCurrentSection ||
+                          isConsultationEvolutionSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
