@@ -6,15 +6,31 @@ export type EpisodeFieldOption = {
 export type EpisodeFieldDefinition = {
   key: string;
   label: string;
-  type: 'text' | 'textarea' | 'select' | 'datetime-local' | 'number';
+  type:
+    | 'text'
+    | 'textarea'
+    | 'select'
+    | 'datetime-local'
+    | 'number'
+    | 'checkbox'
+    | 'date'
+    | 'string-array'
+    | 'object-array'
+    | 'readonly'
+    | 'action';
   placeholder?: string;
   options?: EpisodeFieldOption[];
+  inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
+  itemFields?: EpisodeFieldDefinition[];
+  itemAddLabel?: string;
+  actionLabel?: string;
 };
 
 export type EpisodeSectionDefinition = {
   key: string;
   title: string;
   description?: string;
+  historyVisibility?: 'all' | 'initial_only' | 'subsequent_only';
   fields: EpisodeFieldDefinition[];
 };
 
@@ -47,6 +63,54 @@ const clinicalStateOptions: EpisodeFieldOption[] = [
   { value: 'GRAVE_INESTABLE', label: 'Grave, inestable' },
 ];
 
+const normalAlteredOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'NORMAL', label: 'Normal' },
+  { value: 'ALTERADO', label: 'Alterado' },
+];
+
+const currentUseOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'NO', label: 'No' },
+  { value: 'OCASIONAL', label: 'Ocasional' },
+  { value: 'ACTIVO', label: 'Activo' },
+  { value: 'PREVIO', label: 'Previo' },
+];
+
+const adherenceOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'ADECUADO', label: 'Adecuado' },
+  { value: 'PARCIAL', label: 'Parcial' },
+  { value: 'INADECUADO', label: 'Inadecuado' },
+];
+
+const riskClassificationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'MODERADO', label: 'Moderado' },
+  { value: 'ALTO', label: 'Alto' },
+  { value: 'MUY_ALTO', label: 'Muy alto' },
+];
+
+const diagnosisTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'PRESUNTIVO', label: 'Presuntivo' },
+  { value: 'DEFINITIVO', label: 'Definitivo' },
+  { value: 'SINDROMATICO', label: 'Sindromático' },
+  { value: 'NOSOLOGICO', label: 'Nosológico' },
+];
+
+const administrationRouteOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'VO', label: 'Vía oral' },
+  { value: 'IV', label: 'Intravenosa' },
+  { value: 'IM', label: 'Intramuscular' },
+  { value: 'SC', label: 'Subcutánea' },
+  { value: 'TOPICA', label: 'Tópica' },
+  { value: 'INHALADA', label: 'Inhalada' },
+  { value: 'OTRA', label: 'Otra' },
+];
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -62,6 +126,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               key: 'tipoHistoriaClinica',
               label: 'Tipo de historia',
               type: 'select',
+              inheritanceMode: 'system',
               options: [
                 { value: '', label: 'Selecciona una opcion' },
                 { value: 'INICIAL', label: 'Inicial' },
@@ -73,95 +138,202 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               key: 'fechaHistoria',
               label: 'Fecha clínica',
               type: 'datetime-local',
+              inheritanceMode: 'fresh_capture',
             },
           ],
         },
         {
-          key: 'antecedentes',
-          title: 'Antecedentes y contexto',
+          key: 'antecedentes_heredofamiliares',
+          title: 'Antecedentes heredofamiliares',
+          description: 'Información heredable y actualizable entre versiones.',
+          fields: [
+            { key: 'ahfDiabetes', label: 'Diabetes', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfHipertension', label: 'Hipertensión', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfCancer', label: 'Cáncer', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfCardiopatias', label: 'Cardiopatías', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfEvc', label: 'EVC', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfEnfermedadRenal', label: 'Enfermedad renal', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfEnfermedadAutoinmune', label: 'Enfermedad autoinmune', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfEnfermedadPsiquiatrica', label: 'Enfermedad psiquiátrica', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'ahfDetalle', label: 'Detalle', type: 'textarea', inheritanceMode: 'carry_forward' },
+          ],
+        },
+        {
+          key: 'antecedentes_patologicos',
+          title: 'Antecedentes personales patológicos',
+          fields: [
+            { key: 'appEnfermedadesCronicas', label: 'Enfermedades crónicas', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'appAlergias', label: 'Alergias', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'appQuirurgicos', label: 'Quirúrgicos', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'appHospitalizaciones', label: 'Hospitalizaciones', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'appTraumaticos', label: 'Traumáticos', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'appTransfusionales', label: 'Transfusionales', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'appInfecciosos', label: 'Infecciosos', type: 'textarea', inheritanceMode: 'carry_forward' },
+          ],
+        },
+        {
+          key: 'antecedentes_no_patologicos',
+          title: 'Antecedentes personales no patológicos',
+          fields: [
+            { key: 'apnpAlimentacion', label: 'Alimentación', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'apnpActividadFisica', label: 'Actividad física', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'apnpTabaquismo', label: 'Tabaquismo', type: 'select', options: currentUseOptions, inheritanceMode: 'carry_forward' },
+            { key: 'apnpAlcoholismo', label: 'Alcoholismo', type: 'select', options: currentUseOptions, inheritanceMode: 'carry_forward' },
+            { key: 'apnpToxicomanias', label: 'Toxicomanías', type: 'select', options: currentUseOptions, inheritanceMode: 'carry_forward' },
+            { key: 'apnpVivienda', label: 'Vivienda', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'apnpHigiene', label: 'Higiene', type: 'textarea', inheritanceMode: 'carry_forward' },
+            { key: 'apnpInmunizaciones', label: 'Inmunizaciones', type: 'textarea', inheritanceMode: 'carry_forward' },
+          ],
+        },
+        {
+          key: 'gineco_obstetricos',
+          title: 'Antecedentes gineco-obstétricos',
+          fields: [
+            { key: 'agoMenarca', label: 'Menarca', type: 'text', inheritanceMode: 'carry_forward' },
+            { key: 'agoRitmoMenstrual', label: 'Ritmo menstrual', type: 'text', inheritanceMode: 'carry_forward' },
+            { key: 'agoFum', label: 'FUM', type: 'date', inheritanceMode: 'fresh_capture' },
+            { key: 'agoIvsa', label: 'IVSA', type: 'text', inheritanceMode: 'carry_forward' },
+            { key: 'agoGestas', label: 'Gestas', type: 'number', inheritanceMode: 'carry_forward' },
+            { key: 'agoPartos', label: 'Partos', type: 'number', inheritanceMode: 'carry_forward' },
+            { key: 'agoAbortos', label: 'Abortos', type: 'number', inheritanceMode: 'carry_forward' },
+            { key: 'agoCesareas', label: 'Cesáreas', type: 'number', inheritanceMode: 'carry_forward' },
+            { key: 'agoMpf', label: 'MPF', type: 'text', inheritanceMode: 'carry_forward' },
+            { key: 'agoDoc', label: 'DOC', type: 'text', inheritanceMode: 'carry_forward' },
+            { key: 'agoMastografia', label: 'Mastografía', type: 'text', inheritanceMode: 'carry_forward' },
+            { key: 'agoMenopausia', label: 'Menopausia', type: 'text', inheritanceMode: 'carry_forward' },
+          ],
+        },
+        {
+          key: 'interrogatorio_sistemas',
+          title: 'Interrogatorio por sistemas',
+          description: 'Se captura solo en la historia clínica inicial.',
+          historyVisibility: 'initial_only',
+          fields: [
+            { key: 'isCardiovascularEstado', label: 'Cardiovascular', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isCardiovascularDetalle', label: 'Detalle cardiovascular', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isRespiratorioEstado', label: 'Respiratorio', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isRespiratorioDetalle', label: 'Detalle respiratorio', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isDigestivoEstado', label: 'Digestivo', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isDigestivoDetalle', label: 'Detalle digestivo', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isGenitourinarioEstado', label: 'Genitourinario', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isGenitourinarioDetalle', label: 'Detalle genitourinario', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isMusculoesqueleticoEstado', label: 'Musculoesquelético', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isMusculoesqueleticoDetalle', label: 'Detalle musculoesquelético', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isNerviosoEstado', label: 'Nervioso', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isNerviosoDetalle', label: 'Detalle nervioso', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isEndocrinoEstado', label: 'Endocrino', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isEndocrinoDetalle', label: 'Detalle endocrino', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isPielEstado', label: 'Piel', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isPielDetalle', label: 'Detalle piel', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isHematologicoEstado', label: 'Hematológico', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isHematologicoDetalle', label: 'Detalle hematológico', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isOftalmicoEstado', label: 'Oftálmico', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isOftalmicoDetalle', label: 'Detalle oftálmico', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isOrlEstado', label: 'ORL', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isOrlDetalle', label: 'Detalle ORL', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'isPsiquiatricoEstado', label: 'Psiquiátrico', type: 'select', options: normalAlteredOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'isPsiquiatricoDetalle', label: 'Detalle psiquiátrico', type: 'textarea', inheritanceMode: 'fresh_capture' },
+          ],
+        },
+        {
+          key: 'exploracion_baseline',
+          title: 'Exploración física baseline',
+          historyVisibility: 'initial_only',
+          fields: [
+            { key: 'efbSignosVitales', label: 'Signos vitales', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'efbExploracionRegion', label: 'Exploración por región', type: 'textarea', inheritanceMode: 'fresh_capture' },
+          ],
+        },
+        {
+          key: 'diagnosticos_baseline',
+          title: 'Diagnósticos baseline inicial',
+          historyVisibility: 'initial_only',
+          fields: [
+            { key: 'dbiDiagnosticoPrincipal', label: 'Diagnóstico principal', type: 'text', inheritanceMode: 'fresh_capture' },
+            { key: 'dbiCie10', label: 'CIE-10', type: 'text', inheritanceMode: 'fresh_capture' },
+            { key: 'dbiTipo', label: 'Tipo', type: 'select', options: diagnosisTypeOptions, inheritanceMode: 'fresh_capture' },
+            { key: 'dbiSecundarios', label: 'Secundarios', type: 'string-array', itemAddLabel: 'Agregar diagnóstico secundario', inheritanceMode: 'fresh_capture' },
+          ],
+        },
+        {
+          key: 'resultados_previos',
+          title: 'Resultados previos de estudios',
+          fields: [
+            { key: 'resultadosPreviosResumen', label: 'Resumen de estudios relevantes', type: 'textarea', inheritanceMode: 'carry_forward' },
+          ],
+        },
+        {
+          key: 'plan_terapeutico_inicial',
+          title: 'Plan terapéutico inicial',
+          historyVisibility: 'initial_only',
+          fields: [
+            { key: 'ptiTratamientoFarmacologico', label: 'Tratamiento farmacológico', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'ptiTratamientoNoFarmacologico', label: 'Tratamiento no farmacológico', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'ptiEstudios', label: 'Estudios', type: 'textarea', inheritanceMode: 'fresh_capture' },
+            { key: 'ptiSeguimiento', label: 'Seguimiento', type: 'textarea', inheritanceMode: 'fresh_capture' },
+          ],
+        },
+        {
+          key: 'pronostico',
+          title: 'Pronóstico',
+          fields: [
+            { key: 'pronosticoHistoriaClinica', label: 'Pronóstico', type: 'textarea', inheritanceMode: 'fresh_capture' },
+          ],
+        },
+        {
+          key: 'medicacion_cronica',
+          title: 'Medicación crónica actual',
           fields: [
             {
-              key: 'antecedentesHeredofamiliares',
-              label: 'Antecedentes heredofamiliares',
-              type: 'textarea',
-            },
-            {
-              key: 'antecedentesPatologicos',
-              label: 'Antecedentes personales patológicos',
-              type: 'textarea',
-            },
-            {
-              key: 'antecedentesNoPatologicos',
-              label: 'Antecedentes personales no patológicos',
-              type: 'textarea',
-            },
-            {
-              key: 'antecedentesGinecoObstetricos',
-              label: 'Antecedentes gineco-obstétricos',
-              type: 'textarea',
+              key: 'medicacionCronicaActual',
+              label: 'Medicaciones',
+              type: 'object-array',
+              inheritanceMode: 'carry_forward',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'via', label: 'Vía', type: 'select', options: administrationRouteOptions },
+                { key: 'frecuencia', label: 'Frecuencia', type: 'text' },
+                { key: 'desde', label: 'Desde', type: 'date' },
+                { key: 'indicacion', label: 'Indicación', type: 'text' },
+              ],
             },
           ],
         },
         {
-          key: 'clinica_base',
-          title: 'Clínica base',
+          key: 'apego_terapeutico',
+          title: 'Apego terapéutico',
           fields: [
-            {
-              key: 'padecimientoActual',
-              label: 'Padecimiento actual',
-              type: 'textarea',
-            },
-            {
-              key: 'interrogatorioSistemas',
-              label: 'Interrogatorio por aparatos y sistemas',
-              type: 'textarea',
-            },
-            {
-              key: 'exploracionFisica',
-              label: 'Exploración física',
-              type: 'textarea',
-            },
-            {
-              key: 'resultadosPreviosEstudios',
-              label: 'Resultados previos de estudios',
-              type: 'textarea',
-            },
+            { key: 'apegoFarmacologico', label: 'Apego farmacológico', type: 'select', options: adherenceOptions, inheritanceMode: 'carry_forward' },
+            { key: 'apegoNoFarmacologico', label: 'Apego no farmacológico', type: 'select', options: adherenceOptions, inheritanceMode: 'carry_forward' },
+            { key: 'apegoObservaciones', label: 'Observaciones', type: 'textarea', inheritanceMode: 'carry_forward' },
           ],
         },
         {
-          key: 'juicio_clinico',
-          title: 'Juicio clínico',
+          key: 'factores_riesgo',
+          title: 'Factores de riesgo',
           fields: [
-            {
-              key: 'diagnosticosProblemas',
-              label: 'Diagnósticos o problemas clínicos',
-              type: 'textarea',
-            },
-            {
-              key: 'planTerapeutico',
-              label: 'Plan terapéutico',
-              type: 'textarea',
-            },
-            {
-              key: 'pronostico',
-              label: 'Pronóstico',
-              type: 'textarea',
-            },
-            {
-              key: 'medicacionCronica',
-              label: 'Medicación crónica actual',
-              type: 'textarea',
-            },
-            {
-              key: 'apegoTerapeutico',
-              label: 'Apego terapéutico',
-              type: 'textarea',
-            },
-            {
-              key: 'factoresRiesgo',
-              label: 'Factores de riesgo',
-              type: 'textarea',
-            },
+            { key: 'frTabaquismo', label: 'Tabaquismo', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frAlcoholismo', label: 'Alcoholismo', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frSedentarismo', label: 'Sedentarismo', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frObesidad', label: 'Obesidad', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frDieta', label: 'Dieta', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frEstres', label: 'Estrés', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frAntecedentesCv', label: 'Antecedentes CV', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frSustancias', label: 'Sustancias', type: 'checkbox', inheritanceMode: 'carry_forward' },
+            { key: 'frClasificacion', label: 'Clasificación', type: 'select', options: riskClassificationOptions, inheritanceMode: 'carry_forward' },
+            { key: 'frObservaciones', label: 'Observaciones', type: 'textarea', inheritanceMode: 'carry_forward' },
+          ],
+        },
+        {
+          key: 'datos_legales',
+          title: 'Datos legales',
+          description: 'Datos documentales calculados desde el profesional responsable.',
+          fields: [
+            { key: 'legalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'legalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'legalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarHistoriaClinica', label: 'Firma', type: 'action', actionLabel: 'Firmar historia clínica', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -1400,7 +1572,7 @@ export function getEpisodeTabDefinition(encounterType: string, tabTitle: string)
 }
 
 export function buildInitialStructuredSections(encounterType: string) {
-  const sections: Record<string, Record<string, string>> = {};
+  const sections: Record<string, Record<string, unknown>> = {};
 
   for (const tab of
     episodeProfileSchemas[encounterType] ?? episodeProfileSchemas.OUTPATIENT ?? []) {
@@ -1408,10 +1580,77 @@ export function buildInitialStructuredSections(encounterType: string) {
 
     for (const section of tab.sections) {
       for (const field of section.fields) {
-        sections[tab.title][field.key] = '';
+        sections[tab.title][field.key] = buildDefaultFieldValue(field);
       }
     }
   }
 
   return sections;
+}
+
+export function buildDefaultFieldValue(field: EpisodeFieldDefinition): unknown {
+  if (field.type === 'checkbox') {
+    return false;
+  }
+
+  if (field.type === 'string-array' || field.type === 'object-array') {
+    return [];
+  }
+
+  return '';
+}
+
+function cloneFieldValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      item && typeof item === 'object' ? { ...(item as Record<string, unknown>) } : item,
+    );
+  }
+
+  if (value && typeof value === 'object') {
+    return { ...(value as Record<string, unknown>) };
+  }
+
+  return value;
+}
+
+export function isConsultationHistoryTab(
+  encounterType: string,
+  tabTitle: string,
+) {
+  return encounterType === 'OUTPATIENT' && tabTitle === 'Historia clínica';
+}
+
+export function buildHistoryVersionPrefill(
+  tabDefinition: EpisodeTabDefinition,
+  previousFormData: Record<string, unknown> | undefined,
+  nextHistoryType: 'INICIAL' | 'SUBSECUENTE',
+  nextRecordedAt: string,
+) {
+  const nextFormData: Record<string, unknown> = {};
+
+  for (const section of tabDefinition.sections) {
+    for (const field of section.fields) {
+      const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
+
+      if (field.key === 'tipoHistoriaClinica') {
+        nextFormData[field.key] = nextHistoryType;
+        continue;
+      }
+
+      if (field.key === 'fechaHistoria') {
+        nextFormData[field.key] = nextRecordedAt;
+        continue;
+      }
+
+      if (inheritanceMode === 'carry_forward') {
+        nextFormData[field.key] = cloneFieldValue(previousFormData?.[field.key]) ?? buildDefaultFieldValue(field);
+        continue;
+      }
+
+      nextFormData[field.key] = buildDefaultFieldValue(field);
+    }
+  }
+
+  return nextFormData;
 }

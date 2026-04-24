@@ -239,6 +239,11 @@ export interface EncounterDetailResponse {
     authorName: string | null;
     authorLicense: string | null;
     formData: Record<string, unknown>;
+    metadata: {
+      versionNumber: number | null;
+      historyType: string | null;
+      inheritedFromRecordId: string | null;
+    };
   }>;
   attachments: Array<{
     id: string;
