@@ -1,20 +1,33 @@
-import { Bell, Search, User } from 'lucide-react';
+import { Bell, Search, User, Menu } from 'lucide-react';
 import { useAuth } from '../../features/auth/hooks/auth-context';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 
-export function Topbar() {
+type Props = {
+  setIsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+};
+
+export function Topbar({ setIsOpen }: Props) {
   const { session } = useAuth();
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-6">
-      <div className="flex max-w-md flex-1 items-center gap-3">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 focus-visible:shadow-sm" />
-          <Input
-            className="h-9 pl-9 pr-3 text-sm bg-gray-50 border border-gray-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:bg-white transition"
-            placeholder="Buscar paciente, expediente, documento..."
-          />
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:px-6">
+      <div className="flex items-center gap-3 flex-1">
+        <button
+          className="md:hidden p-2 -ml-2 rounded-md hover:bg-gray-100 transition"
+          onClick={() => setIsOpen(true)}
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      
+        <div className="hidden sm:flex w-full max-w-md items-center">
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Input
+              className="h-9 pl-9 pr-3 text-sm bg-gray-50 border border-gray-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:bg-white transition"
+              placeholder="Buscar paciente, expediente, documento..."
+            />
+          </div>
         </div>
       </div>
 

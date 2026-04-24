@@ -43,21 +43,35 @@ const navSections = [
   {
     label: 'Sistema',
     items: [
-      { title: 'Auditoria', icon: ShieldCheck, path: '/auditoria' },
+      { title: 'Auditoria', icon: ShieldCheck, path: '/auditoria', hidden: true, roles: ['Administrador del Tenant'] },
       { title: 'Administracion', icon: Settings, path: '/administracion' },
     ],
   },
 ];
 
-export function AppSidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+import { useAuth } from '../../features/auth/hooks/auth-context';
+
+type Props = {
+  isOpen: boolean; // mobile
+};
+
+export function AppSidebar({ isOpen }: Props) {
+  const [collapsed, setCollapsed] = useState(false); // desktop
   const location = useLocation();
+  const { session } = useAuth();
+  const userRole = session?.user.roles[0]?.name ?? '';
 
   return (
     <aside
       className={cn(
-        'sticky top-0 z-30 flex h-screen flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200',
-        collapsed ? 'w-16' : 'w-60',
+        'fixed inset-y-0 left-0 z-50 flex h-full flex-col bg-sidebar text-sidebar-foreground transition-transform duration-300',
+        
+        // Desktop
+        'md:sticky md:translate-x-0 md:z-30 md:h-screen md:border-r md:border-sidebar-border',
+        collapsed ? 'md:w-16' : 'md:w-60',
+
+        // Mobile behavior
+        isOpen ? 'translate-x-0 w-60' : '-translate-x-full w-60'
       )}
     >
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
@@ -73,12 +87,16 @@ export function AppSidebar() {
         {navSections.map((section) => (
           <div className="mb-4" key={section.label}>
             {!collapsed ? (
-              <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted">
+              <p className="text-sidebar-muted text-[10px] uppercase tracking-wider">
                 {section.label}
               </p>
             ) : null}
             <ul className="space-y-0.5">
-              {section.items.map((item) => {
+              {section.items.filter((item) => {
+                  if (item.hidden) return false
+                  if (item.roles && !item.roles.includes(userRole)) return false
+                  return true
+                }).map((item) => {
                 const isActive =
                   location.pathname === item.path ||
                   (item.path !== '/' && location.pathname.startsWith(item.path));
@@ -89,7 +107,7 @@ export function AppSidebar() {
                       className={cn(
                         'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                         isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          ? 'bg-clinical-info text-white'
                           : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
                       )}
                       to={item.path}

@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   Users,
+  Eye
 } from 'lucide-react';
 import { AppLayout } from '../../../components/layout/AppLayout';
 import { Badge } from '../../../components/ui/badge';
@@ -220,7 +221,7 @@ export function PatientsPage() {
               {patients.length > 0 ? (
                 patients.map((patient) => (
                   <tr
-                    className="cursor-pointer transition-colors hover:bg-muted/20"
+                    className="cursor-pointer transition-colors hover:bg-muted/20 transition-all hover:shadow-sm hover:translate-x-[2px]"
                     key={patient.id}
                     onClick={() => navigate(`/pacientes/${patient.id}`)}
                   >
@@ -293,7 +294,16 @@ export function PatientsPage() {
                       </Badge>
                     </td>
                     <td className="p-3">
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/pacientes/${patient.id}`)
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </td>
                   </tr>
                 ))

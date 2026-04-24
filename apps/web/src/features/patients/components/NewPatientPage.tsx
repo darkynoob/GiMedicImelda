@@ -36,7 +36,8 @@ import { useAuth } from '../../auth/hooks/auth-context';
 import { createPatient, fetchPatients } from '../api/patients.service';
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+const PHONE_REGEX = /^[\d\s\-+()]{10,20}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const MEXICAN_STATES = [
   'Aguascalientes',
@@ -378,6 +379,12 @@ function validateForm(form: FormState): FormErrors {
     errors.alternatePhone = 'Formato invalido';
   }
 
+  if (form.email.trim()) {
+    if (!EMAIL_REGEX.test(form.email.trim())) {
+      errors.email = 'Formato invalido';
+    }
+  }
+
   if (!form.city.trim()) errors.city = 'Obligatorio';
   if (!form.state.trim()) errors.state = 'Obligatorio';
   if (!form.allergiesSelection) errors.allergiesSelection = 'Obligatorio';
@@ -424,8 +431,30 @@ function buildAddressPreview(form: FormState) {
     .filter(Boolean)
     .join(', ');
 }
+function getRequiredCompletion(form: FormState) {
+    const requiredFields = [
+      form.firstName,
+      form.lastName,
+      form.sexAtBirth,
+      form.phone,
+      form.patientStatus,
+      form.patientType,
+      form.medicalUnit,
+      form.city,
+      form.state,
+      form.allergiesSelection,
+    ];
 
-function getCompletionPercentage(form: FormState) {
+  const fields = requiredFields;
+
+  const filled = fields.filter(
+    (value) => value && value.toString().trim().length > 0
+  ).length;
+
+  return Math.round((filled / fields.length) * 100);
+}
+
+function getOptionalCompletion(form: FormState) {
   const optionalFields = [
     form.middleName,
     form.curp,
@@ -455,11 +484,11 @@ function getCompletionPercentage(form: FormState) {
     form.administrativeNotes,
   ];
 
-  const filledCount = optionalFields.filter(
-    (value) => value.trim().length > 0,
+  const filled = optionalFields.filter(
+    (value) => value && value.toString().trim().length > 0
   ).length;
 
-  return Math.round((filledCount / optionalFields.length) * 100);
+  return Math.round((filled / optionalFields.length) * 100);
 }
 
 function SelectField({
@@ -483,7 +512,7 @@ function SelectField({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       <select
         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -499,7 +528,7 @@ function SelectField({
           </option>
         ))}
       </select>
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
@@ -536,7 +565,7 @@ function TextField({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       <Input
         disabled={disabled}
@@ -547,7 +576,7 @@ function TextField({
         type={type}
         value={value}
       />
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
@@ -576,7 +605,7 @@ function TextAreaField({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       <Textarea
         className="min-h-[88px]"
@@ -584,7 +613,7 @@ function TextAreaField({
         placeholder={placeholder}
         value={value}
       />
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
@@ -606,14 +635,14 @@ function SectionCard({
   contentClassName?: string;
 }) {
   return (
-    <section className="clinical-card overflow-hidden">
-      <div className="border-b bg-muted/20 px-5 py-4">
+    <section className="clinical-card rounded-xl border border-slate-200/60 bg-white shadow-sm">
+      <div className="px-5 pt-5 pb-3">
         <div className="flex items-start gap-3">
-          <div className="rounded-md bg-primary/10 p-2 text-primary">
+          <div className="rounded-lg bg-primary/10 p-2 text-primary">
             <Icon className="h-4 w-4" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold">{title}</h2>
+            <h2 className="text-sm font-semibold text-foreground">{title}</h2>
             <p className="mt-1 text-xs text-muted-foreground">{description}</p>
           </div>
         </div>
@@ -633,16 +662,20 @@ function ChecklistItem({
   ready: boolean;
 }) {
   return (
-    <div className="rounded-md border bg-background px-3 py-2">
-      <div className="flex items-center gap-2">
-        {ready ? (
-          <CheckCircle2 className="h-4 w-4 text-primary" />
-        ) : (
-          <div className="h-4 w-4 rounded-full border border-muted-foreground/40" />
-        )}
-        <p className="font-medium">{label}</p>
+    <div className="rounded-lg border border-slate-200/60 bg-white px-4 py-3 transition-colors">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5">
+          {ready ? (
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+          ) : (
+            <div className="h-4 w-4 rounded-full border border-muted-foreground/40" />
+          )}
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -663,10 +696,22 @@ export function NewPatientPage() {
   );
   const formErrors = useMemo(() => validateForm(form), [form]);
   const isValid = Object.keys(formErrors).length === 0;
-  const completionPercentage = useMemo(
-    () => getCompletionPercentage(form),
-    [form],
+  // const completionPercentage = useMemo(
+  //   () => getCompletionPercentage(form),
+  //   [form],
+  // );
+
+
+  const requiredPercentage = useMemo(
+    () => getRequiredCompletion(form),
+    [form]
   );
+
+  const optionalPercentage = useMemo(
+    () => getOptionalCompletion(form),
+    [form]
+  );
+
   const patientNamePreview = useMemo(() => formatPatientName(form), [form]);
   const addressPreview = useMemo(() => buildAddressPreview(form), [form]);
 
@@ -849,46 +894,34 @@ export function NewPatientPage() {
             <ArrowLeft className="h-4 w-4" /> Volver a pacientes
           </button>
 
-          <div className="clinical-card overflow-hidden">
-            <div className="bg-gradient-to-r from-primary to-slate-700 px-6 py-6 text-primary-foreground">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div className="space-y-2">
-                  <Badge className="w-fit gap-1 border-white/20 bg-white/10 text-primary-foreground hover:bg-white/10">
-                    <BadgePlus className="h-3.5 w-3.5" />
-                    Alta de paciente
-                  </Badge>
-                  <div>
-                    <h1 className="text-2xl font-semibold">
-                      Nuevo paciente - alta enriquecida
-                    </h1>
-                    <p className="mt-1 max-w-3xl text-sm text-primary-foreground/80">
-                      Conserva el diseno actual de gi medic, pero ahora captura
-                      la estructura operativa de Nexus: identidad, contacto,
-                      domicilio, seguridad clinica y datos administrativos en
-                      una sola vista.
+          <div className="clinical-card overflow-hidden border">
+            <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-5">
+
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+
+                <div>
+                  <h1 className="text-xl font-semibold text-primary-foreground">Nuevo paciente</h1>
+                  <p className="text-xs text-primary-foreground/70">Registro inicial</p>
+                  <p className="text-xs text-primary-foreground/50" >Campos obligatorios marcados con *</p>
+                </div>
+                
+                <div className="flex gap-3">
+                  <div className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs">
+                    <p className="text-primary-foreground/60">Sede activa</p>
+                    <p className="font-medium text-primary-foreground">
+                      {activeFacility?.name ?? 'Sin sede'}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs">
+                    <p className="text-primary-foreground/60">Perfil</p>
+                    <p className="font-medium text-primary-foreground">
+                      {requiredPercentage}% obligatorio · {optionalPercentage}% perfil completo
                     </p>
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-white/15 bg-white/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-primary-foreground/70">
-                      Sede activa
-                    </p>
-                    <p className="mt-1 text-sm font-medium">
-                      {activeFacility?.name ?? 'Sin sede asignada'}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-white/15 bg-white/10 px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-primary-foreground/70">
-                      Perfil opcional
-                    </p>
-                    <p className="mt-1 text-sm font-medium">
-                      {completionPercentage}% completo
-                    </p>
-                  </div>
-                </div>
               </div>
+              
             </div>
           </div>
         </div>
@@ -909,7 +942,7 @@ export function NewPatientPage() {
             }}
           >
             <SectionCard
-              description="Replica la estructura de identidad del alta rapida de Nexus, pero usando el shell actual de gi medic."
+              description="Datos básicos para identificar al paciente en el sistema."
               icon={UserRound}
               title="Identidad del paciente"
             >
@@ -1017,7 +1050,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Canales para comunicacion y acompanamiento inmediato del paciente."
+              description="Información de contacto del paciente."
               icon={HeartHandshake}
               title="Contacto y acompanamiento"
             >
@@ -1038,6 +1071,7 @@ export function NewPatientPage() {
                 value={form.alternatePhone}
               />
               <TextField
+                error={formErrors.email}
                 label="Correo electronico"
                 onChange={(value) => updateField('email', value)}
                 placeholder="paciente@correo.com"
@@ -1071,7 +1105,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Domicilio minimo y direccion estructurada para admision y seguimiento."
+              description="Dirección del paciente para contacto y seguimiento."
               icon={MapPin}
               title="Domicilio"
             >
@@ -1142,8 +1176,9 @@ export function NewPatientPage() {
                 />
               </div>
             </SectionCard>
+            
             <SectionCard
-              description="El flujo de Nexus exige dejar claro si existen alergias al momento del alta."
+              description="Registro de alergias y datos clave para la seguridad del paciente."
               icon={ShieldAlert}
               title="Seguridad clinica"
             >
@@ -1174,7 +1209,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Datos administrativos y sociales que Nexus deja listos desde el registro inicial."
+              description="Información adicional del paciente para completar su perfil."
               icon={Building2}
               title="Datos adicionales"
             >
@@ -1241,7 +1276,7 @@ export function NewPatientPage() {
             </SectionCard>
 
             <SectionCard
-              description="Se conserva el flujo actual de expediente e identificador principal de gi medic."
+              description="Datos de expediente e identificadores del paciente."
               icon={FilePlus2}
               title="Expediente e identificadores"
             >
@@ -1287,60 +1322,71 @@ export function NewPatientPage() {
               />
             </SectionCard>
 
-            <div className="clinical-card flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-medium">
-                  {isValid
-                    ? 'Listo para guardar'
-                    : 'Completa los campos obligatorios'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  El expediente maestro se abrira en la sede activa y luego te
-                  llevaremos al detalle del paciente.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => navigate('/pacientes')}
-                  type="button"
-                  variant="outline"
-                >
-                  Cancelar
-                </Button>
-                <Button disabled={isSubmitting || !isValid} type="submit">
-                  {isSubmitting ? (
-                    <>
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                      Guardando...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      Guardar paciente
-                    </>
-                  )}
-                </Button>
+            <div className="clinical-card rounded-xl border border-slate-200/60 bg-white px-5 py-4 shadow-sm">
+
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {isValid
+                      ? 'Listo para guardar'
+                      : 'Completa los campos obligatorios'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    El expediente se abrirá en la sede activa.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => navigate('/pacientes')}
+                    type="button"
+                    variant="outline"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    disabled={isSubmitting || !isValid}
+                    type="submit"
+                    className="min-w-[170px]"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        Guardar paciente
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </form>
 
           <aside className="space-y-6">
             <div className="clinical-card overflow-hidden">
-              <div className="border-b bg-muted/20 px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-md bg-primary/10 p-2 text-primary">
+              <div className="px-5 pt-5 pb-3">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2 text-primary">
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   <div>
                     <h2 className="text-sm font-semibold">Checklist rapido</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Conserva el checklist actual, ahora con la estructura
-                      completa de alta.
-                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Validacion del registro antes de guardar.</p>
                   </div>
                 </div>
               </div>
-              <div className="space-y-3 p-5 text-sm">
+              <div className="px-5 pt-3">
+                <div className="h-1.5 w-full rounded-full bg-muted">
+                  <div
+                    className="h-1.5 rounded-full bg-primary"
+                    style={{ width: `${requiredPercentage}%` }}
+                  />
+                </div>
+              </div>
+              <div className="px-5 pb-5 pt-2 space-y-3">
                 {checklistItems.map((item) => (
                   <ChecklistItem
                     description={item.description}
@@ -1352,10 +1398,10 @@ export function NewPatientPage() {
               </div>
             </div>
 
-            <div className="clinical-card overflow-hidden">
-              <div className="border-b bg-muted/20 px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-md bg-primary/10 p-2 text-primary">
+            <div className="clinical-card rounded-xl border border-slate-200/60 bg-white shadow-sm">
+              <div className="px-5 pt-5 pb-3">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2 text-primary">
                     <IdCard className="h-4 w-4" />
                   </div>
                   <div>
@@ -1363,14 +1409,15 @@ export function NewPatientPage() {
                       Resumen de captura
                     </h2>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Vista previa del alta antes de persistirla.
+                      Vista previa antes de guardar.
                     </p>
                   </div>
                 </div>
               </div>
-              <div className="space-y-4 p-5 text-sm">
-                <div className="rounded-lg bg-muted/30 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+
+              <div className="px-5 pb-5 pt-2 space-y-5 text-sm">
+                <div className="rounded-lg bg-muted/30 px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                     Paciente
                   </p>
                   <p className="mt-1 text-base font-semibold">
@@ -1386,11 +1433,11 @@ export function NewPatientPage() {
                   </p>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex items-start gap-3">
                     <Phone className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium">Contacto</p>
+                      <p className="text-sm font-medium">Contacto</p>
                       <p className="text-xs text-muted-foreground">
                         {form.phone || 'Sin telefono'}
                         {form.alternatePhone
@@ -1402,7 +1449,7 @@ export function NewPatientPage() {
                   <div className="flex items-start gap-3">
                     <Mail className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium">Correo</p>
+                      <p className="text-sm font-medium">Correo</p>
                       <p className="text-xs text-muted-foreground">
                         {form.email || 'Sin correo electronico'}
                       </p>
@@ -1411,7 +1458,7 @@ export function NewPatientPage() {
                   <div className="flex items-start gap-3">
                     <MapPin className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="font-medium">Domicilio</p>
+                      <p className="text-sm font-medium">Domicilio</p>
                       <p className="text-xs text-muted-foreground">
                         {addressPreview || 'Sin domicilio estructurado'}
                       </p>
@@ -1419,48 +1466,45 @@ export function NewPatientPage() {
                   </div>
                 </div>
 
-                <div className="rounded-md border bg-background px-3 py-3">
-                  <p className="font-medium">Seguridad clinica</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {form.allergiesSelection === 'yes'
-                      ? form.allergiesNotes || 'Alergias pendientes de detalle'
-                      : form.allergiesSelection === 'no'
-                        ? 'Sin alergias conocidas'
-                        : 'Sin definir'}
-                  </p>
-                </div>
+                <div className="space-y-3">
+                  <div className="rounded-md border border-slate-200/60 bg-background px-3 py-3">
+                    <p className="text-sm font-medium">Seguridad clinica</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {form.allergiesSelection === 'yes'
+                        ? form.allergiesNotes || 'Alergias pendientes de detalle'
+                        : form.allergiesSelection === 'no'
+                          ? 'Sin alergias conocidas'
+                          : 'Sin definir'}
+                    </p>
+                  </div>
 
-                <div className="rounded-md border bg-background px-3 py-3">
-                  <p className="font-medium">Expediente</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {form.recordNumber ||
-                      'Se generara automaticamente al guardar'}
-                  </p>
+                  <div className="rounded-md border border-slate-200/60 bg-background px-3 py-3">
+                    <p className="text-sm font-medium">Expediente</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {form.recordNumber ||
+                        'Se generara automaticamente al guardar'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {completionPercentage < 100 ? (
+            {optionalPercentage < 100 ? (
               <div className="flex items-start gap-2 rounded-md bg-muted/30 p-3 text-xs text-muted-foreground">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  Perfil {completionPercentage}% completo. Puedes terminar los
-                  datos opcionales mas adelante desde el perfil del paciente.
+                  Perfil {optionalPercentage}% completo. Puedes completar los datos opcionales más adelante desde el perfil del paciente.
                 </span>
               </div>
             ) : null}
 
             {duplicateWarning ? (
-              <div className="flex items-start gap-2 rounded-md border border-clinical-alert/20 bg-clinical-alert/5 p-3 text-xs">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-clinical-alert" />
-                <div>
-                  <p className="font-medium text-clinical-alert">
-                    Posible duplicado
-                  </p>
-                  <p className="mt-0.5 text-muted-foreground">
-                    {duplicateWarning}
-                  </p>
-                  <p className="mt-1 text-muted-foreground">
+              <div className="flex items-start gap-3 rounded-md border border-clinical-alert bg-clinical-alert/40 p-3 text-xs">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-clinical-alert-foreground" />
+                <div className="space-y-1">
+                  <p className="font-medium text-clinical-alert-foreground">Posible duplicado</p>
+                  <p className="text-muted-foreground">{duplicateWarning}</p>
+                  <p className="text-muted-foreground">
                     Revisa si se trata del mismo paciente antes de continuar.
                   </p>
                 </div>
@@ -1468,20 +1512,18 @@ export function NewPatientPage() {
             ) : null}
 
             {isCheckingDuplicate ? (
-              <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary/80">
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary/80" />
                 Buscando posibles duplicados...
               </div>
             ) : null}
 
-            <div className="rounded-md border bg-background px-4 py-3 text-xs text-muted-foreground">
-              <div className="flex items-start gap-2">
-                <Building2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  La unidad medica de captura puede diferir de la sede donde se
-                  abre el expediente. El alta sigue usando la sede activa del
-                  usuario autenticado.
-                </span>
-              </div>
+            <div className="flex items-start gap-3 rounded-md border border-primary/15 bg-primary/[0.04] px-4 py-3 text-xs">
+              <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
+              <p className="text-muted-foreground">
+                La unidad médica de captura puede diferir de la sede del expediente. 
+                El alta siempre se realiza en la sede activa del usuario.
+              </p>
             </div>
           </aside>
         </div>
