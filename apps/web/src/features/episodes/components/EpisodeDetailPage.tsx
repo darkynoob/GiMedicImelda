@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardList,
+  Download,
+  Eye,
   FileUp,
   FileText,
   HeartPulse,
@@ -32,8 +34,10 @@ import { useAuth } from '../../auth/hooks/auth-context';
 import {
   createEncounterSectionRecord,
   deleteEncounterAttachment,
+  downloadEncounterSectionRecordPdf,
   fetchEncounterDetail,
   fetchEncounterMeta,
+  previewEncounterSectionRecordPdf,
   signEncounterSectionRecord,
   updateEncounterSectionRecord,
   updateEncounter,
@@ -140,6 +144,10 @@ function isConsultationCurrentTab(encounterType: string, tabTitle: string) {
 
 function isConsultationEvolutionTab(encounterType: string, tabTitle: string) {
   return encounterType === 'OUTPATIENT' && tabTitle === 'Evolución';
+}
+
+function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'OUTPATIENT' && tabTitle === 'Receta / Indicaciones';
 }
 
 function getConsultationTypeLabel(
@@ -282,6 +290,445 @@ function mergeEvolutionSystemFields(
   };
 }
 
+function buildPrescriptionFolio(
+  encounterNumber: string,
+  versionNumber: number,
+) {
+  return `${encounterNumber}-RB${String(versionNumber).padStart(2, '0')}`;
+}
+
+function buildPrescriptionLegalSnapshot(detail: EncounterDetailResponse) {
+  return {
+    recetaInstitucionEmisora:
+      detail.legalContext.facilityInstitutionName ??
+      detail.legalContext.facilityLegalName ??
+      detail.legalContext.tenantLegalName ??
+      detail.legalContext.tenantName ??
+      detail.facility?.name ??
+      '',
+    recetaRfcMedico:
+      detail.legalContext.tenantTaxId ??
+      '',
+    recetaLicenciaSanitaria:
+      detail.legalContext.facilityLegalName ??
+      '',
+    recetaNombreProfesional:
+      detail.attendingClinician?.fullName ?? '',
+    recetaCedulaProfesional:
+      detail.attendingClinician?.professionalLicense ?? '',
+    recetaEspecialidadProfesional:
+      detail.specialty?.name ?? '',
+    recetaLugarAtencion:
+      [detail.facility?.name, detail.serviceArea?.name].filter(Boolean).join(' · ') || '',
+  };
+}
+
+function getLatestClinicalLegalFallback(detail: EncounterDetailResponse) {
+  const candidateRecords = [...detail.sectionRecords]
+    .filter((record) =>
+      ['Historia clínica', 'Consulta actual', 'Evolución'].includes(record.tabKey),
+    )
+    .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
+
+  const firstNonEmptyRecordField = (fieldKeys: string[]) => {
+    for (const record of candidateRecords) {
+      for (const fieldKey of fieldKeys) {
+        const value = record.formData[fieldKey];
+
+        if (typeof value === 'string' && value.trim().length > 0) {
+          return value.trim();
+        }
+      }
+    }
+
+    return '';
+  };
+
+  const latestAuthor = candidateRecords.find(
+    (record) =>
+      (record.authorName && record.authorName.trim().length > 0) ||
+      (record.authorLicense && record.authorLicense.trim().length > 0),
+  );
+
+  return {
+    professionalName:
+      firstNonEmptyRecordField([
+        'evolucionLegalMedico',
+        'consultaLegalMedico',
+        'legalMedico',
+      ]) || latestAuthor?.authorName || '',
+    professionalLicense:
+      firstNonEmptyRecordField([
+        'evolucionLegalCedula',
+        'consultaLegalCedula',
+        'legalCedula',
+      ]) || latestAuthor?.authorLicense || '',
+    specialty:
+      firstNonEmptyRecordField([
+        'evolucionLegalEspecialidad',
+        'consultaLegalEspecialidad',
+        'legalEspecialidad',
+      ]) || '',
+    place:
+      firstNonEmptyRecordField(['evolucionLugar']) || '',
+  };
+}
+
+function buildPrescriptionLegalSnapshotWithFallback(args: {
+  detail: EncounterDetailResponse;
+  sessionUser?: {
+    id: string;
+    fullName: string;
+    professionalLicense: string | null;
+    tenant: {
+      name: string;
+    };
+    facility: {
+      id: string;
+      name: string;
+    } | null;
+  } | null;
+  encounterMeta?: {
+    facilities: Array<{
+      id: string;
+      code: string;
+      name: string;
+    }>;
+    specialties: Array<{
+      id: string;
+      code: string;
+      name: string;
+      category: string;
+    }>;
+    clinicians: Array<{
+      id: string;
+      fullName: string;
+      facilityId: string | null;
+      professionalLicense: string | null;
+    }>;
+  } | null;
+}) {
+  const baseSnapshot = buildPrescriptionLegalSnapshot(args.detail);
+  const latestClinicalFallback = getLatestClinicalLegalFallback(args.detail);
+  const episodeFacility =
+    args.encounterMeta?.facilities.find(
+      (facility) => facility.id === args.detail.facility?.id,
+    ) ?? null;
+  const responsibleClinician =
+    (args.detail.attendingClinician?.id
+      ? args.encounterMeta?.clinicians.find(
+          (clinician) => clinician.id === args.detail.attendingClinician?.id,
+        )
+      : null) ?? null;
+  const specialtyName =
+    args.detail.specialty?.name ??
+    args.encounterMeta?.specialties.find(
+      (specialty) => specialty.id === args.detail.specialty?.id,
+    )?.name ??
+    '';
+
+  return {
+    recetaInstitucionEmisora:
+      baseSnapshot.recetaInstitucionEmisora ||
+      episodeFacility?.name ||
+      args.sessionUser?.facility?.name ||
+      args.sessionUser?.tenant.name ||
+      'Sin dato disponible',
+    recetaRfcMedico:
+      baseSnapshot.recetaRfcMedico || 'Sin dato disponible',
+    recetaLicenciaSanitaria:
+      baseSnapshot.recetaLicenciaSanitaria ||
+      episodeFacility?.code ||
+      'Sin dato disponible',
+    recetaNombreProfesional:
+      baseSnapshot.recetaNombreProfesional ||
+      latestClinicalFallback.professionalName ||
+      responsibleClinician?.fullName ||
+      args.sessionUser?.fullName ||
+      'Sin dato disponible',
+    recetaCedulaProfesional:
+      baseSnapshot.recetaCedulaProfesional ||
+      latestClinicalFallback.professionalLicense ||
+      responsibleClinician?.professionalLicense ||
+      args.sessionUser?.professionalLicense ||
+      'Sin dato disponible',
+    recetaEspecialidadProfesional:
+      baseSnapshot.recetaEspecialidadProfesional ||
+      latestClinicalFallback.specialty ||
+      specialtyName ||
+      'Sin dato disponible',
+    recetaLugarAtencion:
+      baseSnapshot.recetaLugarAtencion ||
+      latestClinicalFallback.place ||
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') ||
+      args.sessionUser?.facility?.name ||
+      'Sin dato disponible',
+  };
+}
+
+function readDiagnosesArrayFromUnknown(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    )
+    .map((item) => ({
+      diagnostico: typeof item.diagnostico === 'string' ? item.diagnostico : '',
+      cie10: typeof item.cie10 === 'string' ? item.cie10 : '',
+      estado: typeof item.estado === 'string' ? item.estado : '',
+    }))
+    .filter((item) => item.diagnostico || item.cie10 || item.estado);
+}
+
+function buildPrescriptionSuggestionSnapshot(detail: EncounterDetailResponse) {
+  const latestConsultationRecord =
+    [...detail.sectionRecords]
+      .filter((record) => record.tabKey === 'Consulta actual')
+      .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0] ?? null;
+  const latestEvolutionRecord =
+    [...detail.sectionRecords]
+      .filter((record) => record.tabKey === 'Evolución')
+      .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0] ?? null;
+
+  const evolutionDiagnoses = readDiagnosesArrayFromUnknown(
+    latestEvolutionRecord?.formData.evolucionDiagnosticos,
+  );
+  const consultationSecondaryDiagnoses = readDiagnosesArrayFromUnknown(
+    latestConsultationRecord?.formData.idSecundarios,
+  );
+
+  return {
+    recetaDiagnosticoPrincipal:
+      (latestConsultationRecord?.formData.idDiagnosticoPrincipal as string | undefined) ??
+      evolutionDiagnoses[0]?.diagnostico ??
+      '',
+    recetaDiagnosticoCie10:
+      (latestConsultationRecord?.formData.idCie10 as string | undefined) ??
+      evolutionDiagnoses[0]?.cie10 ??
+      '',
+    recetaDiagnosticoSecundarios:
+      evolutionDiagnoses.slice(1).length > 0
+        ? evolutionDiagnoses.slice(1)
+        : consultationSecondaryDiagnoses,
+    recetaSeguimientoFecha:
+      (latestConsultationRecord?.formData.planSeguimiento as string | undefined) ??
+      (latestEvolutionRecord?.formData.evolucionSeguimiento as string | undefined) ??
+      '',
+    recetaSeguimientoInstrucciones:
+      (latestEvolutionRecord?.formData.evolucionSeguimiento as string | undefined) ??
+      (latestConsultationRecord?.formData.planSeguimiento as string | undefined) ??
+      '',
+    recetaSignosAlarma: [
+      ...(latestConsultationRecord?.formData.rfDolorToracico ? ['Dolor torácico'] : []),
+      ...(latestConsultationRecord?.formData.rfDisnea ? ['Disnea'] : []),
+      ...(latestConsultationRecord?.formData.rfFiebreAlta ? ['Fiebre >38.5°C'] : []),
+      ...(latestConsultationRecord?.formData.rfSangradoActivo ? ['Sangrado activo'] : []),
+      ...(latestConsultationRecord?.formData.rfAlteracionConciencia
+        ? ['Alteración del estado de conciencia']
+        : []),
+    ],
+  };
+}
+
+function mergePrescriptionSystemFields(
+  formData: Record<string, RecordFieldValue>,
+  detail: EncounterDetailResponse,
+  options?: {
+    sessionUser?: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+      tenant: {
+        name: string;
+      };
+      facility: {
+        id: string;
+        name: string;
+      } | null;
+    } | null;
+    encounterMeta?: {
+      facilities: Array<{
+        id: string;
+        code: string;
+        name: string;
+      }>;
+      specialties: Array<{
+        id: string;
+        code: string;
+        name: string;
+        category: string;
+      }>;
+      clinicians: Array<{
+        id: string;
+        fullName: string;
+        facilityId: string | null;
+        professionalLicense: string | null;
+      }>;
+    } | null;
+  },
+) {
+  return {
+    ...buildPrescriptionSuggestionSnapshot(detail),
+    ...formData,
+    ...buildPrescriptionLegalSnapshotWithFallback({
+      detail,
+      sessionUser: options?.sessionUser,
+      encounterMeta: options?.encounterMeta ?? null,
+    }),
+  };
+}
+
+function buildPrescriptionVersionPrefill(args: {
+  tabDefinition: EpisodeTabDefinition;
+  detail: EncounterDetailResponse;
+  encounterNumber: string;
+  nextVersionNumber: number;
+  sessionUser?: {
+    id: string;
+    fullName: string;
+    professionalLicense: string | null;
+    tenant: {
+      name: string;
+    };
+    facility: {
+      id: string;
+      name: string;
+    } | null;
+  } | null;
+  encounterMeta?: {
+    facilities: Array<{
+      id: string;
+      code: string;
+      name: string;
+    }>;
+    specialties: Array<{
+      id: string;
+      code: string;
+      name: string;
+      category: string;
+    }>;
+    clinicians: Array<{
+      id: string;
+      fullName: string;
+      facilityId: string | null;
+      professionalLicense: string | null;
+    }>;
+  } | null;
+}) {
+  const nextFormData = normalizeRecordFormData(args.tabDefinition, undefined);
+
+  return mergePrescriptionSystemFields(
+    {
+      ...nextFormData,
+      recetaFolio: buildPrescriptionFolio(
+        args.encounterNumber,
+        args.nextVersionNumber,
+      ),
+      recetaCodigoVerificacion: 'Se generará al guardar',
+      recetaDiagnosticoPrincipal:
+        buildPrescriptionSuggestionSnapshot(args.detail).recetaDiagnosticoPrincipal,
+      recetaDiagnosticoCie10:
+        buildPrescriptionSuggestionSnapshot(args.detail).recetaDiagnosticoCie10,
+      recetaDiagnosticoSecundarios:
+        buildPrescriptionSuggestionSnapshot(args.detail).recetaDiagnosticoSecundarios as RecordFieldValue,
+      recetaSeguimientoFecha:
+        buildPrescriptionSuggestionSnapshot(args.detail).recetaSeguimientoFecha,
+      recetaSeguimientoInstrucciones:
+        buildPrescriptionSuggestionSnapshot(args.detail)
+          .recetaSeguimientoInstrucciones,
+      recetaSignosAlarma:
+        buildPrescriptionSuggestionSnapshot(args.detail).recetaSignosAlarma as RecordFieldValue,
+    },
+    args.detail,
+    {
+      sessionUser: args.sessionUser,
+      encounterMeta: args.encounterMeta ?? null,
+    },
+  );
+}
+
+function readMedicationArray(value: RecordFieldValue) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+  );
+}
+
+function buildPrescriptionSafetyAlerts(
+  detail: EncounterDetailResponse,
+  formData: Record<string, RecordFieldValue>,
+) {
+  const allergyText = [
+    detail.patient.allergiesSummary.join(', '),
+    typeof formData.referenciaAlergiasCriticas === 'string'
+      ? formData.referenciaAlergiasCriticas
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' | ')
+    .toLowerCase();
+  const medicationNames = readMedicationArray(formData.recetaMedicamentos).map((item) =>
+    typeof item.medicamento === 'string' ? item.medicamento.toLowerCase().trim() : '',
+  );
+  const allergyAlerts =
+    allergyText.includes('penic') &&
+    medicationNames.some((name) =>
+      ['penicilina', 'amoxicilina', 'ampicilina', 'dicloxacilina'].some((needle) =>
+        name.includes(needle),
+      ),
+    )
+      ? [
+          'El paciente tiene antecedente compatible con alergia a penicilinas; revisa la receta antes de firmar.',
+        ]
+      : ['Sin alertas de alergias detectadas automáticamente.'];
+
+  const duplicatedMedicationNames = medicationNames.filter(
+    (name, index) => name && medicationNames.indexOf(name) !== index,
+  );
+  const duplicityAlerts =
+    duplicatedMedicationNames.length > 0
+      ? [
+          `Se detectó posible duplicidad terapéutica en: ${[
+            ...new Set(duplicatedMedicationNames),
+          ].join(', ')}.`,
+        ]
+      : ['Sin duplicidad terapéutica identificada.'];
+
+  const interactionAlerts =
+    medicationNames.includes('warfarina') && medicationNames.includes('ibuprofeno')
+      ? [
+          'Warfarina con ibuprofeno incrementa el riesgo de sangrado; confirma la pertinencia del tratamiento.',
+        ]
+      : ['Sin interacciones medicamentosas críticas detectadas.'];
+
+  return [
+    { title: 'Validación de alergias', items: allergyAlerts },
+    { title: 'Duplicidad terapéutica', items: duplicityAlerts },
+    { title: 'Interacciones medicamentosas', items: interactionAlerts },
+  ];
+}
+
+function buildPdfBlobUrl(contentBase64: string, mimeType: string) {
+  const binaryContent = window.atob(contentBase64);
+  const bytes = new Uint8Array(binaryContent.length);
+
+  for (let index = 0; index < binaryContent.length; index += 1) {
+    bytes[index] = binaryContent.charCodeAt(index);
+  }
+
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
 function calculateImcValue(
   weightValue: RecordFieldValue,
   heightValue: RecordFieldValue,
@@ -357,6 +804,23 @@ function InfoRow({ label, value }: { label: string; value: string }) {
         {label}
       </p>
       <p className="mt-1 text-sm font-medium text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function ReadOnlyField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="space-y-2 text-sm">
+      <span className="font-medium text-slate-900">{label}</span>
+      <div className="flex min-h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+        {value || 'Sin dato disponible'}
+      </div>
     </div>
   );
 }
@@ -692,6 +1156,37 @@ export function EpisodeDetailPage() {
     },
   });
 
+  const previewPrescriptionPdfMutation = useMutation({
+    mutationFn: (recordId: string) =>
+      previewEncounterSectionRecordPdf(session!.accessToken, episodeNumber, recordId),
+    onSuccess: (response) => {
+      const blobUrl = buildPdfBlobUrl(response.contentBase64, response.mimeType);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
+  const downloadPrescriptionPdfMutation = useMutation({
+    mutationFn: (recordId: string) =>
+      downloadEncounterSectionRecordPdf(session!.accessToken, episodeNumber, recordId),
+    onSuccess: async (response) => {
+      const blobUrl = buildPdfBlobUrl(response.contentBase64, response.mimeType);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.href = blobUrl;
+      downloadAnchor.download = response.fileName;
+      downloadAnchor.click();
+      URL.revokeObjectURL(blobUrl);
+      setFeedback('PDF oficial generado y descargado correctamente.');
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
   const uploadAttachmentsMutation = useMutation({
     mutationFn: (files: File[]) =>
       uploadEncounterAttachments(session!.accessToken, episodeNumber, files),
@@ -753,6 +1248,47 @@ export function EpisodeDetailPage() {
     );
   }, [activeTab, detail, recordForm]);
 
+  useEffect(() => {
+    if (!recordForm || !detail || !isConsultationPrescriptionTab(detail.encounterType, activeTab)) {
+      return;
+    }
+
+    const synchronizedSystemFields = mergePrescriptionSystemFields(
+      recordForm.formData,
+      detail,
+      {
+        sessionUser: session?.user ?? null,
+        encounterMeta: metaQuery.data ?? null,
+      },
+    );
+    const systemFieldKeys = [
+      'recetaInstitucionEmisora',
+      'recetaRfcMedico',
+      'recetaLicenciaSanitaria',
+      'recetaNombreProfesional',
+      'recetaCedulaProfesional',
+      'recetaEspecialidadProfesional',
+      'recetaLugarAtencion',
+    ] as const;
+
+    const hasChanges = systemFieldKeys.some(
+      (fieldKey) => recordForm.formData[fieldKey] !== synchronizedSystemFields[fieldKey],
+    );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            formData: synchronizedSystemFields,
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, metaQuery.data, recordForm, session?.user]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -809,6 +1345,10 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isConsultationPrescriptionSection = isConsultationPrescriptionTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -836,6 +1376,18 @@ export function EpisodeDetailPage() {
         return right.recordedAt.localeCompare(left.recordedAt);
       })[0] ?? null
     : null;
+  const latestPrescriptionRecord = isConsultationPrescriptionSection
+    ? [...activeTabRecords].sort((left, right) => {
+        const leftVersion = left.metadata.versionNumber ?? 0;
+        const rightVersion = right.metadata.versionNumber ?? 0;
+
+        if (leftVersion !== rightVersion) {
+          return rightVersion - leftVersion;
+        }
+
+        return right.recordedAt.localeCompare(left.recordedAt);
+      })[0] ?? null
+    : null;
   const nextHistoryVersionNumber =
     (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
   const nextHistoryType =
@@ -846,6 +1398,8 @@ export function EpisodeDetailPage() {
     nextConsultationVersionNumber === 1 ? 'PRIMERA_VEZ' : 'SUBSECUENTE';
   const nextEvolutionVersionNumber =
     (latestEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextPrescriptionVersionNumber =
+    (latestPrescriptionRecord?.metadata.versionNumber ?? 0) + 1;
   const selectedRecord =
     activeRecordId === null
       ? null
@@ -938,6 +1492,34 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isConsultationPrescriptionSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Receta médica',
+          title: `Receta B${nextPrescriptionVersionNumber}`,
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildPrescriptionVersionPrefill({
+            tabDefinition: activeTabDefinition,
+            detail,
+            encounterNumber: detail.encounterNumber,
+            nextVersionNumber: nextPrescriptionVersionNumber,
+            sessionUser: session?.user ?? null,
+            encounterMeta: metaQuery.data ?? null,
+          }),
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -1004,6 +1586,15 @@ export function EpisodeDetailPage() {
                         )[0] ?? null
                     : latestEvolutionRecord,
                 )
+              : isConsultationPrescriptionSection
+                ? mergePrescriptionSystemFields(
+                    record.formData as Record<string, RecordFieldValue>,
+                    detail,
+                    {
+                      sessionUser: session?.user ?? null,
+                      encounterMeta: metaQuery.data ?? null,
+                    },
+                  )
             : record.formData,
       }),
     );
@@ -1068,7 +1659,12 @@ export function EpisodeDetailPage() {
                 detail,
                 latestEvolutionRecord,
               )
-          : recordForm.formData,
+            : isConsultationPrescriptionSection
+              ? mergePrescriptionSystemFields(recordForm.formData, detail, {
+                  sessionUser: session?.user ?? null,
+                  encounterMeta: metaQuery.data ?? null,
+                })
+              : recordForm.formData,
     };
 
     if (selectedRecord) {
@@ -1130,7 +1726,21 @@ export function EpisodeDetailPage() {
   const consultationTypeLabel = getConsultationTypeLabel(currentConsultationType);
   const evolutionVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextEvolutionVersionNumber;
+  const prescriptionVersionNumber =
+    selectedRecord?.metadata.versionNumber ?? nextPrescriptionVersionNumber;
   const isRecordLocked = recordForm?.status === 'SIGNED';
+  const currentPrescriptionLegalSnapshot =
+    isConsultationPrescriptionSection && detail
+      ? buildPrescriptionLegalSnapshotWithFallback({
+          detail,
+          sessionUser: session?.user ?? null,
+          encounterMeta: metaQuery.data ?? null,
+        })
+      : null;
+  const prescriptionSafetyAlerts =
+    isConsultationPrescriptionSection && recordForm
+      ? buildPrescriptionSafetyAlerts(detail, recordForm.formData)
+      : [];
 
   const submitPendingFiles = () => {
     if (!pendingFiles.length) {
@@ -1743,6 +2353,35 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isConsultationPrescriptionSection ? (
+                            <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {`Receta B${prescriptionVersionNumber}`}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Cada receta es independiente, se guarda como borrador
+                                    y solo se bloquea cuando se firma con validación de
+                                    contraseña.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    {typeof recordForm.formData.recetaFolio === 'string'
+                                      ? recordForm.formData.recetaFolio
+                                      : buildPrescriptionFolio(
+                                          detail.encounterNumber,
+                                          prescriptionVersionNumber,
+                                        )}
+                                  </Badge>
+                                  <Badge variant="draft">
+                                    Descargas:{' '}
+                                    {selectedRecord?.metadata.pdfDownloadCount ?? 0}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -1767,29 +2406,42 @@ export function EpisodeDetailPage() {
                             </label>
                           )}
 
-                          <label className="space-y-2 text-sm">
-                            <span className="font-medium text-slate-900">Estado</span>
-                            <select
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                              disabled={isRecordLocked}
-                              onChange={(event) =>
-                                updateRecordFormField('status', event.target.value)
-                              }
-                              value={recordForm.status}
-                            >
-                              {Object.entries(encounterRecordStatusConfig).map(
-                                ([value, config]) => (
-                                  <option key={value} value={value}>
-                                    {config.label}
-                                  </option>
-                                ),
-                              )}
-                            </select>
-                          </label>
+                          {isConsultationPrescriptionSection ? (
+                            <div className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">Estado</span>
+                              <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
+                                {
+                                  (encounterRecordStatusConfig[recordForm.status] ??
+                                    encounterRecordStatusConfig.DRAFT).label
+                                }
+                              </div>
+                            </div>
+                          ) : (
+                            <label className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">Estado</span>
+                              <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                disabled={isRecordLocked}
+                                onChange={(event) =>
+                                  updateRecordFormField('status', event.target.value)
+                                }
+                                value={recordForm.status}
+                              >
+                                {Object.entries(encounterRecordStatusConfig).map(
+                                  ([value, config]) => (
+                                    <option key={value} value={value}>
+                                      {config.label}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </label>
+                          )}
 
                           {isConsultationHistorySection ||
                           isConsultationCurrentSection ||
-                          isConsultationEvolutionSection ? null : (
+                          isConsultationEvolutionSection ||
+                          isConsultationPrescriptionSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -1816,6 +2468,150 @@ export function EpisodeDetailPage() {
                             />
                           </label>
                         </div>
+
+                        {isConsultationPrescriptionSection ? (
+                          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                            <div className="mb-3">
+                              <p className="text-sm font-semibold text-slate-900">
+                                Datos legales de la receta
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Estos datos se autocompletan con la configuración legal
+                                y profesional disponible del episodio.
+                              </p>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <ReadOnlyField
+                                label="Institución emisora"
+                                value={
+                                  currentPrescriptionLegalSnapshot?.recetaInstitucionEmisora ??
+                                  ''
+                                }
+                              />
+                              <ReadOnlyField
+                                label="RFC"
+                                value={
+                                  currentPrescriptionLegalSnapshot?.recetaRfcMedico ?? ''
+                                }
+                              />
+                              <ReadOnlyField
+                                label="Licencia sanitaria"
+                                value={
+                                  currentPrescriptionLegalSnapshot?.recetaLicenciaSanitaria ??
+                                  ''
+                                }
+                              />
+                              <ReadOnlyField
+                                label="Profesional responsable"
+                                value={
+                                  currentPrescriptionLegalSnapshot?.recetaNombreProfesional ??
+                                  ''
+                                }
+                              />
+                              <ReadOnlyField
+                                label="Cédula"
+                                value={
+                                  currentPrescriptionLegalSnapshot?.recetaCedulaProfesional ??
+                                  ''
+                                }
+                              />
+                              <ReadOnlyField
+                                label="Especialidad"
+                                value={
+                                  currentPrescriptionLegalSnapshot?.recetaEspecialidadProfesional ??
+                                  ''
+                                }
+                              />
+                              <div className="md:col-span-2">
+                                <ReadOnlyField
+                                  label="Lugar de atención"
+                                  value={
+                                    currentPrescriptionLegalSnapshot?.recetaLugarAtencion ??
+                                    ''
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {isConsultationPrescriptionSection ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">
+                                  Validaciones automáticas de seguridad
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Estas alertas se recalculan con los medicamentos
+                                  capturados y se muestran antes de firmar la receta.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  disabled={
+                                    !selectedRecord ||
+                                    previewPrescriptionPdfMutation.isPending
+                                  }
+                                  onClick={() =>
+                                    selectedRecord
+                                      ? previewPrescriptionPdfMutation.mutate(
+                                          selectedRecord.id,
+                                        )
+                                      : null
+                                  }
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Vista previa PDF
+                                </Button>
+                                <Button
+                                  disabled={
+                                    !selectedRecord ||
+                                    selectedRecord.status !== 'SIGNED' ||
+                                    (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1 ||
+                                    downloadPrescriptionPdfMutation.isPending
+                                  }
+                                  onClick={() =>
+                                    selectedRecord
+                                      ? downloadPrescriptionPdfMutation.mutate(
+                                          selectedRecord.id,
+                                        )
+                                      : null
+                                  }
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Descargar PDF oficial
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="mt-4 grid gap-3 md:grid-cols-3">
+                              {prescriptionSafetyAlerts.map((alertGroup) => (
+                                <div
+                                  className="rounded-2xl border border-amber-200 bg-amber-50 p-4"
+                                  key={alertGroup.title}
+                                >
+                                  <p className="text-sm font-semibold text-amber-800">
+                                    {alertGroup.title}
+                                  </p>
+                                  <div className="mt-2 space-y-2">
+                                    {alertGroup.items.map((item) => (
+                                      <p
+                                        className="text-xs text-amber-700"
+                                        key={`${alertGroup.title}-${item}`}
+                                      >
+                                        {item}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
 
                         {activeTabDefinition.sections
                           .filter((section) => {
@@ -1858,17 +2654,22 @@ export function EpisodeDetailPage() {
 
                                   if (field.type === 'readonly') {
                                     const readonlyValue =
-                                      typeof recordForm.formData[field.key] === 'string'
-                                        ? (recordForm.formData[field.key] as string)
-                                        : '';
+                                      isConsultationPrescriptionSection &&
+                                      currentPrescriptionLegalSnapshot &&
+                                      field.key in currentPrescriptionLegalSnapshot
+                                        ? (currentPrescriptionLegalSnapshot[
+                                            field.key as keyof typeof currentPrescriptionLegalSnapshot
+                                          ] as string)
+                                        : typeof recordForm.formData[field.key] === 'string'
+                                          ? (recordForm.formData[field.key] as string)
+                                          : '';
 
                                     return (
-                                      <label className="space-y-2 text-sm" key={field.key}>
-                                        <span className="font-medium text-slate-900">
-                                          {field.label}
-                                        </span>
-                                        <Input disabled value={readonlyValue} />
-                                      </label>
+                                      <ReadOnlyField
+                                        key={field.key}
+                                        label={field.label}
+                                        value={readonlyValue}
+                                      />
                                     );
                                   }
 

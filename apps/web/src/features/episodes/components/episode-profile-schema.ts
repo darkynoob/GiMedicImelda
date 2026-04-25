@@ -111,6 +111,63 @@ const administrationRouteOptions: EpisodeFieldOption[] = [
   { value: 'OTRA', label: 'Otra' },
 ];
 
+const prescriptionTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'SIMPLE', label: 'Receta simple' },
+  { value: 'CONTROLADA', label: 'Receta controlada' },
+  { value: 'ANTIBIOTICO', label: 'Antibiótico' },
+  { value: 'CRONICA', label: 'Tratamiento crónico' },
+];
+
+const prescriptionValidityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '24_HORAS', label: '24 horas' },
+  { value: '72_HORAS', label: '72 horas' },
+  { value: '7_DIAS', label: '7 días' },
+  { value: '14_DIAS', label: '14 días' },
+  { value: '30_DIAS', label: '30 días' },
+];
+
+const diagnosisStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'ACTIVO', label: 'Activo' },
+  { value: 'CONTROLADO', label: 'Controlado' },
+  { value: 'RESUELTO', label: 'Resuelto' },
+  { value: 'DESCARTADO', label: 'Descartado' },
+];
+
+const prescriptionMedicationTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'FARMACOLOGICO', label: 'Farmacológico' },
+  { value: 'ANTIBIOTICO', label: 'Antibiótico' },
+  { value: 'ANALGESICO', label: 'Analgésico' },
+  { value: 'CONTROLADO', label: 'Controlado' },
+  { value: 'SUPLEMENTO', label: 'Suplemento' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const comprehensionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'COMPLETA', label: 'Completa' },
+  { value: 'PARCIAL', label: 'Parcial' },
+  { value: 'LIMITADA', label: 'Limitada' },
+];
+
+const alarmSeverityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJA', label: 'Baja' },
+  { value: 'MEDIA', label: 'Media' },
+  { value: 'ALTA', label: 'Alta' },
+];
+
+const followUpTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'CONSULTA', label: 'Consulta' },
+  { value: 'TELECONSULTA', label: 'Teleconsulta' },
+  { value: 'URGENCIAS', label: 'Urgencias' },
+  { value: 'INTERCONSULTA', label: 'Interconsulta' },
+];
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -735,64 +792,259 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Prescripción, seguridad y seguimiento.',
       sections: [
         {
-          key: 'receta_base',
-          title: 'Receta',
+          key: 'encabezado_receta',
+          title: 'Encabezado de receta',
           fields: [
             {
-              key: 'encabezadoReceta',
-              label: 'Encabezado de receta',
-              type: 'textarea',
+              key: 'recetaFolio',
+              label: 'Folio de receta',
+              type: 'readonly',
+              inheritanceMode: 'system',
             },
             {
-              key: 'diagnosticoAsociado',
-              label: 'Diagnóstico asociado',
-              type: 'textarea',
+              key: 'recetaTipo',
+              label: 'Tipo de receta',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: prescriptionTypeOptions,
             },
             {
-              key: 'prescripcion',
-              label: 'Prescripción',
-              type: 'textarea',
+              key: 'recetaVigencia',
+              label: 'Vigencia de receta',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: prescriptionValidityOptions,
             },
             {
-              key: 'validacionesSeguridad',
-              label: 'Validaciones de seguridad',
-              type: 'textarea',
+              key: 'recetaCodigoVerificacion',
+              label: 'Código de verificación',
+              type: 'readonly',
+              inheritanceMode: 'system',
             },
           ],
         },
         {
-          key: 'indicaciones_consulta',
-          title: 'Indicaciones y seguimiento',
+          key: 'diagnostico_asociado',
+          title: 'Diagnóstico asociado',
           fields: [
             {
-              key: 'indicacionesSignosAlarma',
-              label: 'Indicaciones y signos de alarma',
-              type: 'textarea',
+              key: 'recetaDiagnosticoPrincipal',
+              label: 'Diagnóstico principal',
+              type: 'text',
+              inheritanceMode: 'fresh_capture',
             },
             {
-              key: 'datosLegalesReceta',
-              label: 'Datos legales',
-              type: 'textarea',
+              key: 'recetaDiagnosticoCie10',
+              label: 'CIE-10',
+              type: 'text',
+              inheritanceMode: 'fresh_capture',
             },
             {
-              key: 'educacionPaciente',
-              label: 'Educación al paciente',
-              type: 'textarea',
+              key: 'recetaDiagnosticoSecundarios',
+              label: 'Diagnósticos secundarios',
+              type: 'object-array',
+              inheritanceMode: 'fresh_capture',
+              itemAddLabel: 'Agregar diagnóstico secundario',
+              itemFields: [
+                { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+                { key: 'cie10', label: 'CIE-10', type: 'text' },
+                {
+                  key: 'estado',
+                  label: 'Estado',
+                  type: 'select',
+                  options: diagnosisStatusOptions,
+                },
+              ],
             },
             {
-              key: 'planSeguimiento',
-              label: 'Plan de seguimiento',
+              key: 'recetaIndicacionesDiagnosticas',
+              label: 'Indicaciones generales',
               type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'prescripcion_core',
+          title: 'Prescripción',
+          fields: [
+            {
+              key: 'recetaMedicamentos',
+              label: 'Medicamentos',
+              type: 'object-array',
+              inheritanceMode: 'fresh_capture',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'presentacion', label: 'Presentación', type: 'text' },
+                { key: 'dosis', label: 'Dosis', type: 'text' },
+                {
+                  key: 'via',
+                  label: 'Vía',
+                  type: 'select',
+                  options: administrationRouteOptions,
+                },
+                { key: 'frecuencia', label: 'Frecuencia', type: 'text' },
+                { key: 'duracion', label: 'Duración', type: 'text' },
+                {
+                  key: 'tipoMedicamento',
+                  label: 'Tipo de medicamento',
+                  type: 'select',
+                  options: prescriptionMedicationTypeOptions,
+                },
+                { key: 'intervaloHoras', label: 'Intervalo (horas)', type: 'number' },
+                { key: 'duracionDias', label: 'Duración (días)', type: 'number' },
+                {
+                  key: 'indicaciones',
+                  label: 'Indicaciones por medicamento',
+                  type: 'text',
+                },
+                { key: 'advertencias', label: 'Advertencias', type: 'text' },
+              ],
             },
             {
-              key: 'estudiosSolicitados',
-              label: 'Estudios solicitados',
+              key: 'recetaIndicacionesGenerales',
+              label: 'Indicaciones generales',
               type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'indicaciones_alarmas',
+          title: 'Indicaciones y signos de alarma',
+          fields: [
+            {
+              key: 'recetaSignosAlarma',
+              label: 'Signos de alarma',
+              type: 'string-array',
+              itemAddLabel: 'Agregar signo de alarma',
+              inheritanceMode: 'fresh_capture',
             },
             {
-              key: 'informacionClinicaAdicional',
-              label: 'Información clínica adicional',
+              key: 'recetaSeveridadAlarma',
+              label: 'Severidad',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: alarmSeverityOptions,
+            },
+            {
+              key: 'recetaProximaCita',
+              label: 'Próxima cita',
+              type: 'date',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'educacion_paciente',
+          title: 'Educación al paciente',
+          fields: [
+            {
+              key: 'recetaInformacionProporcionada',
+              label: 'Información proporcionada',
               type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+            {
+              key: 'recetaIndicacionesNoFarmacologicas',
+              label: 'Indicaciones no farmacológicas',
+              type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+            {
+              key: 'recetaComprensionPaciente',
+              label: 'Comprensión del paciente',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: comprehensionOptions,
+            },
+            {
+              key: 'recetaMaterialEducativo',
+              label: 'Material educativo entregado',
+              type: 'string-array',
+              inheritanceMode: 'fresh_capture',
+              itemAddLabel: 'Agregar material',
+            },
+          ],
+        },
+        {
+          key: 'plan_seguimiento',
+          title: 'Plan de seguimiento',
+          fields: [
+            {
+              key: 'recetaSeguimientoFecha',
+              label: 'Fecha próxima cita',
+              type: 'date',
+              inheritanceMode: 'fresh_capture',
+            },
+            {
+              key: 'recetaSeguimientoTipo',
+              label: 'Tipo de seguimiento',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: followUpTypeOptions,
+            },
+            {
+              key: 'recetaSeguimientoInstrucciones',
+              label: 'Instrucciones',
+              type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'datos_legales_receta',
+          title: 'Datos legales y firma',
+          fields: [
+            {
+              key: 'recetaInstitucionEmisora',
+              label: 'Institución emisora',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaRfcMedico',
+              label: 'RFC médico',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaLicenciaSanitaria',
+              label: 'Licencia sanitaria',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaNombreProfesional',
+              label: 'Nombre del profesional',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaCedulaProfesional',
+              label: 'Cédula',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaEspecialidadProfesional',
+              label: 'Especialidad',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaLugarAtencion',
+              label: 'Lugar de atención',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'firmarReceta',
+              label: 'Firma',
+              type: 'action',
+              actionLabel: 'Firmar receta',
+              inheritanceMode: 'system',
             },
           ],
         },

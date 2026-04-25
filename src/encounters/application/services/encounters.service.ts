@@ -30,11 +30,19 @@ import type {
   EncounterDetailResponse,
   EncounterListItemResponse,
   EncounterMetaResponse,
+  EncounterSectionRecordPdfResponse,
   EncountersListResponse,
 } from '../dto/encounter.response';
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
+    tenant: {
+      select: {
+        name: true;
+        legalName: true;
+        taxId: true;
+      };
+    };
     patient: true;
     facility: true;
     serviceArea: true;
@@ -130,6 +138,19 @@ type UploadedAttachmentFile = {
   mimetype: string;
   size: number;
   buffer: Buffer;
+};
+
+type RecordVersionContext = {
+  latestRecord: {
+    id: string;
+    title: string;
+    formDataJson: Prisma.JsonValue;
+    metadataJson: Prisma.JsonValue | null;
+    recordedAt: Date;
+    createdAt: Date;
+  } | null;
+  latestVersionNumber: number;
+  nextVersionNumber: number;
 };
 
 const encounterTypeLabels: Record<EncounterType, string> = {
@@ -733,6 +754,11 @@ export class EncountersService {
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
+    const prescriptionVersionContext = await this.resolvePrescriptionVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+    });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -741,6 +767,7 @@ export class EncountersService {
       historyVersionContext,
       consultationVersionContext,
       evolutionVersionContext,
+      prescriptionVersionContext,
       responsibleUser,
     });
 
@@ -825,6 +852,12 @@ export class EncountersService {
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
     });
+    const prescriptionVersionContext = await this.resolvePrescriptionVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+      currentRecordId: currentRecord.id,
+    });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -833,6 +866,7 @@ export class EncountersService {
       historyVersionContext,
       consultationVersionContext,
       evolutionVersionContext,
+      prescriptionVersionContext,
       responsibleUser,
     });
 
@@ -926,6 +960,82 @@ export class EncountersService {
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
         : null,
     );
+  }
+
+  async previewSectionRecordPdfForTenant(
+    tenantId: string,
+    encounterNumber: string,
+    recordId: string,
+  ): Promise<EncounterSectionRecordPdfResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const record = await this.findPrescriptionSectionRecord(tenantId, encounter.id, recordId);
+
+    return this.buildPrescriptionPdfResponse({
+      encounter,
+      record,
+      preview: true,
+      downloadCount:
+        this.extractRecordVersionMetadata(record.metadataJson).pdfDownloadCount ?? 0,
+    });
+  }
+
+  async downloadSectionRecordPdfForTenant(
+    tenantId: string,
+    encounterNumber: string,
+    recordId: string,
+  ): Promise<EncounterSectionRecordPdfResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const record = await this.findPrescriptionSectionRecord(tenantId, encounter.id, recordId);
+
+    if (record.status !== EncounterRecordStatus.SIGNED) {
+      throw new BadRequestException(
+        'La receta debe estar firmada antes de descargarse',
+      );
+    }
+
+    const currentMetadata = this.extractRecordVersionMetadata(record.metadataJson);
+    const currentDownloadCount = currentMetadata.pdfDownloadCount ?? 0;
+
+    if (currentDownloadCount >= 1) {
+      await this.prisma.encounterSectionRecord.update({
+        where: { id: record.id },
+        data: {
+          metadataJson: {
+            ...this.normalizeRecordMetadata(record.metadataJson),
+            blockedDownloadAttempts:
+              (this.readNumericValue(
+                this.normalizeRecordMetadata(record.metadataJson)
+                  ?.blockedDownloadAttempts,
+              ) ?? 0) + 1,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      throw new BadRequestException(
+        'La receta ya fue descargada una vez y quedó bloqueada para nuevas descargas',
+      );
+    }
+
+    const nextDownloadCount = currentDownloadCount + 1;
+    const downloadedAt = new Date();
+
+    await this.prisma.encounterSectionRecord.update({
+      where: { id: record.id },
+      data: {
+        metadataJson: {
+          ...this.normalizeRecordMetadata(record.metadataJson),
+          pdfDownloadCount: nextDownloadCount,
+          pdfLastDownloadedAt: downloadedAt.toISOString(),
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    return this.buildPrescriptionPdfResponse({
+      encounter,
+      record,
+      preview: false,
+      downloadCount: nextDownloadCount,
+    });
   }
 
   async uploadAttachmentsForTenant(
@@ -1226,6 +1336,13 @@ export class EncountersService {
   private encounterDetailInclude() {
     return {
       patient: true,
+      tenant: {
+        select: {
+          name: true,
+          legalName: true,
+          taxId: true,
+        },
+      },
       facility: true,
       serviceArea: true,
       specialty: true,
@@ -1457,6 +1574,13 @@ export class EncountersService {
         status: encounter.medicalRecord.status,
       },
       attendingClinician,
+      legalContext: {
+        tenantName: encounter.tenant.name,
+        tenantLegalName: encounter.tenant.legalName ?? null,
+        tenantTaxId: encounter.tenant.taxId ?? null,
+        facilityLegalName: encounter.facility?.legalName ?? null,
+        facilityInstitutionName: encounter.facility?.institutionName ?? null,
+      },
       metrics: {
         documents: encounter.clinicalDocuments.length,
         diagnoses: encounter.diagnoses.length,
@@ -1624,8 +1748,45 @@ export class EncountersService {
     encounterType: EncounterType;
     tabKey: string;
     currentRecordId?: string;
-  }) {
+  }): Promise<RecordVersionContext | null> {
     if (!this.isConsultationEvolutionRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: input.tabKey,
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
+  private async resolvePrescriptionVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isConsultationPrescriptionRecord(input.encounterType, input.tabKey)) {
       return null;
     }
 
@@ -1676,6 +1837,9 @@ export class EncountersService {
     evolutionVersionContext: Awaited<
       ReturnType<EncountersService['resolveEvolutionVersionContext']>
     >;
+    prescriptionVersionContext: Awaited<
+      ReturnType<EncountersService['resolvePrescriptionVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -1694,6 +1858,10 @@ export class EncountersService {
         input.input.tabKey,
       ) &&
       !this.isConsultationEvolutionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      ) &&
+      !this.isConsultationPrescriptionRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       )
@@ -1849,6 +2017,107 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isConsultationPrescriptionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.prescriptionVersionContext?.nextVersionNumber ??
+        1;
+      const latestHistoryRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Historia clínica',
+      );
+      const latestConsultationRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Consulta actual',
+      );
+      const latestEvolutionRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Evolución',
+      );
+      const prescriptionSuggestionSnapshot =
+        this.buildPrescriptionSuggestionSnapshot({
+          incomingFormData: input.input.formData,
+          currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+          consultationFormData: latestConsultationRecord?.formDataJson ?? null,
+          evolutionFormData: latestEvolutionRecord?.formDataJson ?? null,
+        });
+      const safetyAlerts = this.buildPrescriptionSafetyAlerts({
+        encounter: input.encounter,
+        historyFormData: latestHistoryRecord?.formDataJson ?? null,
+        formData: input.input.formData,
+      });
+      const prescriptionFolio =
+        currentRecordMetadata.prescriptionFolio ??
+        `${input.encounter.encounterNumber}-RB${String(versionNumber).padStart(2, '0')}`;
+      const verificationCode =
+        currentRecordMetadata.verificationCode ??
+        randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+
+      return {
+        tabKey: input.input.tabKey,
+        noteType: 'Receta médica',
+        title: `Receta B${versionNumber}`,
+        status:
+          input.currentRecord?.status === EncounterRecordStatus.SIGNED
+            ? EncounterRecordStatus.SIGNED
+            : EncounterRecordStatus.DRAFT,
+        formData: {
+          ...input.input.formData,
+          recetaFolio: prescriptionFolio,
+          recetaCodigoVerificacion: verificationCode,
+          recetaDiagnosticoPrincipal:
+            prescriptionSuggestionSnapshot.primaryDiagnosis,
+          recetaDiagnosticoCie10: prescriptionSuggestionSnapshot.primaryDiagnosisCode,
+          recetaDiagnosticoSecundarios:
+            prescriptionSuggestionSnapshot.secondaryDiagnoses,
+          recetaProximaCita: prescriptionSuggestionSnapshot.nextAppointment,
+          recetaSeguimientoFecha: prescriptionSuggestionSnapshot.nextAppointment,
+          recetaInstitucionEmisora:
+            input.encounter.facility?.institutionName ??
+            input.encounter.facility?.legalName ??
+            input.encounter.tenant.legalName ??
+            input.encounter.tenant.name ??
+            input.encounter.facility?.name ??
+            'Institución no configurada',
+          recetaRfcMedico:
+            input.encounter.tenant.taxId ||
+            'RFC no configurado',
+          recetaLicenciaSanitaria:
+            input.encounter.facility?.legalName ?? 'Licencia no configurada',
+          recetaNombreProfesional:
+            input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+          recetaCedulaProfesional:
+            input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+          recetaEspecialidadProfesional:
+            input.encounter.specialty?.name ?? 'Sin especialidad',
+          recetaLugarAtencion: [
+            input.encounter.facility?.name,
+            input.encounter.serviceArea?.name,
+          ]
+            .filter(Boolean)
+            .join(' · ') || 'Lugar no configurado',
+          recetaAlertas: safetyAlerts,
+        },
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          prescriptionFolio,
+          verificationCode,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+          inheritedFromRecordId: currentRecordMetadata.inheritedFromRecordId ?? null,
+        },
+      };
+    }
+
     const currentRecordMetadata = this.extractHistoryVersionMetadata(
       input.currentRecord?.metadataJson,
     );
@@ -1903,6 +2172,16 @@ export class EncountersService {
     tabKey: string,
   ) {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Evolución';
+  }
+
+  private isConsultationPrescriptionRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.OUTPATIENT &&
+      tabKey === 'Receta / Indicaciones'
+    );
   }
 
   private findLatestSectionRecord(
@@ -2048,6 +2327,7 @@ export class EncountersService {
   ) {
     const historyMetadata = this.extractHistoryVersionMetadata(rawMetadata);
     const consultationMetadata = this.extractConsultationVersionMetadata(rawMetadata);
+    const normalizedMetadata = this.normalizeRecordMetadata(rawMetadata);
 
     return {
       versionNumber:
@@ -2057,7 +2337,25 @@ export class EncountersService {
       inheritedFromRecordId:
         historyMetadata.inheritedFromRecordId ??
         consultationMetadata.inheritedFromRecordId ??
-        null,
+        (typeof normalizedMetadata?.inheritedFromRecordId === 'string'
+          ? normalizedMetadata.inheritedFromRecordId
+          : null),
+      prescriptionFolio:
+        typeof normalizedMetadata?.prescriptionFolio === 'string'
+          ? normalizedMetadata.prescriptionFolio
+          : null,
+      verificationCode:
+        typeof normalizedMetadata?.verificationCode === 'string'
+          ? normalizedMetadata.verificationCode
+          : null,
+      pdfDownloadCount:
+        typeof normalizedMetadata?.pdfDownloadCount === 'number'
+          ? normalizedMetadata.pdfDownloadCount
+          : null,
+      pdfLastDownloadedAt:
+        typeof normalizedMetadata?.pdfLastDownloadedAt === 'string'
+          ? normalizedMetadata.pdfLastDownloadedAt
+          : null,
     };
   }
 
@@ -2247,6 +2545,443 @@ export class EncountersService {
     const secondaryDiagnoses = this.readDiagnosesArrayFromJson(rawValue, 'idSecundarios');
 
     return [...diagnoses, ...secondaryDiagnoses];
+  }
+
+  private async findPrescriptionSectionRecord(
+    tenantId: string,
+    encounterId: string,
+    recordId: string,
+  ) {
+    const record = await this.prisma.encounterSectionRecord.findUnique({
+      where: { id: recordId },
+    });
+
+    if (
+      !record ||
+      record.tenantId !== tenantId ||
+      record.encounterId !== encounterId ||
+      !this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey)
+    ) {
+      throw new NotFoundException('Receta del episodio no encontrada');
+    }
+
+    return record;
+  }
+
+  private buildPrescriptionSuggestionSnapshot(input: {
+    incomingFormData: Record<string, unknown>;
+    currentRecordFormData: Prisma.JsonValue | null;
+    consultationFormData: Prisma.JsonValue | null;
+    evolutionFormData: Prisma.JsonValue | null;
+  }) {
+    const directPrimaryDiagnosis = this.readStringValue(
+      input.incomingFormData.recetaDiagnosticoPrincipal,
+    );
+    const currentPrimaryDiagnosis = this.readStringValueFromJson(
+      input.currentRecordFormData,
+      'recetaDiagnosticoPrincipal',
+    );
+    const consultationPrimaryDiagnosis = this.readStringValueFromJson(
+      input.consultationFormData,
+      'idDiagnosticoPrincipal',
+    );
+    const evolutionDiagnoses = this.readDiagnosesArrayFromJson(
+      input.evolutionFormData,
+      'evolucionDiagnosticos',
+    );
+    const consultationSecondaryDiagnoses = this.readDiagnosesArrayFromJson(
+      input.consultationFormData,
+      'idSecundarios',
+    );
+    const directSecondaryDiagnoses = this.readDiagnosesArrayFromUnknown(
+      input.incomingFormData.recetaDiagnosticoSecundarios,
+    );
+    const currentSecondaryDiagnoses = this.readDiagnosesArrayFromJson(
+      input.currentRecordFormData,
+      'recetaDiagnosticoSecundarios',
+    );
+    const primaryDiagnosis =
+      directPrimaryDiagnosis ||
+      currentPrimaryDiagnosis ||
+      consultationPrimaryDiagnosis ||
+      evolutionDiagnoses[0]?.diagnostico ||
+      '';
+    const primaryDiagnosisCode =
+      this.readStringValue(input.incomingFormData.recetaDiagnosticoCie10) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'recetaDiagnosticoCie10',
+      ) ||
+      this.readStringValueFromJson(input.consultationFormData, 'idCie10') ||
+      evolutionDiagnoses[0]?.cie10 ||
+      '';
+    const secondaryDiagnoses =
+      directSecondaryDiagnoses.length > 0
+        ? directSecondaryDiagnoses
+        : currentSecondaryDiagnoses.length > 0
+          ? currentSecondaryDiagnoses
+          : evolutionDiagnoses.slice(1).length > 0
+            ? evolutionDiagnoses.slice(1)
+            : consultationSecondaryDiagnoses;
+    const nextAppointment =
+      this.readStringValue(input.incomingFormData.recetaSeguimientoFecha) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'recetaSeguimientoFecha',
+      ) ||
+      this.readStringValueFromJson(input.evolutionFormData, 'evolucionSeguimiento') ||
+      this.readStringValueFromJson(input.consultationFormData, 'planSeguimiento') ||
+      '';
+
+    return {
+      primaryDiagnosis,
+      primaryDiagnosisCode,
+      secondaryDiagnoses,
+      nextAppointment,
+    };
+  }
+
+  private buildPrescriptionSafetyAlerts(input: {
+    encounter: TenantEncounterRecord;
+    historyFormData: Prisma.JsonValue | null;
+    formData: Record<string, unknown>;
+  }) {
+    const allergyText = [
+      this.readStringValueFromJson(input.historyFormData, 'appAlergias'),
+      input.encounter.allergies.map((allergy) => allergy.substance).join(', '),
+      input.encounter.patient.allergiesNotes ?? '',
+    ]
+      .filter(Boolean)
+      .join(' | ')
+      .toLowerCase();
+    const chronicConditionsText = [
+      this.readStringValueFromJson(input.historyFormData, 'appEnfermedadesCronicas'),
+      input.encounter.problems.map((problem) => problem.description).join(', '),
+    ]
+      .filter(Boolean)
+      .join(' | ')
+      .toLowerCase();
+    const medications = this.readPrescriptionMedicationArray(
+      input.formData.recetaMedicamentos,
+    );
+    const normalizedMedicationNames = medications
+      .map((item) => ({
+        ...item,
+        normalizedName: item.medicamento.toLowerCase().trim(),
+      }))
+      .filter((item) => item.normalizedName.length > 0);
+
+    const allergyAlerts: string[] = [];
+    const duplicityAlerts: string[] = [];
+    const interactionAlerts: string[] = [];
+    const contraindicationAlerts: string[] = [];
+
+    const allergyRules = [
+      {
+        keyword: 'penic',
+        matches: ['penicilina', 'amoxicilina', 'ampicilina', 'dicloxacilina'],
+        message:
+          'El paciente tiene antecedente de alergia compatible con penicilinas; revisa la prescripción.',
+      },
+      {
+        keyword: 'sulfa',
+        matches: ['trimetoprim', 'sulfametoxazol', 'cotrimoxazol'],
+        message:
+          'Existe antecedente alérgico a sulfas; valida si el antibiótico indicado es seguro.',
+      },
+    ];
+
+    for (const rule of allergyRules) {
+      if (
+        allergyText.includes(rule.keyword) &&
+        normalizedMedicationNames.some((item) =>
+          rule.matches.some((match) => item.normalizedName.includes(match)),
+        )
+      ) {
+        allergyAlerts.push(rule.message);
+      }
+    }
+
+    const medicationCountByName = new Map<string, number>();
+    for (const medication of normalizedMedicationNames) {
+      medicationCountByName.set(
+        medication.normalizedName,
+        (medicationCountByName.get(medication.normalizedName) ?? 0) + 1,
+      );
+    }
+
+    for (const [medicationName, count] of medicationCountByName.entries()) {
+      if (count > 1) {
+        duplicityAlerts.push(
+          `Se detectó posible duplicidad terapéutica para ${medicationName}.`,
+        );
+      }
+    }
+
+    const interactionRules = [
+      {
+        medications: ['warfarina', 'ibuprofeno'],
+        message:
+          'Warfarina con ibuprofeno incrementa el riesgo de sangrado; confirma indicación.',
+      },
+      {
+        medications: ['enalapril', 'ibuprofeno'],
+        message:
+          'Enalapril con ibuprofeno puede reducir respuesta antihipertensiva y afectar función renal.',
+      },
+      {
+        medications: ['claritromicina', 'atorvastatina'],
+        message:
+          'Claritromicina con atorvastatina aumenta el riesgo de toxicidad muscular.',
+      },
+    ];
+
+    for (const rule of interactionRules) {
+      if (
+        rule.medications.every((medicationName) =>
+          normalizedMedicationNames.some((item) =>
+            item.normalizedName.includes(medicationName),
+          ),
+        )
+      ) {
+        interactionAlerts.push(rule.message);
+      }
+    }
+
+    if (
+      chronicConditionsText.includes('renal') &&
+      normalizedMedicationNames.some((item) =>
+        item.normalizedName.includes('metformina'),
+      )
+    ) {
+      contraindicationAlerts.push(
+        'Existe antecedente renal; valida la pertinencia de metformina y la función renal actual.',
+      );
+    }
+
+    return {
+      allergyValidation:
+        allergyAlerts.length > 0
+          ? allergyAlerts
+          : ['Sin alertas de alergias detectadas automáticamente.'],
+      therapeuticDuplicity:
+        duplicityAlerts.length > 0
+          ? duplicityAlerts
+          : ['Sin duplicidad terapéutica identificada.'],
+      drugInteractions:
+        interactionAlerts.length > 0
+          ? interactionAlerts
+          : ['Sin interacciones medicamentosas críticas detectadas.'],
+      contraindications:
+        contraindicationAlerts.length > 0
+          ? contraindicationAlerts
+          : ['Sin contraindicaciones automáticas relevantes.'],
+    };
+  }
+
+  private readPrescriptionMedicationArray(value: unknown) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      )
+      .map((item) => ({
+        medicamento: this.readStringValue(item.medicamento),
+        presentacion: this.readStringValue(item.presentacion),
+        dosis: this.readStringValue(item.dosis),
+        via: this.readStringValue(item.via),
+        frecuencia: this.readStringValue(item.frecuencia),
+        duracion: this.readStringValue(item.duracion),
+        tipoMedicamento: this.readStringValue(item.tipoMedicamento),
+        intervaloHoras: this.readStringValue(item.intervaloHoras),
+        duracionDias: this.readStringValue(item.duracionDias),
+        indicaciones: this.readStringValue(item.indicaciones),
+        advertencias: this.readStringValue(item.advertencias),
+      }))
+      .filter((item) => item.medicamento || item.dosis || item.frecuencia);
+  }
+
+  private readDiagnosesArrayFromUnknown(value: unknown) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      )
+      .map((item) => ({
+        diagnostico: this.readStringValue(item.diagnostico),
+        cie10: this.readStringValue(item.cie10),
+        estado: this.readStringValue(item.estado),
+      }))
+      .filter((item) => item.diagnostico || item.cie10 || item.estado);
+  }
+
+  private buildPrescriptionPdfResponse(input: {
+    encounter: TenantEncounterRecord;
+    record: {
+      id: string;
+      title: string;
+      status: EncounterRecordStatus;
+      recordedAt: Date;
+      formDataJson: Prisma.JsonValue;
+      metadataJson: Prisma.JsonValue | null;
+    };
+    preview: boolean;
+    downloadCount: number;
+  }): EncounterSectionRecordPdfResponse {
+    const formData =
+      input.record.formDataJson &&
+      typeof input.record.formDataJson === 'object' &&
+      !Array.isArray(input.record.formDataJson)
+        ? (input.record.formDataJson as Record<string, unknown>)
+        : {};
+    const metadata = this.extractRecordVersionMetadata(input.record.metadataJson);
+    const pdfBuffer = this.buildPrescriptionPdfDocument({
+      encounter: input.encounter,
+      recordTitle: input.record.title,
+      recordedAt: input.record.recordedAt,
+      formData,
+      folio: metadata.prescriptionFolio ?? '',
+      verificationCode: metadata.verificationCode ?? '',
+      downloadCount: input.downloadCount,
+    });
+
+    return {
+      fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+      mimeType: 'application/pdf',
+      contentBase64: pdfBuffer.toString('base64'),
+      downloadCount: input.downloadCount,
+      preview: input.preview,
+    };
+  }
+
+  private buildPrescriptionPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    folio: string;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const medicationLines = this.readPrescriptionMedicationArray(
+      input.formData.recetaMedicamentos,
+    ).map((item, index) =>
+      [
+        `${index + 1}. ${item.medicamento || 'Medicamento sin nombre'}`,
+        item.presentacion ? `Pres.: ${item.presentacion}` : null,
+        item.dosis ? `Dosis: ${item.dosis}` : null,
+        item.via ? `Vía: ${item.via}` : null,
+        item.frecuencia ? `Frecuencia: ${item.frecuencia}` : null,
+        item.duracionDias ? `Duración: ${item.duracionDias} días` : item.duracion ? `Duración: ${item.duracion}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    );
+    const signsOfAlarm = this.readStringArray(input.formData.recetaSignosAlarma).join(', ');
+    const legalFields = [
+      `Institución: ${this.readStringValue(input.formData.recetaInstitucionEmisora)}`,
+      `Profesional: ${this.readStringValue(input.formData.recetaNombreProfesional)}`,
+      `Cédula: ${this.readStringValue(input.formData.recetaCedulaProfesional)}`,
+      `Especialidad: ${this.readStringValue(input.formData.recetaEspecialidadProfesional)}`,
+      `Lugar: ${this.readStringValue(input.formData.recetaLugarAtencion)}`,
+    ];
+    const commonLines = [
+      input.recordTitle,
+      `Folio: ${input.folio}`,
+      `Código verificación: ${input.verificationCode}`,
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Diagnóstico principal: ${this.readStringValue(input.formData.recetaDiagnosticoPrincipal)}`,
+      `CIE-10: ${this.readStringValue(input.formData.recetaDiagnosticoCie10)}`,
+      `Indicaciones generales: ${this.readStringValue(input.formData.recetaIndicacionesGenerales)}`,
+      `Indicaciones diagnósticas: ${this.readStringValue(input.formData.recetaIndicacionesDiagnosticas)}`,
+      'Medicamentos:',
+      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      `Signos de alarma: ${signsOfAlarm || 'Sin signos de alarma capturados'}`,
+      `Seguimiento: ${this.readStringValue(input.formData.recetaSeguimientoFecha)} ${this.readStringValue(input.formData.recetaSeguimientoTipo)}`.trim(),
+      `Instrucciones: ${this.readStringValue(input.formData.recetaSeguimientoInstrucciones)}`,
+      `Comprensión del paciente: ${this.readStringValue(input.formData.recetaComprensionPaciente)}`,
+      ...legalFields,
+      `Descargas oficiales: ${input.downloadCount}`,
+    ];
+    const lines = [
+      'COPIA PACIENTE',
+      ...commonLines,
+      '----------------------------------------',
+      'COPIA FARMACIA',
+      ...commonLines,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private renderSimplePdf(lines: string[]) {
+    const sanitizedLines = lines
+      .map((line) => this.escapePdfText(line))
+      .slice(0, 90);
+    const contentStream = [
+      'BT',
+      '/F1 10 Tf',
+      '42 800 Td',
+      '12 TL',
+      ...sanitizedLines.flatMap((line, index) =>
+        index === 0 ? [`(${line}) Tj`] : ['T*', `(${line}) Tj`],
+      ),
+      'ET',
+    ].join('\n');
+    const objects = [
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+      '2 0 obj << /Type /Pages /Count 1 /Kids [3 0 R] >> endobj',
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj',
+      '4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+      `5 0 obj << /Length ${Buffer.byteLength(contentStream, 'utf8')} >> stream\n${contentStream}\nendstream endobj`,
+    ];
+
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+
+    for (const object of objects) {
+      offsets.push(Buffer.byteLength(pdf, 'utf8'));
+      pdf += `${object}\n`;
+    }
+
+    const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+    pdf += `xref\n0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+
+    for (let index = 1; index < offsets.length; index += 1) {
+      pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+    }
+
+    pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+    return Buffer.from(pdf, 'utf8');
+  }
+
+  private escapePdfText(value: string) {
+    return value
+      .normalize('NFD')
+      .replace(/[^\x20-\x7E]/g, '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)');
+  }
+
+  private readStringArray(value: unknown) {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
   }
 
   private normalizeRecordMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {

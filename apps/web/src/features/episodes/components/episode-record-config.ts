@@ -20,7 +20,6 @@ const outpatientConfig: Record<string, EpisodeRecordPanelConfig> = {
   'Receta / Indicaciones': {
     contextLabel: 'Recetas e indicaciones',
     defaultActionLabel: 'Nueva receta',
-    noteTypes: ['Receta médica', 'Indicación médica'],
   },
   Documentos: {
     contextLabel: 'Documentos del episodio',

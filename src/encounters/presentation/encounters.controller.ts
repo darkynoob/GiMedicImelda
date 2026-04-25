@@ -134,6 +134,32 @@ export class EncountersController {
     );
   }
 
+  @Get(':encounterNumber/records/:recordId/pdf-preview')
+  previewSectionRecordPdf(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Param('recordId') recordId: string,
+  ) {
+    return this.encountersService.previewSectionRecordPdfForTenant(
+      request.user.tenantId,
+      encounterNumber,
+      recordId,
+    );
+  }
+
+  @Post(':encounterNumber/records/:recordId/pdf-download')
+  downloadSectionRecordPdf(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Param('recordId') recordId: string,
+  ) {
+    return this.encountersService.downloadSectionRecordPdfForTenant(
+      request.user.tenantId,
+      encounterNumber,
+      recordId,
+    );
+  }
+
   @Post(':encounterNumber/attachments')
   @UseInterceptors(FilesInterceptor('files', 10))
   uploadAttachments(
