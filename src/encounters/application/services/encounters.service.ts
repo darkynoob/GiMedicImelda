@@ -604,6 +604,7 @@ export class EncountersService {
       tenantId,
       encounterNumber,
     );
+    this.assertEncounterEditable(currentEncounter);
 
     const facilityId = input.facilityId ?? currentEncounter.facilityId;
 
@@ -734,6 +735,7 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto,
   ): Promise<EncounterDetailResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
     const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
     const responsibleUser = encounter.attendingUserId
@@ -759,6 +761,12 @@ export class EncountersService {
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
+    const documentVersionContext = await this.resolveDocumentVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+      noteType: input.noteType,
+    });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -768,6 +776,7 @@ export class EncountersService {
       consultationVersionContext,
       evolutionVersionContext,
       prescriptionVersionContext,
+      documentVersionContext,
       responsibleUser,
     });
 
@@ -809,6 +818,7 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto,
   ): Promise<EncounterDetailResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
     const currentRecord = await this.prisma.encounterSectionRecord.findUnique({
       where: { id: recordId },
     });
@@ -858,6 +868,13 @@ export class EncountersService {
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
     });
+    const documentVersionContext = await this.resolveDocumentVersionContext({
+      encounterId: encounter.id,
+      encounterType: encounter.encounterType,
+      tabKey: input.tabKey,
+      noteType: input.noteType,
+      currentRecordId: currentRecord.id,
+    });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -867,6 +884,7 @@ export class EncountersService {
       consultationVersionContext,
       evolutionVersionContext,
       prescriptionVersionContext,
+      documentVersionContext,
       responsibleUser,
     });
 
@@ -905,6 +923,7 @@ export class EncountersService {
     password: string,
   ): Promise<EncounterDetailResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
     const [currentRecord, currentUser] = await Promise.all([
       this.prisma.encounterSectionRecord.findUnique({
         where: { id: recordId },
@@ -938,19 +957,34 @@ export class EncountersService {
     }
 
     const currentMetadata = this.normalizeRecordMetadata(currentRecord.metadataJson) ?? {};
+    this.assertRecordCanBeSigned(currentRecord.noteType, currentRecord.formDataJson);
 
-    await this.prisma.encounterSectionRecord.update({
-      where: { id: recordId },
-      data: {
-        status: EncounterRecordStatus.SIGNED,
-        signedAt: new Date(),
-        metadataJson: {
-          ...currentMetadata,
-          signedByUserId: currentUser.id,
-          signedByUserName: currentUser.fullName,
-          signedWithPasswordValidation: true,
-        } as Prisma.InputJsonValue,
-      },
+    const signedAt = new Date();
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.encounterSectionRecord.update({
+        where: { id: recordId },
+        data: {
+          status: EncounterRecordStatus.SIGNED,
+          signedAt,
+          metadataJson: {
+            ...currentMetadata,
+            signedByUserId: currentUser.id,
+            signedByUserName: currentUser.fullName,
+            signedWithPasswordValidation: true,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      if (this.isConsultationClosureDocument(currentRecord.encounterType, currentRecord.tabKey, currentRecord.noteType)) {
+        await transaction.encounter.update({
+          where: { id: encounter.id },
+          data: {
+            status: EncounterStatus.CLOSED,
+            closedAt: encounter.closedAt ?? signedAt,
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -968,9 +1002,13 @@ export class EncountersService {
     recordId: string,
   ): Promise<EncounterSectionRecordPdfResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
-    const record = await this.findPrescriptionSectionRecord(tenantId, encounter.id, recordId);
+    const record = await this.findPdfEligibleSectionRecord(
+      tenantId,
+      encounter.id,
+      recordId,
+    );
 
-    return this.buildPrescriptionPdfResponse({
+    return this.buildSectionRecordPdfResponse({
       encounter,
       record,
       preview: true,
@@ -985,18 +1023,25 @@ export class EncountersService {
     recordId: string,
   ): Promise<EncounterSectionRecordPdfResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
-    const record = await this.findPrescriptionSectionRecord(tenantId, encounter.id, recordId);
+    const record = await this.findPdfEligibleSectionRecord(
+      tenantId,
+      encounter.id,
+      recordId,
+    );
 
     if (record.status !== EncounterRecordStatus.SIGNED) {
       throw new BadRequestException(
-        'La receta debe estar firmada antes de descargarse',
+        'El documento debe estar firmado antes de descargarse',
       );
     }
 
     const currentMetadata = this.extractRecordVersionMetadata(record.metadataJson);
     const currentDownloadCount = currentMetadata.pdfDownloadCount ?? 0;
 
-    if (currentDownloadCount >= 1) {
+    if (
+      this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey) &&
+      currentDownloadCount >= 1
+    ) {
       await this.prisma.encounterSectionRecord.update({
         where: { id: record.id },
         data: {
@@ -1030,7 +1075,7 @@ export class EncountersService {
       },
     });
 
-    return this.buildPrescriptionPdfResponse({
+    return this.buildSectionRecordPdfResponse({
       encounter,
       record,
       preview: false,
@@ -1045,6 +1090,7 @@ export class EncountersService {
     files: UploadedAttachmentFile[],
   ) {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
 
     if (!files.length) {
       throw new BadRequestException('Selecciona al menos un archivo');
@@ -1117,6 +1163,7 @@ export class EncountersService {
     attachmentId: string,
   ) {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
     const attachment = await this.prisma.attachment.findUnique({
       where: { id: attachmentId },
     });
@@ -1817,6 +1864,45 @@ export class EncountersService {
     };
   }
 
+  private async resolveDocumentVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    noteType: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isConsultationDocumentRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: input.tabKey,
+        noteType: input.noteType,
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -1840,6 +1926,9 @@ export class EncountersService {
     prescriptionVersionContext: Awaited<
       ReturnType<EncountersService['resolvePrescriptionVersionContext']>
     >;
+    documentVersionContext: Awaited<
+      ReturnType<EncountersService['resolveDocumentVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -1858,6 +1947,10 @@ export class EncountersService {
         input.input.tabKey,
       ) &&
       !this.isConsultationEvolutionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      ) &&
+      !this.isConsultationDocumentRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       ) &&
@@ -1880,6 +1973,56 @@ export class EncountersService {
         formData: input.input.formData,
         metadata:
           this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      };
+    }
+
+    if (
+      this.isConsultationDocumentRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.documentVersionContext?.nextVersionNumber ??
+        1;
+      const verificationCode =
+        currentRecordMetadata.verificationCode ??
+        randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+      const mergedFormData = this.buildConsultationDocumentFormData({
+        encounter: input.encounter,
+        currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+        incomingFormData: input.input.formData,
+        noteType: input.input.noteType,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: input.input.tabKey,
+        noteType: input.input.noteType,
+        title: this.buildConsultationDocumentTitle(input.input.noteType, versionNumber),
+        status:
+          input.currentRecord?.status === EncounterRecordStatus.SIGNED
+            ? EncounterRecordStatus.SIGNED
+            : EncounterRecordStatus.DRAFT,
+        formData: {
+          ...mergedFormData,
+          documentoCodigoVerificacion: verificationCode,
+        },
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          verificationCode,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            input.documentVersionContext?.latestRecord?.id ??
+            null,
+        },
       };
     }
 
@@ -2181,6 +2324,24 @@ export class EncountersService {
     return (
       encounterType === EncounterType.OUTPATIENT &&
       tabKey === 'Receta / Indicaciones'
+    );
+  }
+
+  private isConsultationDocumentRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.OUTPATIENT && tabKey === 'Documentos';
+  }
+
+  private isConsultationClosureDocument(
+    encounterType: EncounterType,
+    tabKey: string,
+    noteType: string,
+  ) {
+    return (
+      this.isConsultationDocumentRecord(encounterType, tabKey) &&
+      noteType === 'Nota de cierre'
     );
   }
 
@@ -2547,7 +2708,7 @@ export class EncountersService {
     return [...diagnoses, ...secondaryDiagnoses];
   }
 
-  private async findPrescriptionSectionRecord(
+  private async findPdfEligibleSectionRecord(
     tenantId: string,
     encounterId: string,
     recordId: string,
@@ -2560,9 +2721,10 @@ export class EncountersService {
       !record ||
       record.tenantId !== tenantId ||
       record.encounterId !== encounterId ||
-      !this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey)
+      (!this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey) &&
+        !this.isConsultationDocumentRecord(record.encounterType, record.tabKey))
     ) {
-      throw new NotFoundException('Receta del episodio no encontrada');
+      throw new NotFoundException('Documento del episodio no encontrado');
     }
 
     return record;
@@ -2779,6 +2941,261 @@ export class EncountersService {
     };
   }
 
+  private buildConsultationDocumentTitle(noteType: string, versionNumber: number) {
+    return `${noteType} V${versionNumber}`;
+  }
+
+  private buildConsultationDocumentFormData(input: {
+    encounter: TenantEncounterRecord;
+    currentRecordFormData: Prisma.JsonValue | null;
+    incomingFormData: Record<string, unknown>;
+    noteType: string;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const suggestionSnapshot = this.buildConsultationDocumentSuggestionSnapshot({
+      encounter: input.encounter,
+      noteType: input.noteType,
+      incomingFormData: input.incomingFormData,
+      currentRecordFormData: input.currentRecordFormData,
+    });
+    const legalSnapshot = this.buildConsultationDocumentLegalSnapshot(
+      input.encounter,
+      input.responsibleUser,
+    );
+
+    return {
+      ...suggestionSnapshot,
+      ...input.incomingFormData,
+      ...legalSnapshot,
+    };
+  }
+
+  private buildConsultationDocumentSuggestionSnapshot(input: {
+    encounter: TenantEncounterRecord;
+    noteType: string;
+    incomingFormData: Record<string, unknown>;
+    currentRecordFormData: Prisma.JsonValue | null;
+  }) {
+    const latestConsultationRecord = this.findLatestSectionRecord(
+      input.encounter.sectionRecords,
+      'Consulta actual',
+    );
+    const latestEvolutionRecord = this.findLatestSectionRecord(
+      input.encounter.sectionRecords,
+      'Evolución',
+    );
+    const latestPrescriptionRecord = this.findLatestSectionRecord(
+      input.encounter.sectionRecords,
+      'Receta / Indicaciones',
+    );
+    const evolutionDiagnoses = this.readDiagnosesArrayFromJson(
+      latestEvolutionRecord?.formDataJson ?? null,
+      'evolucionDiagnosticos',
+    );
+    const consultationSecondaryDiagnoses = this.readDiagnosesArrayFromJson(
+      latestConsultationRecord?.formDataJson ?? null,
+      'idSecundarios',
+    );
+    const primaryDiagnosis =
+      this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'documentoDiagnosticoPrincipal',
+      ) ||
+      this.readStringValueFromJson(
+        latestConsultationRecord?.formDataJson ?? null,
+        'idDiagnosticoPrincipal',
+      ) ||
+      evolutionDiagnoses[0]?.diagnostico ||
+      '';
+    const primaryDiagnosisCode =
+      this.readStringValue(input.incomingFormData.documentoDiagnosticoCie10) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'documentoDiagnosticoCie10',
+      ) ||
+      this.readStringValueFromJson(latestConsultationRecord?.formDataJson ?? null, 'idCie10') ||
+      evolutionDiagnoses[0]?.cie10 ||
+      '';
+    const diagnosisArray =
+      this.readDiagnosesArrayFromUnknown(input.incomingFormData.documentoDiagnosticos).length > 0
+        ? this.readDiagnosesArrayFromUnknown(input.incomingFormData.documentoDiagnosticos)
+        : this.readDiagnosesArrayFromJson(
+            input.currentRecordFormData,
+            'documentoDiagnosticos',
+          ).length > 0
+          ? this.readDiagnosesArrayFromJson(
+              input.currentRecordFormData,
+              'documentoDiagnosticos',
+            )
+          : consultationSecondaryDiagnoses.length > 0
+            ? consultationSecondaryDiagnoses
+            : primaryDiagnosis || primaryDiagnosisCode
+              ? [{ diagnostico: primaryDiagnosis, cie10: primaryDiagnosisCode, estado: '' }]
+              : [];
+    const treatmentSummary =
+      this.readStringValue(input.incomingFormData.documentoTratamientoActual) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'documentoTratamientoActual',
+      ) ||
+      this.readStringValueFromJson(
+        latestPrescriptionRecord?.formDataJson ?? null,
+        'recetaIndicacionesGenerales',
+      ) ||
+      this.readStringValueFromJson(
+        latestEvolutionRecord?.formDataJson ?? null,
+        'evolucionTratamiento',
+      ) ||
+      this.readStringValueFromJson(
+        latestConsultationRecord?.formDataJson ?? null,
+        'planTratamientoFarmacologico',
+      ) ||
+      '';
+    const studiesSummary =
+      this.readStringValue(input.incomingFormData.documentoEstudiosRealizados) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'documentoEstudiosRealizados',
+      ) ||
+      this.readStringValueFromJson(
+        latestConsultationRecord?.formDataJson ?? null,
+        'consultaResultadosPreviosResumen',
+      ) ||
+      this.readStringValueFromJson(
+        latestEvolutionRecord?.formDataJson ?? null,
+        'evolucionResultadosRecientes',
+      ) ||
+      '';
+    const followUpPlan =
+      this.readStringValue(input.incomingFormData.documentoPlanSeguimiento) ||
+      this.readStringValueFromJson(
+        input.currentRecordFormData,
+        'documentoPlanSeguimiento',
+      ) ||
+      this.readStringValueFromJson(
+        latestPrescriptionRecord?.formDataJson ?? null,
+        'recetaSeguimientoInstrucciones',
+      ) ||
+      this.readStringValueFromJson(
+        latestConsultationRecord?.formDataJson ?? null,
+        'planSeguimiento',
+      ) ||
+      this.readStringValueFromJson(
+        latestEvolutionRecord?.formDataJson ?? null,
+        'evolucionSeguimiento',
+      ) ||
+      '';
+
+    if (input.noteType === 'Solicitud de laboratorio') {
+      return {
+        documentoDiagnosticoPrincipal: primaryDiagnosis,
+        documentoDiagnosticoCie10: primaryDiagnosisCode,
+      };
+    }
+
+    if (input.noteType === 'Solicitud de imagenología') {
+      return {
+        documentoDiagnosticoPrincipal: primaryDiagnosis,
+        documentoDiagnosticoCie10: primaryDiagnosisCode,
+      };
+    }
+
+    if (input.noteType === 'Referencia / contrarreferencia') {
+      return {
+        documentoResumenClinico:
+          this.readStringValueFromJson(
+            latestConsultationRecord?.formDataJson ?? null,
+            'paDescripcion',
+          ) ||
+          this.readStringValueFromJson(
+            latestEvolutionRecord?.formDataJson ?? null,
+            'evolucionSubjetivo',
+          ) ||
+          '',
+        documentoDiagnosticos: diagnosisArray,
+        documentoTratamientoActual: treatmentSummary,
+        documentoEstudiosRealizados: studiesSummary,
+      };
+    }
+
+    if (input.noteType === 'Consentimiento informado') {
+      return {
+        documentoNombreTutor: input.encounter.patient.fullName,
+      };
+    }
+
+    if (input.noteType === 'Certificado / constancia') {
+      return {
+        documentoDiagnosticoPrincipal: primaryDiagnosis,
+        documentoDiagnosticoCie10: primaryDiagnosisCode,
+      };
+    }
+
+    if (input.noteType === 'Nota de cierre') {
+      return {
+        documentoResumenClinicoFinal:
+          this.readStringValueFromJson(
+            latestEvolutionRecord?.formDataJson ?? null,
+            'evolucionAnalisisComparativo',
+          ) ||
+          this.readStringValueFromJson(
+            latestConsultationRecord?.formDataJson ?? null,
+            'paDescripcion',
+          ) ||
+          '',
+        documentoDiagnosticos: diagnosisArray,
+        documentoIndicacionesEgreso:
+          this.readStringValueFromJson(
+            latestPrescriptionRecord?.formDataJson ?? null,
+            'recetaIndicacionesGenerales',
+          ) ||
+          treatmentSummary,
+        documentoPlanSeguimiento: followUpPlan,
+      };
+    }
+
+    return {};
+  }
+
+  private buildConsultationDocumentLegalSnapshot(
+    encounter: TenantEncounterRecord,
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null,
+  ) {
+    return {
+      documentoInstitucionEmisora:
+        encounter.facility?.institutionName ??
+        encounter.facility?.legalName ??
+        encounter.tenant.legalName ??
+        encounter.tenant.name ??
+        encounter.facility?.name ??
+        'Institución no configurada',
+      documentoRfcMedico: encounter.tenant.taxId ?? 'RFC no configurado',
+      documentoLicenciaSanitaria:
+        encounter.facility?.legalName ??
+        encounter.facility?.code ??
+        'Licencia no configurada',
+      documentoNombreProfesional:
+        responsibleUser?.fullName ?? 'Sin profesional responsable',
+      documentoCedulaProfesional:
+        responsibleUser?.professionalLicense ?? 'Sin cédula',
+      documentoEspecialidadProfesional:
+        encounter.specialty?.name ?? 'Sin especialidad',
+      documentoLugarAtencion:
+        [encounter.facility?.name, encounter.serviceArea?.name]
+          .filter(Boolean)
+          .join(' · ') || 'Lugar no configurado',
+    };
+  }
+
   private readPrescriptionMedicationArray(value: unknown) {
     if (!Array.isArray(value)) {
       return [];
@@ -2823,10 +3240,41 @@ export class EncountersService {
       .filter((item) => item.diagnostico || item.cie10 || item.estado);
   }
 
+  private buildSectionRecordPdfResponse(input: {
+    encounter: TenantEncounterRecord;
+    record: {
+      id: string;
+      noteType: string;
+      encounterType: EncounterType;
+      tabKey: string;
+      title: string;
+      status: EncounterRecordStatus;
+      recordedAt: Date;
+      formDataJson: Prisma.JsonValue;
+      metadataJson: Prisma.JsonValue | null;
+    };
+    preview: boolean;
+    downloadCount: number;
+  }): EncounterSectionRecordPdfResponse {
+    if (
+      this.isConsultationPrescriptionRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      return this.buildPrescriptionPdfResponse(input);
+    }
+
+    return this.buildClinicalDocumentPdfResponse(input);
+  }
+
   private buildPrescriptionPdfResponse(input: {
     encounter: TenantEncounterRecord;
     record: {
       id: string;
+      noteType: string;
+      encounterType: EncounterType;
+      tabKey: string;
       title: string;
       status: EncounterRecordStatus;
       recordedAt: Date;
@@ -2849,6 +3297,48 @@ export class EncountersService {
       recordedAt: input.record.recordedAt,
       formData,
       folio: metadata.prescriptionFolio ?? '',
+      verificationCode: metadata.verificationCode ?? '',
+      downloadCount: input.downloadCount,
+    });
+
+    return {
+      fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+      mimeType: 'application/pdf',
+      contentBase64: pdfBuffer.toString('base64'),
+      downloadCount: input.downloadCount,
+      preview: input.preview,
+    };
+  }
+
+  private buildClinicalDocumentPdfResponse(input: {
+    encounter: TenantEncounterRecord;
+    record: {
+      id: string;
+      noteType: string;
+      encounterType: EncounterType;
+      tabKey: string;
+      title: string;
+      status: EncounterRecordStatus;
+      recordedAt: Date;
+      formDataJson: Prisma.JsonValue;
+      metadataJson: Prisma.JsonValue | null;
+    };
+    preview: boolean;
+    downloadCount: number;
+  }): EncounterSectionRecordPdfResponse {
+    const formData =
+      input.record.formDataJson &&
+      typeof input.record.formDataJson === 'object' &&
+      !Array.isArray(input.record.formDataJson)
+        ? (input.record.formDataJson as Record<string, unknown>)
+        : {};
+    const metadata = this.extractRecordVersionMetadata(input.record.metadataJson);
+    const pdfBuffer = this.buildClinicalDocumentPdfDocument({
+      encounter: input.encounter,
+      noteType: input.record.noteType,
+      recordTitle: input.record.title,
+      recordedAt: input.record.recordedAt,
+      formData,
       verificationCode: metadata.verificationCode ?? '',
       downloadCount: input.downloadCount,
     });
@@ -2924,6 +3414,104 @@ export class EncountersService {
     return this.renderSimplePdf(lines);
   }
 
+  private buildClinicalDocumentPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    noteType: string;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const diagnosisLines = this.readDiagnosesArrayFromUnknown(
+      input.formData.documentoDiagnosticos,
+    ).map((item, index) =>
+      `${index + 1}. ${item.diagnostico || 'Diagnóstico sin capturar'} ${item.cie10 ? `· ${item.cie10}` : ''} ${item.estado ? `· ${item.estado}` : ''}`.trim(),
+    );
+    const commonHeader = [
+      input.recordTitle,
+      `Tipo: ${input.noteType}`,
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Código de verificación: ${input.verificationCode}`,
+    ];
+    const commonLegal = [
+      `Institución: ${this.readStringValue(input.formData.documentoInstitucionEmisora)}`,
+      `Profesional: ${this.readStringValue(input.formData.documentoNombreProfesional)}`,
+      `Cédula: ${this.readStringValue(input.formData.documentoCedulaProfesional)}`,
+      `Especialidad: ${this.readStringValue(input.formData.documentoEspecialidadProfesional)}`,
+      `Lugar: ${this.readStringValue(input.formData.documentoLugarAtencion)}`,
+    ];
+    const documentSpecificLines: Record<string, string[]> = {
+      'Solicitud de laboratorio': [
+        `Motivo: ${this.readStringValue(input.formData.documentoMotivoSolicitud)}`,
+        `Estudios solicitados: ${this.readStringValue(input.formData.documentoEstudiosSolicitados)}`,
+        `Diagnóstico: ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}`,
+        `CIE-10: ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}`,
+        `Prioridad: ${this.readStringValue(input.formData.documentoPrioridad)}`,
+        `Observaciones: ${this.readStringValue(input.formData.documentoObservaciones)}`,
+      ],
+      'Solicitud de imagenología': [
+        `Motivo: ${this.readStringValue(input.formData.documentoMotivoSolicitud)}`,
+        `Estudio: ${this.readStringValue(input.formData.documentoEstudiosSolicitados)}`,
+        `Región anatómica: ${this.readStringValue(input.formData.documentoRegionAnatomica)}`,
+        `Diagnóstico presuntivo: ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}`,
+        `CIE-10: ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}`,
+        `Indicaciones especiales: ${this.readStringValue(input.formData.documentoIndicacionesEspeciales)}`,
+        `Prioridad: ${this.readStringValue(input.formData.documentoPrioridad)}`,
+      ],
+      'Referencia / contrarreferencia': [
+        `Tipo: ${this.readStringValue(input.formData.documentoTipoReferencia)}`,
+        `Unidad destino: ${this.readStringValue(input.formData.documentoUnidadDestino)}`,
+        `Motivo de envío: ${this.readStringValue(input.formData.documentoMotivoEnvio)}`,
+        `Resumen clínico: ${this.readStringValue(input.formData.documentoResumenClinico)}`,
+        'Diagnósticos:',
+        ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos capturados']),
+        `Tratamiento actual: ${this.readStringValue(input.formData.documentoTratamientoActual)}`,
+        `Estudios realizados: ${this.readStringValue(input.formData.documentoEstudiosRealizados)}`,
+        `Recomendaciones: ${this.readStringValue(input.formData.documentoRecomendaciones)}`,
+      ],
+      'Consentimiento informado': [
+        `Procedimiento: ${this.readStringValue(input.formData.documentoProcedimientoTipo)}`,
+        `Descripción: ${this.readStringValue(input.formData.documentoProcedimientoDescripcion)}`,
+        `Riesgos: ${this.readStringValue(input.formData.documentoRiesgos)}`,
+        `Beneficios: ${this.readStringValue(input.formData.documentoBeneficios)}`,
+        `Alternativas: ${this.readStringValue(input.formData.documentoAlternativas)}`,
+        `Pronóstico sin tratamiento: ${this.readStringValue(input.formData.documentoPronosticoSinTratamiento)}`,
+        `Paciente / tutor: ${this.readStringValue(input.formData.documentoNombreTutor)}`,
+        `Relación: ${this.readStringValue(input.formData.documentoRelacionTutor)}`,
+        `Firma paciente: ${this.readStringValue(input.formData.documentoFirmaPaciente)}`,
+      ],
+      'Certificado / constancia': [
+        `Tipo: ${this.readStringValue(input.formData.documentoTipoCertificado)}`,
+        `Uso del documento: ${this.readStringValue(input.formData.documentoUsoDocumento)}`,
+        `Motivo: ${this.readStringValue(input.formData.documentoMotivo)}`,
+        `Diagnóstico: ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}`,
+        `CIE-10: ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}`,
+        `Reposo: ${this.readStringValue(input.formData.documentoReposoInicio)} al ${this.readStringValue(input.formData.documentoReposoFin)}`.trim(),
+        `Observaciones: ${this.readStringValue(input.formData.documentoObservaciones)}`,
+      ],
+      'Nota de cierre': [
+        `Motivo de cierre: ${this.readStringValue(input.formData.documentoMotivoCierre)}`,
+        `Resumen clínico final: ${this.readStringValue(input.formData.documentoResumenClinicoFinal)}`,
+        'Diagnósticos finales:',
+        ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos capturados']),
+        `Estado final: ${this.readStringValue(input.formData.documentoEstadoFinal)}`,
+        `Indicaciones al egreso: ${this.readStringValue(input.formData.documentoIndicacionesEgreso)}`,
+        `Plan de seguimiento: ${this.readStringValue(input.formData.documentoPlanSeguimiento)}`,
+      ],
+    };
+    const lines = [
+      ...commonHeader,
+      ...(documentSpecificLines[input.noteType] ?? []),
+      ...commonLegal,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
   private renderSimplePdf(lines: string[]) {
     const sanitizedLines = lines
       .map((line) => this.escapePdfText(line))
@@ -2990,6 +3578,59 @@ export class EncountersService {
     }
 
     return rawMetadata as Record<string, unknown>;
+  }
+
+  private assertRecordCanBeSigned(
+    noteType: string,
+    formDataJson: Prisma.JsonValue,
+  ) {
+    const formData =
+      formDataJson && typeof formDataJson === 'object' && !Array.isArray(formDataJson)
+        ? (formDataJson as Record<string, unknown>)
+        : {};
+
+    const requiredFieldsByNoteType: Record<string, string[]> = {
+      'Solicitud de laboratorio': [
+        'documentoMotivoSolicitud',
+        'documentoEstudiosSolicitados',
+      ],
+      'Solicitud de imagenología': ['documentoMotivoSolicitud'],
+      'Referencia / contrarreferencia': [
+        'documentoUnidadDestino',
+        'documentoMotivoEnvio',
+        'documentoResumenClinico',
+      ],
+      'Consentimiento informado': [
+        'documentoProcedimientoTipo',
+        'documentoProcedimientoDescripcion',
+        'documentoRiesgos',
+        'documentoFirmaPaciente',
+      ],
+      'Certificado / constancia': ['documentoMotivo'],
+      'Nota de cierre': [
+        'documentoMotivoCierre',
+        'documentoResumenClinicoFinal',
+      ],
+    };
+
+    const missingFields = (requiredFieldsByNoteType[noteType] ?? []).filter((fieldKey) => {
+      const value = formData[fieldKey];
+      return typeof value !== 'string' || value.trim().length === 0;
+    });
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        'Completa los campos obligatorios del documento antes de firmarlo',
+      );
+    }
+  }
+
+  private assertEncounterEditable(encounter: TenantEncounterRecord) {
+    if (encounter.status === EncounterStatus.CLOSED) {
+      throw new BadRequestException(
+        'El episodio ya está cerrado y no permite nuevas capturas o modificaciones',
+      );
+    }
   }
 
   private assertRecordTabAllowed(encounterType: EncounterType, tabKey: string) {
