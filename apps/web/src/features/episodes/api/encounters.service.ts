@@ -4,6 +4,7 @@ import type {
   EncounterSectionRecordMutationRequest,
   EncounterDetailResponse,
   EncounterMetaResponse,
+  EncounterSectionRecordPdfResponse,
   EncountersListResponse,
   SignEncounterSectionRecordRequest,
   UpdateEncounterRequest,
@@ -115,6 +116,33 @@ export function signEncounterSectionRecord(
       method: 'POST',
       token,
       body: JSON.stringify(input),
+    },
+  );
+}
+
+export function previewEncounterSectionRecordPdf(
+  token: string,
+  encounterNumber: string,
+  recordId: string,
+) {
+  return apiRequest<EncounterSectionRecordPdfResponse>(
+    `/encounters/${encounterNumber}/records/${recordId}/pdf-preview`,
+    {
+      token,
+    },
+  );
+}
+
+export function downloadEncounterSectionRecordPdf(
+  token: string,
+  encounterNumber: string,
+  recordId: string,
+) {
+  return apiRequest<EncounterSectionRecordPdfResponse>(
+    `/encounters/${encounterNumber}/records/${recordId}/pdf-download`,
+    {
+      method: 'POST',
+      token,
     },
   );
 }

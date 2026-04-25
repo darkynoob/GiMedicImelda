@@ -186,6 +186,13 @@ export interface EncounterDetailResponse {
     fullName: string;
     professionalLicense: string | null;
   } | null;
+  legalContext: {
+    tenantName: string;
+    tenantLegalName: string | null;
+    tenantTaxId: string | null;
+    facilityLegalName: string | null;
+    facilityInstitutionName: string | null;
+  };
   metrics: {
     documents: number;
     diagnoses: number;
@@ -244,6 +251,10 @@ export interface EncounterDetailResponse {
       historyType: string | null;
       consultationType: string | null;
       inheritedFromRecordId: string | null;
+      prescriptionFolio: string | null;
+      verificationCode: string | null;
+      pdfDownloadCount: number | null;
+      pdfLastDownloadedAt: string | null;
     };
   }>;
   attachments: Array<{
@@ -278,6 +289,14 @@ export interface EncounterSectionRecordMutationRequest {
 
 export interface SignEncounterSectionRecordRequest {
   password: string;
+}
+
+export interface EncounterSectionRecordPdfResponse {
+  fileName: string;
+  mimeType: string;
+  contentBase64: string;
+  downloadCount: number;
+  preview: boolean;
 }
 
 export interface PatientsListResponse {

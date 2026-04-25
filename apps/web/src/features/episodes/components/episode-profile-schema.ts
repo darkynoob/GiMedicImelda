@@ -111,6 +111,93 @@ const administrationRouteOptions: EpisodeFieldOption[] = [
   { value: 'OTRA', label: 'Otra' },
 ];
 
+const prescriptionTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'SIMPLE', label: 'Receta simple' },
+  { value: 'CONTROLADA', label: 'Receta controlada' },
+  { value: 'ANTIBIOTICO', label: 'Antibiótico' },
+  { value: 'CRONICA', label: 'Tratamiento crónico' },
+];
+
+const prescriptionValidityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '24_HORAS', label: '24 horas' },
+  { value: '72_HORAS', label: '72 horas' },
+  { value: '7_DIAS', label: '7 días' },
+  { value: '14_DIAS', label: '14 días' },
+  { value: '30_DIAS', label: '30 días' },
+];
+
+const diagnosisStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'ACTIVO', label: 'Activo' },
+  { value: 'CONTROLADO', label: 'Controlado' },
+  { value: 'RESUELTO', label: 'Resuelto' },
+  { value: 'DESCARTADO', label: 'Descartado' },
+];
+
+const prescriptionMedicationTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'FARMACOLOGICO', label: 'Farmacológico' },
+  { value: 'ANTIBIOTICO', label: 'Antibiótico' },
+  { value: 'ANALGESICO', label: 'Analgésico' },
+  { value: 'CONTROLADO', label: 'Controlado' },
+  { value: 'SUPLEMENTO', label: 'Suplemento' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const comprehensionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'COMPLETA', label: 'Completa' },
+  { value: 'PARCIAL', label: 'Parcial' },
+  { value: 'LIMITADA', label: 'Limitada' },
+];
+
+const alarmSeverityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJA', label: 'Baja' },
+  { value: 'MEDIA', label: 'Media' },
+  { value: 'ALTA', label: 'Alta' },
+];
+
+const followUpTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'CONSULTA', label: 'Consulta' },
+  { value: 'TELECONSULTA', label: 'Teleconsulta' },
+  { value: 'URGENCIAS', label: 'Urgencias' },
+  { value: 'INTERCONSULTA', label: 'Interconsulta' },
+];
+
+const documentPriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'RUTINARIA', label: 'Rutinaria' },
+  { value: 'PREFERENTE', label: 'Preferente' },
+  { value: 'URGENTE', label: 'Urgente' },
+];
+
+const referralTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'REFERENCIA', label: 'Referencia' },
+  { value: 'CONTRARREFERENCIA', label: 'Contrarreferencia' },
+];
+
+const certificateTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'MEDICO', label: 'Certificado médico' },
+  { value: 'ESCOLAR', label: 'Constancia escolar' },
+  { value: 'LABORAL', label: 'Constancia laboral' },
+  { value: 'REPOSO', label: 'Constancia de reposo' },
+];
+
+const finalStateOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'CONTROLADO', label: 'Controlado' },
+  { value: 'EN_SEGUIMIENTO', label: 'En seguimiento' },
+  { value: 'REFERIDO', label: 'Referido' },
+  { value: 'ALTA_MEDICA', label: 'Alta médica' },
+  { value: 'NO_RESUELTO', label: 'No resuelto' },
+];
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -735,64 +822,259 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Prescripción, seguridad y seguimiento.',
       sections: [
         {
-          key: 'receta_base',
-          title: 'Receta',
+          key: 'encabezado_receta',
+          title: 'Encabezado de receta',
           fields: [
             {
-              key: 'encabezadoReceta',
-              label: 'Encabezado de receta',
-              type: 'textarea',
+              key: 'recetaFolio',
+              label: 'Folio de receta',
+              type: 'readonly',
+              inheritanceMode: 'system',
             },
             {
-              key: 'diagnosticoAsociado',
-              label: 'Diagnóstico asociado',
-              type: 'textarea',
+              key: 'recetaTipo',
+              label: 'Tipo de receta',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: prescriptionTypeOptions,
             },
             {
-              key: 'prescripcion',
-              label: 'Prescripción',
-              type: 'textarea',
+              key: 'recetaVigencia',
+              label: 'Vigencia de receta',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: prescriptionValidityOptions,
             },
             {
-              key: 'validacionesSeguridad',
-              label: 'Validaciones de seguridad',
-              type: 'textarea',
+              key: 'recetaCodigoVerificacion',
+              label: 'Código de verificación',
+              type: 'readonly',
+              inheritanceMode: 'system',
             },
           ],
         },
         {
-          key: 'indicaciones_consulta',
-          title: 'Indicaciones y seguimiento',
+          key: 'diagnostico_asociado',
+          title: 'Diagnóstico asociado',
           fields: [
             {
-              key: 'indicacionesSignosAlarma',
-              label: 'Indicaciones y signos de alarma',
-              type: 'textarea',
+              key: 'recetaDiagnosticoPrincipal',
+              label: 'Diagnóstico principal',
+              type: 'text',
+              inheritanceMode: 'fresh_capture',
             },
             {
-              key: 'datosLegalesReceta',
-              label: 'Datos legales',
-              type: 'textarea',
+              key: 'recetaDiagnosticoCie10',
+              label: 'CIE-10',
+              type: 'text',
+              inheritanceMode: 'fresh_capture',
             },
             {
-              key: 'educacionPaciente',
-              label: 'Educación al paciente',
-              type: 'textarea',
+              key: 'recetaDiagnosticoSecundarios',
+              label: 'Diagnósticos secundarios',
+              type: 'object-array',
+              inheritanceMode: 'fresh_capture',
+              itemAddLabel: 'Agregar diagnóstico secundario',
+              itemFields: [
+                { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+                { key: 'cie10', label: 'CIE-10', type: 'text' },
+                {
+                  key: 'estado',
+                  label: 'Estado',
+                  type: 'select',
+                  options: diagnosisStatusOptions,
+                },
+              ],
             },
             {
-              key: 'planSeguimiento',
-              label: 'Plan de seguimiento',
+              key: 'recetaIndicacionesDiagnosticas',
+              label: 'Indicaciones generales',
               type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'prescripcion_core',
+          title: 'Prescripción',
+          fields: [
+            {
+              key: 'recetaMedicamentos',
+              label: 'Medicamentos',
+              type: 'object-array',
+              inheritanceMode: 'fresh_capture',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'presentacion', label: 'Presentación', type: 'text' },
+                { key: 'dosis', label: 'Dosis', type: 'text' },
+                {
+                  key: 'via',
+                  label: 'Vía',
+                  type: 'select',
+                  options: administrationRouteOptions,
+                },
+                { key: 'frecuencia', label: 'Frecuencia', type: 'text' },
+                { key: 'duracion', label: 'Duración', type: 'text' },
+                {
+                  key: 'tipoMedicamento',
+                  label: 'Tipo de medicamento',
+                  type: 'select',
+                  options: prescriptionMedicationTypeOptions,
+                },
+                { key: 'intervaloHoras', label: 'Intervalo (horas)', type: 'number' },
+                { key: 'duracionDias', label: 'Duración (días)', type: 'number' },
+                {
+                  key: 'indicaciones',
+                  label: 'Indicaciones por medicamento',
+                  type: 'text',
+                },
+                { key: 'advertencias', label: 'Advertencias', type: 'text' },
+              ],
             },
             {
-              key: 'estudiosSolicitados',
-              label: 'Estudios solicitados',
+              key: 'recetaIndicacionesGenerales',
+              label: 'Indicaciones generales',
               type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'indicaciones_alarmas',
+          title: 'Indicaciones y signos de alarma',
+          fields: [
+            {
+              key: 'recetaSignosAlarma',
+              label: 'Signos de alarma',
+              type: 'string-array',
+              itemAddLabel: 'Agregar signo de alarma',
+              inheritanceMode: 'fresh_capture',
             },
             {
-              key: 'informacionClinicaAdicional',
-              label: 'Información clínica adicional',
+              key: 'recetaSeveridadAlarma',
+              label: 'Severidad',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: alarmSeverityOptions,
+            },
+            {
+              key: 'recetaProximaCita',
+              label: 'Próxima cita',
+              type: 'date',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'educacion_paciente',
+          title: 'Educación al paciente',
+          fields: [
+            {
+              key: 'recetaInformacionProporcionada',
+              label: 'Información proporcionada',
               type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+            {
+              key: 'recetaIndicacionesNoFarmacologicas',
+              label: 'Indicaciones no farmacológicas',
+              type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+            {
+              key: 'recetaComprensionPaciente',
+              label: 'Comprensión del paciente',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: comprehensionOptions,
+            },
+            {
+              key: 'recetaMaterialEducativo',
+              label: 'Material educativo entregado',
+              type: 'string-array',
+              inheritanceMode: 'fresh_capture',
+              itemAddLabel: 'Agregar material',
+            },
+          ],
+        },
+        {
+          key: 'plan_seguimiento',
+          title: 'Plan de seguimiento',
+          fields: [
+            {
+              key: 'recetaSeguimientoFecha',
+              label: 'Fecha próxima cita',
+              type: 'date',
+              inheritanceMode: 'fresh_capture',
+            },
+            {
+              key: 'recetaSeguimientoTipo',
+              label: 'Tipo de seguimiento',
+              type: 'select',
+              inheritanceMode: 'fresh_capture',
+              options: followUpTypeOptions,
+            },
+            {
+              key: 'recetaSeguimientoInstrucciones',
+              label: 'Instrucciones',
+              type: 'textarea',
+              inheritanceMode: 'fresh_capture',
+            },
+          ],
+        },
+        {
+          key: 'datos_legales_receta',
+          title: 'Datos legales y firma',
+          fields: [
+            {
+              key: 'recetaInstitucionEmisora',
+              label: 'Institución emisora',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaRfcMedico',
+              label: 'RFC médico',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaLicenciaSanitaria',
+              label: 'Licencia sanitaria',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaNombreProfesional',
+              label: 'Nombre del profesional',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaCedulaProfesional',
+              label: 'Cédula',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaEspecialidadProfesional',
+              label: 'Especialidad',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'recetaLugarAtencion',
+              label: 'Lugar de atención',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'firmarReceta',
+              label: 'Firma',
+              type: 'action',
+              actionLabel: 'Firmar receta',
+              inheritanceMode: 'system',
             },
           ],
         },
@@ -801,7 +1083,8 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
     {
       key: 'Documentos',
       title: 'Documentos',
-      description: 'Notas o documentos complementarios del episodio.',
+      description:
+        'Documentos clínicos del episodio con firma, PDF y control documental.',
       sections: [
         {
           key: 'resumen_documental',
@@ -1888,4 +2171,336 @@ export function buildHistoryVersionPrefill(
   }
 
   return nextFormData;
+}
+
+const consultationDocumentSectionDefinitions: Record<string, EpisodeSectionDefinition[]> = {
+  'Solicitud de laboratorio': [
+    {
+      key: 'laboratorio_contexto',
+      title: 'Solicitud de laboratorio',
+      fields: [
+        {
+          key: 'documentoMotivoSolicitud',
+          label: 'Motivo de solicitud',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoEstudiosSolicitados',
+          label: 'Estudios solicitados',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoDiagnosticoPrincipal',
+          label: 'Diagnóstico asociado',
+          type: 'text',
+        },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        { key: 'documentoObservaciones', label: 'Observaciones', type: 'textarea' },
+        {
+          key: 'documentoPrioridad',
+          label: 'Prioridad',
+          type: 'select',
+          options: documentPriorityOptions,
+        },
+      ],
+    },
+  ],
+  'Solicitud de imagenología': [
+    {
+      key: 'imagenologia_contexto',
+      title: 'Solicitud de imagenología',
+      fields: [
+        {
+          key: 'documentoMotivoSolicitud',
+          label: 'Motivo de estudio',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoEstudiosSolicitados',
+          label: 'Estudio solicitado',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoRegionAnatomica',
+          label: 'Región anatómica',
+          type: 'text',
+        },
+        {
+          key: 'documentoDiagnosticoPrincipal',
+          label: 'Diagnóstico presuntivo',
+          type: 'text',
+        },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        {
+          key: 'documentoIndicacionesEspeciales',
+          label: 'Indicaciones especiales',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoPrioridad',
+          label: 'Prioridad',
+          type: 'select',
+          options: documentPriorityOptions,
+        },
+      ],
+    },
+  ],
+  'Referencia / contrarreferencia': [
+    {
+      key: 'referencia_contexto',
+      title: 'Referencia / contrarreferencia',
+      fields: [
+        {
+          key: 'documentoTipoReferencia',
+          label: 'Tipo',
+          type: 'select',
+          options: referralTypeOptions,
+        },
+        {
+          key: 'documentoUnidadDestino',
+          label: 'Unidad destino',
+          type: 'text',
+        },
+        {
+          key: 'documentoMotivoEnvio',
+          label: 'Motivo de envío',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoResumenClinico',
+          label: 'Resumen clínico',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoDiagnosticos',
+          label: 'Diagnósticos',
+          type: 'object-array',
+          itemAddLabel: 'Agregar diagnóstico',
+          itemFields: [
+            { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+            { key: 'cie10', label: 'CIE-10', type: 'text' },
+          ],
+        },
+        {
+          key: 'documentoTratamientoActual',
+          label: 'Tratamiento actual',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoEstudiosRealizados',
+          label: 'Estudios realizados',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoRecomendaciones',
+          label: 'Recomendaciones',
+          type: 'textarea',
+        },
+      ],
+    },
+  ],
+  'Consentimiento informado': [
+    {
+      key: 'consentimiento_contexto',
+      title: 'Consentimiento informado',
+      fields: [
+        {
+          key: 'documentoProcedimientoTipo',
+          label: 'Tipo de procedimiento',
+          type: 'text',
+        },
+        {
+          key: 'documentoProcedimientoDescripcion',
+          label: 'Descripción del procedimiento',
+          type: 'textarea',
+        },
+        { key: 'documentoRiesgos', label: 'Riesgos', type: 'textarea' },
+        { key: 'documentoBeneficios', label: 'Beneficios', type: 'textarea' },
+        { key: 'documentoAlternativas', label: 'Alternativas', type: 'textarea' },
+        {
+          key: 'documentoPronosticoSinTratamiento',
+          label: 'Pronóstico sin tratamiento',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoNombreTutor',
+          label: 'Nombre paciente / tutor',
+          type: 'text',
+        },
+        { key: 'documentoRelacionTutor', label: 'Relación', type: 'text' },
+        {
+          key: 'documentoFirmaPaciente',
+          label: 'Firma paciente / tutor',
+          type: 'text',
+        },
+      ],
+    },
+  ],
+  'Certificado / constancia': [
+    {
+      key: 'certificado_contexto',
+      title: 'Certificado / constancia',
+      fields: [
+        {
+          key: 'documentoTipoCertificado',
+          label: 'Tipo',
+          type: 'select',
+          options: certificateTypeOptions,
+        },
+        {
+          key: 'documentoUsoDocumento',
+          label: 'Uso del documento',
+          type: 'text',
+        },
+        { key: 'documentoMotivo', label: 'Motivo', type: 'textarea' },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico', type: 'text' },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        {
+          key: 'documentoReposoInicio',
+          label: 'Inicio de reposo',
+          type: 'date',
+        },
+        {
+          key: 'documentoReposoFin',
+          label: 'Fin de reposo',
+          type: 'date',
+        },
+        {
+          key: 'documentoObservaciones',
+          label: 'Observaciones',
+          type: 'textarea',
+        },
+      ],
+    },
+  ],
+  'Nota de cierre': [
+    {
+      key: 'cierre_contexto',
+      title: 'Nota de cierre',
+      fields: [
+        {
+          key: 'documentoMotivoCierre',
+          label: 'Motivo de cierre',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoResumenClinicoFinal',
+          label: 'Resumen clínico final',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoDiagnosticos',
+          label: 'Diagnósticos finales',
+          type: 'object-array',
+          itemAddLabel: 'Agregar diagnóstico final',
+          itemFields: [
+            { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+            { key: 'cie10', label: 'CIE-10', type: 'text' },
+            { key: 'estado', label: 'Estado', type: 'select', options: diagnosisStatusOptions },
+          ],
+        },
+        {
+          key: 'documentoEstadoFinal',
+          label: 'Estado final',
+          type: 'select',
+          options: finalStateOptions,
+        },
+        {
+          key: 'documentoIndicacionesEgreso',
+          label: 'Indicaciones al egreso',
+          type: 'textarea',
+        },
+        {
+          key: 'documentoPlanSeguimiento',
+          label: 'Plan de seguimiento',
+          type: 'textarea',
+        },
+      ],
+    },
+  ],
+};
+
+const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
+  {
+    key: 'documento_legales',
+    title: 'Datos legales y firma',
+    description:
+      'Los datos legales se completan desde el profesional responsable del episodio.',
+    fields: [
+      {
+        key: 'documentoInstitucionEmisora',
+        label: 'Institución emisora',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoRfcMedico',
+        label: 'RFC médico',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoLicenciaSanitaria',
+        label: 'Licencia sanitaria',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoCodigoVerificacion',
+        label: 'Código de verificación',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoNombreProfesional',
+        label: 'Nombre del profesional',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoCedulaProfesional',
+        label: 'Cédula',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoEspecialidadProfesional',
+        label: 'Especialidad',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoLugarAtencion',
+        label: 'Lugar de atención',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'firmarDocumentoClinico',
+        label: 'Firma',
+        type: 'action',
+        actionLabel: 'Firmar documento',
+        inheritanceMode: 'system',
+      },
+    ],
+  },
+];
+
+export function getConsultationDocumentTypes() {
+  return Object.keys(consultationDocumentSectionDefinitions);
+}
+
+export function getConsultationDocumentTabDefinition(
+  noteType: string,
+): EpisodeTabDefinition {
+  return {
+    key: 'Documentos',
+    title: 'Documentos',
+    description: 'Documentos clínicos del episodio con captura independiente.',
+    sections: [
+      ...(consultationDocumentSectionDefinitions[noteType] ??
+        consultationDocumentSectionDefinitions['Solicitud de laboratorio']),
+      ...consultationDocumentSharedSections,
+    ],
+  };
 }
