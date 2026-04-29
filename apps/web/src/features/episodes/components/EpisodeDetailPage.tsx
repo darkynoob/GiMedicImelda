@@ -165,12 +165,20 @@ function isEmergencyInitialNoteTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Nota inicial';
 }
 
+function isEmergencyEvolutionTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'EMERGENCY' && tabTitle === 'Evolución';
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
 
 function buildEmergencyInitialNoteTitle(versionNumber: number) {
   return `Nota inicial V${versionNumber}`;
+}
+
+function buildEmergencyEvolutionTitle(versionNumber: number) {
+  return `Evolución en urgencias V${versionNumber}`;
 }
 
 function readNumericFormValue(value: RecordFieldValue | undefined) {
@@ -368,6 +376,187 @@ function buildEmergencyInitialNoteSnapshot(args: {
       args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
     notaInicialLegalCedula:
       args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+  };
+}
+
+function buildEmergencyEvolutionDiagnoses(
+  initialNoteFormData: Record<string, unknown>,
+) {
+  const diagnostico =
+    typeof initialNoteFormData.diagnosticoNota === 'string'
+      ? initialNoteFormData.diagnosticoNota
+      : '';
+  const cie10 =
+    typeof initialNoteFormData.cie10Nota === 'string'
+      ? initialNoteFormData.cie10Nota
+      : '';
+
+  return diagnostico || cie10
+    ? [{ diagnostico, cie10, estado: 'ACTIVO' }]
+    : [];
+}
+
+function buildEmergencyEvolutionSnapshot(args: {
+  detail: EncounterDetailResponse;
+  initialNoteRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  previousEvolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const initialFormData = args.initialNoteRecord?.formData ?? {};
+  const previousFormData = args.previousEvolutionRecord?.formData ?? {};
+  const currentFormData = args.currentFormData ?? {};
+  const recordedDate = args.recordedAt ? new Date(args.recordedAt) : new Date();
+  const openedDate = new Date(args.detail.openedAt);
+  const evolutionDay =
+    Number.isNaN(recordedDate.getTime()) || Number.isNaN(openedDate.getTime())
+      ? '1'
+      : String(
+          Math.max(
+            1,
+            Math.floor(
+              (recordedDate.getTime() - openedDate.getTime()) / 86_400_000,
+            ) + 1,
+          ),
+        );
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const toRecordFieldValue = (value: unknown): RecordFieldValue => {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      value === null
+    ) {
+      return value;
+    }
+
+    if (Array.isArray(value)) {
+      if (value.every((item) => typeof item === 'string')) {
+        return value;
+      }
+
+      return value.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      );
+    }
+
+    return '';
+  };
+  const readCurrentOrSource = (
+    currentKey: string,
+    previousKey: string,
+    initialKey: string,
+  ) =>
+    currentFormData[currentKey] !== undefined &&
+    currentFormData[currentKey] !== null &&
+      `${currentFormData[currentKey]}`.trim().length > 0
+      ? currentFormData[currentKey]
+      : toRecordFieldValue(previousFormData[previousKey] ?? initialFormData[initialKey] ?? '');
+
+  return {
+    tipoRegistro: 'Evolución en urgencias',
+    fechaEvolucionUrg:
+      readString(currentFormData.fechaEvolucionUrg) ||
+      args.recordedAt.slice(0, 10),
+    horaEvolucionUrg:
+      readString(currentFormData.horaEvolucionUrg) ||
+      args.recordedAt.slice(11, 16),
+    diaEvolucionUrg: evolutionDay,
+    taSistolicaEvolUrg: readCurrentOrSource(
+      'taSistolicaEvolUrg',
+      'taSistolicaEvolUrg',
+      'taSistolicaNota',
+    ),
+    taDiastolicaEvolUrg: readCurrentOrSource(
+      'taDiastolicaEvolUrg',
+      'taDiastolicaEvolUrg',
+      'taDiastolicaNota',
+    ),
+    fcEvolUrg: readCurrentOrSource('fcEvolUrg', 'fcEvolUrg', 'fcNota'),
+    frEvolUrg: readCurrentOrSource('frEvolUrg', 'frEvolUrg', 'frNota'),
+    tempEvolUrg: readCurrentOrSource('tempEvolUrg', 'tempEvolUrg', 'tempNota'),
+    spo2EvolUrg: readCurrentOrSource('spo2EvolUrg', 'spo2EvolUrg', 'spo2Nota'),
+    evaEvolUrg: readCurrentOrSource('evaEvolUrg', 'evaEvolUrg', 'evaNota'),
+    glucosaEvolUrg: readCurrentOrSource(
+      'glucosaEvolUrg',
+      'glucosaEvolUrg',
+      'glucosaNota',
+    ),
+    glasgowEvolUrg: readCurrentOrSource(
+      'glasgowEvolUrg',
+      'glasgowEvolUrg',
+      'glasgowNota',
+    ),
+    diagnosticosEvolucionUrg:
+      Array.isArray(currentFormData.diagnosticosEvolucionUrg) &&
+      currentFormData.diagnosticosEvolucionUrg.length > 0
+        ? currentFormData.diagnosticosEvolucionUrg
+        : Array.isArray(previousFormData.diagnosticosEvolucionUrg) &&
+            previousFormData.diagnosticosEvolucionUrg.length > 0
+          ? previousFormData.diagnosticosEvolucionUrg
+          : buildEmergencyEvolutionDiagnoses(initialFormData),
+    tratamientoEvolUrg: readCurrentOrSource(
+      'tratamientoEvolUrg',
+      'tratamientoEvolUrg',
+      'medicamentosPlan',
+    ),
+    estudiosPendientesUrg: readCurrentOrSource(
+      'estudiosPendientesUrg',
+      'estudiosPendientesUrg',
+      'estudiosPlan',
+    ),
+    interconsultasEvolUrg: readCurrentOrSource(
+      'interconsultasEvolUrg',
+      'interconsultasEvolUrg',
+      'interconsultasPlan',
+    ),
+    seguimientoEvolUrg: readCurrentOrSource(
+      'seguimientoEvolUrg',
+      'seguimientoEvolUrg',
+      'resumenPronostico',
+    ),
+    consentimientoVigenteUrg: readCurrentOrSource(
+      'consentimientoVigenteUrg',
+      'consentimientoVigenteUrg',
+      'consentimientoInicial',
+    )
+      ? readString(currentFormData.consentimientoVigenteUrg) ||
+        readString(previousFormData.consentimientoVigenteUrg) ||
+        'VIGENTE'
+      : '',
+    informacionBrindadaUrg: readCurrentOrSource(
+      'informacionBrindadaUrg',
+      'informacionBrindadaUrg',
+      'consentimientoInicial',
+    ),
+    resultadosEstudiosIntegrados:
+      args.detail.metrics.labs || args.detail.metrics.imaging
+        ? `Laboratorio: ${args.detail.metrics.labs} · Imagenología: ${args.detail.metrics.imaging}`
+        : 'Sin resultados externos vinculados al episodio.',
+    enfermeriaHabitusUrg: 'Sin hoja de enfermería vinculada',
+    enfermeriaDolorUrg: 'Sin hoja de enfermería vinculada',
+    enfermeriaRiesgoCaidasUrg: 'Sin hoja de enfermería vinculada',
+    enfermeriaMedicacionUrg: 'Sin hoja de enfermería vinculada',
+    enfermeriaProcedimientosUrg: 'Sin hoja de enfermería vinculada',
+    enfermeriaObservacionesUrg: 'Sin hoja de enfermería vinculada',
+    enfermeriaResponsableUrg: 'Sin hoja de enfermería vinculada',
+    auxEcgUrg: 'Sin ECG vinculado al episodio',
+    auxLaboratoriosUrg:
+      args.detail.metrics.labs > 0
+        ? `${args.detail.metrics.labs} resultado(s) o solicitud(es) de laboratorio`
+        : 'Sin laboratorios vinculados',
+    auxInterpretacionUrg: 'Sin interpretación externa vinculada',
+    auxIncidentesUrg: 'Sin incidentes registrados en servicios auxiliares',
+    evolucionUrgLegalNombre:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    evolucionUrgLegalCedula:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    evolucionUrgLegalEspecialidad: args.detail.specialty?.name ?? 'Sin especialidad',
+    evolucionUrgLegalLugar:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
   };
 }
 
@@ -1967,10 +2156,66 @@ export function EpisodeDetailPage() {
             ...currentValue,
             noteType: 'Nota inicial',
             formData: nextFormData,
-          }
+      }
         : currentValue,
     );
   }, [activeTab, detail, recordForm]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isEmergencyEvolutionTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const currentRecordId = activeRecordId;
+    const previousEvolutionRecord =
+      [...detail.sectionRecords]
+        .filter(
+          (record) =>
+            record.tabKey === 'Evolución' &&
+            (!currentRecordId || record.id !== currentRecordId),
+        )
+        .sort((left, right) => {
+          const leftVersion = left.metadata.versionNumber ?? 0;
+          const rightVersion = right.metadata.versionNumber ?? 0;
+
+          if (leftVersion !== rightVersion) {
+            return rightVersion - leftVersion;
+          }
+
+          return right.recordedAt.localeCompare(left.recordedAt);
+        })[0] ?? null;
+    const nextFormData: Record<string, RecordFieldValue> = {
+      ...recordForm.formData,
+      ...buildEmergencyEvolutionSnapshot({
+        detail,
+        initialNoteRecord: getLatestRecordByTab(detail.sectionRecords, 'Nota inicial'),
+        previousEvolutionRecord,
+        recordedAt: recordForm.recordedAt,
+        currentFormData: recordForm.formData,
+      }),
+    };
+    const hasChanges = Object.entries(nextFormData).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges && recordForm.noteType === 'Evolución en urgencias') {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Evolución en urgencias',
+            formData: nextFormData,
+          }
+        : currentValue,
+    );
+  }, [activeRecordId, activeTab, detail, recordForm]);
 
   if (!detail || !form) {
     return (
@@ -2044,6 +2289,10 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isEmergencyEvolutionSection = isEmergencyEvolutionTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -2088,6 +2337,9 @@ export function EpisodeDetailPage() {
     : getLatestRecordByTab(detail.sectionRecords, 'Triage');
   const latestEmergencyInitialNoteRecord = isEmergencyInitialNoteSection
     ? getLatestRecordByTab(activeTabRecords, 'Nota inicial')
+    : getLatestRecordByTab(detail.sectionRecords, 'Nota inicial');
+  const latestEmergencyEvolutionRecord = isEmergencyEvolutionSection
+    ? getLatestRecordByTab(activeTabRecords, 'Evolución')
     : null;
   const selectedRecord =
     activeRecordId === null
@@ -2137,6 +2389,8 @@ export function EpisodeDetailPage() {
     (latestTriageRecord?.metadata.versionNumber ?? 0) + 1;
   const nextEmergencyInitialNoteVersionNumber =
     (latestEmergencyInitialNoteRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextEmergencyEvolutionVersionNumber =
+    (latestEmergencyEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -2354,6 +2608,35 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isEmergencyEvolutionSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Evolución en urgencias',
+          title: buildEmergencyEvolutionTitle(nextEmergencyEvolutionVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType)['Evolución'],
+            ...buildEmergencyEvolutionSnapshot({
+              detail,
+              initialNoteRecord: latestEmergencyInitialNoteRecord,
+              previousEvolutionRecord: latestEmergencyEvolutionRecord,
+              recordedAt: nextRecordedAt,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -2468,6 +2751,27 @@ export function EpisodeDetailPage() {
                               record.formData as Record<string, RecordFieldValue>,
                           }),
                         }
+                      : isEmergencyEvolutionSection
+                        ? {
+                            ...(record.formData as Record<string, RecordFieldValue>),
+                            ...buildEmergencyEvolutionSnapshot({
+                              detail,
+                              initialNoteRecord: latestEmergencyInitialNoteRecord,
+                              previousEvolutionRecord:
+                                detail.sectionRecords
+                                  .filter(
+                                    (item) =>
+                                      item.tabKey === 'Evolución' &&
+                                      item.id !== record.id,
+                                  )
+                                  .sort((left, right) =>
+                                    right.recordedAt.localeCompare(left.recordedAt),
+                                  )[0] ?? null,
+                              recordedAt: record.recordedAt.slice(0, 16),
+                              currentFormData:
+                                record.formData as Record<string, RecordFieldValue>,
+                            }),
+                          }
                     : record.formData,
       }),
     );
@@ -2620,6 +2924,17 @@ export function EpisodeDetailPage() {
                           currentFormData: recordForm.formData,
                         }),
                       }
+                    : isEmergencyEvolutionSection
+                      ? {
+                          ...recordForm.formData,
+                          ...buildEmergencyEvolutionSnapshot({
+                            detail,
+                            initialNoteRecord: latestEmergencyInitialNoteRecord,
+                            previousEvolutionRecord: latestEmergencyEvolutionRecord,
+                            recordedAt: recordForm.recordedAt,
+                            currentFormData: recordForm.formData,
+                          }),
+                        }
                   : recordForm.formData,
     };
 
@@ -3467,6 +3782,42 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isEmergencyEvolutionSection ? (
+                            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildEmergencyEvolutionTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildEmergencyEvolutionTitle(
+                                          nextEmergencyEvolutionVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Seguimiento dinámico del mismo episodio con nueva toma
+                                    de signos vitales y diagnósticos longitudinales.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Evolución en urgencias
+                                  </Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -3551,7 +3902,8 @@ export function EpisodeDetailPage() {
                           isConsultationPrescriptionSection ||
                           isConsultationDocumentsSection ||
                           isEmergencyTriageSection ||
-                          isEmergencyInitialNoteSection ? null : (
+                          isEmergencyInitialNoteSection ||
+                          isEmergencyEvolutionSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -3713,7 +4065,8 @@ export function EpisodeDetailPage() {
                         {isConsultationPrescriptionSection ||
                         isConsultationDocumentsSection ||
                         isEmergencyTriageSection ||
-                        isEmergencyInitialNoteSection ? (
+                        isEmergencyInitialNoteSection ||
+                        isEmergencyEvolutionSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -3724,6 +4077,8 @@ export function EpisodeDetailPage() {
                                       ? 'Documento de Triage'
                                       : isEmergencyInitialNoteSection
                                         ? 'Documento de Nota inicial'
+                                        : isEmergencyEvolutionSection
+                                          ? 'Documento de Evolución'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -3733,6 +4088,8 @@ export function EpisodeDetailPage() {
                                       ? 'La vista previa y el PDF usan la información del registro y respetan su estado firmado o borrador.'
                                       : isEmergencyInitialNoteSection
                                         ? 'La vista previa y el PDF usan el snapshot clínico guardado de la nota inicial.'
+                                        : isEmergencyEvolutionSection
+                                          ? 'La vista previa y el PDF usan la medición y el seguimiento guardados en esta evolución.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -3760,7 +4117,8 @@ export function EpisodeDetailPage() {
                                     !selectedRecord ||
                                     (selectedRecord.status !== 'SIGNED' &&
                                       !isEmergencyTriageSection &&
-                                      !isEmergencyInitialNoteSection) ||
+                                      !isEmergencyInitialNoteSection &&
+                                      !isEmergencyEvolutionSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending
@@ -4125,6 +4483,11 @@ export function EpisodeDetailPage() {
                                                 </p>
                                                 <Button
                                                   disabled={isRecordLocked}
+                                                  className={
+                                                    field.disableItemRemoval
+                                                      ? 'hidden'
+                                                      : undefined
+                                                  }
                                                   onClick={() =>
                                                     updateRecordFormDataField(
                                                       field.key,

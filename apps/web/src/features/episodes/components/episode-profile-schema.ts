@@ -11,6 +11,7 @@ export type EpisodeFieldDefinition = {
     | 'textarea'
     | 'select'
     | 'datetime-local'
+    | 'time'
     | 'number'
     | 'checkbox'
     | 'date'
@@ -23,6 +24,7 @@ export type EpisodeFieldDefinition = {
   inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
   itemFields?: EpisodeFieldDefinition[];
   itemAddLabel?: string;
+  disableItemRemoval?: boolean;
   actionLabel?: string;
 };
 
@@ -126,6 +128,28 @@ const clinicalStatusOptions: EpisodeFieldOption[] = [
   { value: 'DELICADO', label: 'Delicado' },
   { value: 'GRAVE', label: 'Grave' },
   { value: 'CRITICO', label: 'Crítico' },
+];
+
+const treatmentResponseOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'FAVORABLE', label: 'Favorable' },
+  { value: 'PARCIAL', label: 'Parcial' },
+  { value: 'SIN_CAMBIOS', label: 'Sin cambios' },
+  { value: 'DESFAVORABLE', label: 'Desfavorable' },
+];
+
+const consentStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'VIGENTE', label: 'Vigente' },
+  { value: 'NO_VIGENTE', label: 'No vigente' },
+  { value: 'NO_APLICA', label: 'No aplica' },
+];
+
+const fallRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'MEDIO', label: 'Medio' },
+  { value: 'ALTO', label: 'Alto' },
 ];
 
 const glasgowEyeOptions: EpisodeFieldOption[] = [
@@ -1525,37 +1549,136 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Seguimiento clínico, órdenes, estudios y eventos.',
       sections: [
         {
-          key: 'evolucion_urgencias',
-          title: 'Evolución clínica',
+          key: 'evolucion_urg_tipo',
+          title: 'Tipo de registro',
           fields: [
-            { key: 'datosNota', label: 'Datos de la nota', type: 'textarea' },
-            { key: 'subjetivoEvolucion', label: 'S - Subjetivo', type: 'textarea' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_datos',
+          title: 'Datos de la nota',
+          fields: [
+            { key: 'fechaEvolucionUrg', label: 'Fecha', type: 'date' },
+            { key: 'horaEvolucionUrg', label: 'Hora', type: 'time' },
+            { key: 'diaEvolucionUrg', label: 'Día de evolución', type: 'readonly' },
+            { key: 'estadoClinicoEvolucionUrg', label: 'Estado clínico', type: 'select', options: clinicalStatusOptions },
+          ],
+        },
+        {
+          key: 'evolucion_urg_subjetivo',
+          title: 'S - Subjetivo',
+          fields: [
+            { key: 'referenciaPacienteUrg', label: 'Referencia del paciente', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_objetivo',
+          title: 'O - Objetivo',
+          fields: [
+            { key: 'taSistolicaEvolUrg', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolicaEvolUrg', label: 'TA diastólica', type: 'number' },
+            { key: 'fcEvolUrg', label: 'FC', type: 'number' },
+            { key: 'frEvolUrg', label: 'FR', type: 'number' },
+            { key: 'tempEvolUrg', label: 'Temp', type: 'number' },
+            { key: 'spo2EvolUrg', label: 'SpO2', type: 'number' },
+            { key: 'evaEvolUrg', label: 'EVA', type: 'number' },
+            { key: 'glucosaEvolUrg', label: 'Glucosa', type: 'number' },
+            { key: 'glasgowEvolUrg', label: 'Glasgow', type: 'number' },
+            { key: 'exploracionDirigidaUrg', label: 'Exploración dirigida', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_resultados',
+          title: 'Resultados de estudios',
+          fields: [
+            { key: 'resultadosEstudiosIntegrados', label: 'Resultados integrados', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_analisis',
+          title: 'A - Análisis',
+          fields: [
             {
-              key: 'objetivoEvolucion',
-              label: 'O - Objetivo / signos y exploración',
-              type: 'textarea',
+              key: 'diagnosticosEvolucionUrg',
+              label: 'Diagnósticos',
+              type: 'object-array',
+              itemAddLabel: 'Agregar diagnóstico',
+              disableItemRemoval: true,
+              itemFields: [
+                { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+                { key: 'cie10', label: 'CIE-10', type: 'text' },
+                { key: 'estado', label: 'Estado', type: 'select', options: diagnosisStatusOptions },
+              ],
             },
-            {
-              key: 'resultadosEstudios',
-              label: 'Resultados de estudios',
-              type: 'textarea',
-            },
-            {
-              key: 'analisisEvolucion',
-              label: 'A - Análisis / diagnósticos',
-              type: 'textarea',
-            },
-            {
-              key: 'eventosAdversosComplicaciones',
-              label: 'Eventos adversos y complicaciones',
-              type: 'textarea',
-            },
-            { key: 'planEvolucionUrg', label: 'P - Plan', type: 'textarea' },
-            {
-              key: 'justificacionClinicaNom004',
-              label: 'Justificación clínica (NOM-004)',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'evolucion_urg_eventos',
+          title: 'Eventos adversos / complicaciones',
+          fields: [
+            { key: 'eventosAdversosUrg', label: 'Eventos adversos', type: 'textarea' },
+            { key: 'complicacionesUrg', label: 'Complicaciones', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_plan',
+          title: 'P - Plan',
+          fields: [
+            { key: 'tratamientoEvolUrg', label: 'Tratamiento', type: 'textarea' },
+            { key: 'estudiosPendientesUrg', label: 'Estudios pendientes', type: 'textarea' },
+            { key: 'interconsultasEvolUrg', label: 'Interconsultas', type: 'textarea' },
+            { key: 'seguimientoEvolUrg', label: 'Seguimiento', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_legales',
+          title: 'Campos legales',
+          fields: [
+            { key: 'consentimientoVigenteUrg', label: 'Consentimiento vigente', type: 'select', options: consentStatusOptions },
+            { key: 'informacionBrindadaUrg', label: 'Información brindada', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_justificacion',
+          title: 'Justificación clínica (NOM-004)',
+          fields: [
+            { key: 'justificacionClinicaNom004', label: 'Justificación clínica', type: 'textarea' },
+            { key: 'respuestaTratamientoUrg', label: 'Respuesta al tratamiento', type: 'select', options: treatmentResponseOptions },
+          ],
+        },
+        {
+          key: 'evolucion_urg_enfermeria',
+          title: 'Hoja de enfermería',
+          fields: [
+            { key: 'enfermeriaHabitusUrg', label: 'Hábitus', type: 'readonly' },
+            { key: 'enfermeriaDolorUrg', label: 'Dolor', type: 'readonly' },
+            { key: 'enfermeriaRiesgoCaidasUrg', label: 'Riesgo de caídas', type: 'readonly' },
+            { key: 'enfermeriaMedicacionUrg', label: 'Medicación administrada', type: 'readonly' },
+            { key: 'enfermeriaProcedimientosUrg', label: 'Procedimientos', type: 'readonly' },
+            { key: 'enfermeriaObservacionesUrg', label: 'Observaciones', type: 'readonly' },
+            { key: 'enfermeriaResponsableUrg', label: 'Responsable + cédula', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_auxiliares',
+          title: 'Servicios auxiliares',
+          fields: [
+            { key: 'auxEcgUrg', label: 'ECG', type: 'readonly' },
+            { key: 'auxLaboratoriosUrg', label: 'Laboratorios', type: 'readonly' },
+            { key: 'auxInterpretacionUrg', label: 'Interpretación', type: 'readonly' },
+            { key: 'auxIncidentesUrg', label: 'Incidentes', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_firma',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'evolucionUrgLegalNombre', label: 'Nombre', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'evolucionUrgLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'evolucionUrgLegalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'evolucionUrgLegalLugar', label: 'Lugar', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarEvolucionUrg', label: 'Firma electrónica', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],

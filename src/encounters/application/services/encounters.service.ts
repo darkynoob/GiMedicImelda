@@ -778,6 +778,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const emergencyEvolutionVersionContext =
+      await this.resolveEmergencyEvolutionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -790,6 +796,7 @@ export class EncountersService {
       documentVersionContext,
       triageVersionContext,
       emergencyInitialNoteVersionContext,
+      emergencyEvolutionVersionContext,
       responsibleUser,
     });
 
@@ -901,6 +908,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const emergencyEvolutionVersionContext =
+      await this.resolveEmergencyEvolutionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -913,6 +927,7 @@ export class EncountersService {
       documentVersionContext,
       triageVersionContext,
       emergencyInitialNoteVersionContext,
+      emergencyEvolutionVersionContext,
       responsibleUser,
     });
 
@@ -1065,7 +1080,8 @@ export class EncountersService {
     if (
       record.status !== EncounterRecordStatus.SIGNED &&
       !this.isEmergencyTriageRecord(record.encounterType, record.tabKey) &&
-      !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey)
+      !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey) &&
+      !this.isEmergencyEvolutionRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -2016,6 +2032,44 @@ export class EncountersService {
     };
   }
 
+  private async resolveEmergencyEvolutionVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Evolución',
+        noteType: 'Evolución en urgencias',
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -2047,6 +2101,9 @@ export class EncountersService {
     >;
     emergencyInitialNoteVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyInitialNoteVersionContext']>
+    >;
+    emergencyEvolutionVersionContext: Awaited<
+      ReturnType<EncountersService['resolveEmergencyEvolutionVersionContext']>
     >;
     responsibleUser: {
       id: string;
@@ -2088,6 +2145,55 @@ export class EncountersService {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
           versionNumber,
           inheritedFromRecordId: currentRecordMetadata.inheritedFromRecordId ?? null,
+        },
+      };
+    }
+
+    if (
+      this.isEmergencyEvolutionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const latestInitialNoteRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Nota inicial',
+      );
+      const latestEvolutionRecord =
+        input.emergencyEvolutionVersionContext?.latestRecord ?? null;
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.emergencyEvolutionVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildEmergencyEvolutionFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        latestInitialNoteFormDataJson: latestInitialNoteRecord?.formDataJson ?? null,
+        latestEvolutionFormDataJson: latestEvolutionRecord?.formDataJson ?? null,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Evolución',
+        noteType: 'Evolución en urgencias',
+        title: `Evolución en urgencias V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            latestEvolutionRecord?.id ??
+            latestInitialNoteRecord?.id ??
+            null,
         },
       };
     }
@@ -2511,6 +2617,10 @@ export class EncountersService {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Nota inicial';
   }
 
+  private isEmergencyEvolutionRecord(encounterType: EncounterType, tabKey: string) {
+    return encounterType === EncounterType.EMERGENCY && tabKey === 'Evolución';
+  }
+
   private buildEmergencyTriageFormData(input: {
     incomingFormData: Record<string, unknown>;
     recordedAt: Date;
@@ -2617,6 +2727,180 @@ export class EncountersService {
     return baseFormData;
   }
 
+  private buildEmergencyEvolutionFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    latestInitialNoteFormDataJson: Prisma.JsonValue | null;
+    latestEvolutionFormDataJson: Prisma.JsonValue | null;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const latestInitialNoteFormData =
+      this.normalizeJsonObject(input.latestInitialNoteFormDataJson);
+    const latestEvolutionFormData =
+      this.normalizeJsonObject(input.latestEvolutionFormDataJson);
+    const baseFormData: Record<string, unknown> = {
+      ...input.incomingFormData,
+      tipoRegistro: 'Evolución en urgencias',
+      fechaEvolucionUrg:
+        this.readStringValue(input.incomingFormData.fechaEvolucionUrg) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      horaEvolucionUrg:
+        this.readStringValue(input.incomingFormData.horaEvolucionUrg) ||
+        input.recordedAt.toISOString().slice(11, 16),
+      diaEvolucionUrg: String(
+        this.calculateEmergencyEvolutionDay(input.encounter.openedAt, input.recordedAt),
+      ),
+      resultadosEstudiosIntegrados: this.buildEmergencyExternalResultsSummary(input.encounter),
+      ...this.buildEmergencyNursingSnapshot(),
+      ...this.buildEmergencyAuxiliaryServicesSnapshot(input.encounter),
+      evolucionUrgLegalNombre:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      evolucionUrgLegalCedula:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      evolucionUrgLegalEspecialidad:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      evolucionUrgLegalLugar:
+        [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+          .filter(Boolean)
+          .join(' · ') || 'Lugar no configurado',
+    };
+
+    const sourceFormData = Object.keys(latestEvolutionFormData).length > 0
+      ? latestEvolutionFormData
+      : latestInitialNoteFormData;
+    const vitalSnapshotMap: Record<string, unknown> = {
+      taSistolicaEvolUrg:
+        latestEvolutionFormData.taSistolicaEvolUrg ??
+        latestInitialNoteFormData.taSistolicaNota,
+      taDiastolicaEvolUrg:
+        latestEvolutionFormData.taDiastolicaEvolUrg ??
+        latestInitialNoteFormData.taDiastolicaNota,
+      fcEvolUrg: latestEvolutionFormData.fcEvolUrg ?? latestInitialNoteFormData.fcNota,
+      frEvolUrg: latestEvolutionFormData.frEvolUrg ?? latestInitialNoteFormData.frNota,
+      tempEvolUrg:
+        latestEvolutionFormData.tempEvolUrg ?? latestInitialNoteFormData.tempNota,
+      spo2EvolUrg:
+        latestEvolutionFormData.spo2EvolUrg ?? latestInitialNoteFormData.spo2Nota,
+      evaEvolUrg: latestEvolutionFormData.evaEvolUrg ?? latestInitialNoteFormData.evaNota,
+      glucosaEvolUrg:
+        latestEvolutionFormData.glucosaEvolUrg ?? latestInitialNoteFormData.glucosaNota,
+      glasgowEvolUrg:
+        latestEvolutionFormData.glasgowEvolUrg ?? latestInitialNoteFormData.glasgowNota,
+      diagnosticosEvolucionUrg:
+        latestEvolutionFormData.diagnosticosEvolucionUrg ??
+        this.buildEmergencyEvolutionDiagnoses(latestInitialNoteFormData),
+      tratamientoEvolUrg:
+        latestEvolutionFormData.tratamientoEvolUrg ??
+        latestInitialNoteFormData.medicamentosPlan,
+      estudiosPendientesUrg:
+        latestEvolutionFormData.estudiosPendientesUrg ??
+        latestInitialNoteFormData.estudiosPlan,
+      interconsultasEvolUrg:
+        latestEvolutionFormData.interconsultasEvolUrg ??
+        latestInitialNoteFormData.interconsultasPlan,
+      seguimientoEvolUrg:
+        latestEvolutionFormData.seguimientoEvolUrg ??
+        latestInitialNoteFormData.resumenPronostico,
+      consentimientoVigenteUrg:
+        latestEvolutionFormData.consentimientoVigenteUrg ??
+        (this.hasCapturedValue(latestInitialNoteFormData.consentimientoInicial)
+          ? 'VIGENTE'
+          : ''),
+      informacionBrindadaUrg:
+        latestEvolutionFormData.informacionBrindadaUrg ??
+        latestInitialNoteFormData.consentimientoInicial,
+    };
+
+    for (const [fieldKey, value] of Object.entries(vitalSnapshotMap)) {
+      if (
+        !this.hasCapturedValue(baseFormData[fieldKey]) &&
+        this.hasCapturedValue(value)
+      ) {
+        baseFormData[fieldKey] = value;
+      }
+    }
+
+    if (
+      !this.hasCapturedValue(baseFormData.diagnosticosEvolucionUrg) &&
+      Array.isArray(sourceFormData.diagnosticosEvolucionUrg)
+    ) {
+      baseFormData.diagnosticosEvolucionUrg = sourceFormData.diagnosticosEvolucionUrg;
+    }
+
+    return baseFormData;
+  }
+
+  private normalizeJsonObject(rawValue: Prisma.JsonValue | null) {
+    return rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
+      ? (rawValue as Record<string, unknown>)
+      : {};
+  }
+
+  private calculateEmergencyEvolutionDay(openedAt: Date, recordedAt: Date) {
+    const elapsedMs = recordedAt.getTime() - openedAt.getTime();
+    return Math.max(1, Math.floor(elapsedMs / 86_400_000) + 1);
+  }
+
+  private buildEmergencyEvolutionDiagnoses(
+    latestInitialNoteFormData: Record<string, unknown>,
+  ) {
+    const diagnosis = this.readStringValue(latestInitialNoteFormData.diagnosticoNota);
+    const cie10 = this.readStringValue(latestInitialNoteFormData.cie10Nota);
+
+    return diagnosis || cie10
+      ? [
+          {
+            diagnostico: diagnosis,
+            cie10,
+            estado: 'ACTIVO',
+          },
+        ]
+      : [];
+  }
+
+  private buildEmergencyExternalResultsSummary(encounter: TenantEncounterRecord) {
+    const sections: string[] = [];
+
+    if (encounter.labRequests.length > 0) {
+      sections.push(`Laboratorio: ${encounter.labRequests.length} solicitud(es) vinculada(s).`);
+    }
+
+    if (encounter.imagingRequests.length > 0) {
+      sections.push(`Imagenología: ${encounter.imagingRequests.length} solicitud(es) vinculada(s).`);
+    }
+
+    return sections.join('\n') || 'Sin resultados externos vinculados al episodio.';
+  }
+
+  private buildEmergencyNursingSnapshot() {
+    return {
+      enfermeriaHabitusUrg: 'Sin hoja de enfermería vinculada',
+      enfermeriaDolorUrg: 'Sin hoja de enfermería vinculada',
+      enfermeriaRiesgoCaidasUrg: 'Sin hoja de enfermería vinculada',
+      enfermeriaMedicacionUrg: 'Sin hoja de enfermería vinculada',
+      enfermeriaProcedimientosUrg: 'Sin hoja de enfermería vinculada',
+      enfermeriaObservacionesUrg: 'Sin hoja de enfermería vinculada',
+      enfermeriaResponsableUrg: 'Sin hoja de enfermería vinculada',
+    };
+  }
+
+  private buildEmergencyAuxiliaryServicesSnapshot(encounter: TenantEncounterRecord) {
+    return {
+      auxEcgUrg: 'Sin ECG vinculado al episodio',
+      auxLaboratoriosUrg:
+        encounter.labRequests.length > 0
+          ? `${encounter.labRequests.length} solicitud(es) de laboratorio vinculada(s)`
+          : 'Sin laboratorios vinculados',
+      auxInterpretacionUrg: 'Sin interpretación externa vinculada',
+      auxIncidentesUrg: 'Sin incidentes registrados en servicios auxiliares',
+    };
+  }
+
   private hasCapturedValue(value: unknown) {
     if (typeof value === 'string') {
       return value.trim().length > 0;
@@ -2624,6 +2908,10 @@ export class EncountersService {
 
     if (typeof value === 'number') {
       return Number.isFinite(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.length > 0;
     }
 
     return value !== null && value !== undefined;
@@ -4146,11 +4434,31 @@ export class EncountersService {
           'pronosticoNota',
         ]
       : [];
+    const emergencyEvolutionRequiredFields = this.isEmergencyEvolutionRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? [
+          'fechaEvolucionUrg',
+          'horaEvolucionUrg',
+          'estadoClinicoEvolucionUrg',
+          'referenciaPacienteUrg',
+          'taSistolicaEvolUrg',
+          'taDiastolicaEvolUrg',
+          'fcEvolUrg',
+          'frEvolUrg',
+          'tempEvolUrg',
+          'spo2EvolUrg',
+          'tratamientoEvolUrg',
+          'justificacionClinicaNom004',
+        ]
+      : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
       ...triageRequiredFields,
       ...emergencyInitialNoteRequiredFields,
+      ...emergencyEvolutionRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return typeof value !== 'string' || value.trim().length === 0;
@@ -4162,7 +4470,9 @@ export class EncountersService {
           ? 'Completa los campos obligatorios del triage antes de firmarlo'
           : this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)
             ? 'Completa los campos obligatorios de la nota inicial antes de firmarla'
-          : 'Completa los campos obligatorios del documento antes de firmarlo',
+            : this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)
+              ? 'Completa los campos obligatorios de la evolución antes de firmarla'
+              : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
     }
   }
