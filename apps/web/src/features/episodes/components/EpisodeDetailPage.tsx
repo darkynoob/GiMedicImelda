@@ -169,6 +169,14 @@ function isEmergencyEvolutionTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Evolución';
 }
 
+function isEmergencyOrdersTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'EMERGENCY' && tabTitle === 'Órdenes / Indicaciones';
+}
+
+function isEmergencyConsultationTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'EMERGENCY' && tabTitle === 'Interconsultas';
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
@@ -179,6 +187,14 @@ function buildEmergencyInitialNoteTitle(versionNumber: number) {
 
 function buildEmergencyEvolutionTitle(versionNumber: number) {
   return `Evolución en urgencias V${versionNumber}`;
+}
+
+function buildEmergencyOrdersTitle(versionNumber: number) {
+  return `Órdenes e indicaciones V${versionNumber}`;
+}
+
+function buildEmergencyConsultationTitle(versionNumber: number) {
+  return `Interconsultas V${versionNumber}`;
 }
 
 function readNumericFormValue(value: RecordFieldValue | undefined) {
@@ -554,6 +570,277 @@ function buildEmergencyEvolutionSnapshot(args: {
       args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     evolucionUrgLegalEspecialidad: args.detail.specialty?.name ?? 'Sin especialidad',
     evolucionUrgLegalLugar:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
+  };
+}
+
+function normalizeObjectArrayField(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      )
+    : [];
+}
+
+function buildEmergencyOrderSafetyAlerts(args: {
+  medications: unknown;
+  allergies: string[];
+}) {
+  const medications = normalizeObjectArrayField(args.medications);
+  const medicationNames = medications
+    .map((item) => (typeof item.medicamento === 'string' ? item.medicamento.trim() : ''))
+    .filter(Boolean);
+  const lowerMedicationNames = medicationNames.map((name) => name.toLowerCase());
+  const allergyMatches = args.allergies.filter((allergy) =>
+    lowerMedicationNames.some((medication) =>
+      medication.includes(allergy.toLowerCase()),
+    ),
+  );
+  const duplicatedMedicationNames = medicationNames.filter(
+    (name, index) => lowerMedicationNames.indexOf(name.toLowerCase()) !== index,
+  );
+  const missingDoseItems = medications
+    .filter(
+      (item) =>
+        typeof item.medicamento === 'string' &&
+        item.medicamento.trim() &&
+        (typeof item.dosis !== 'string' || !item.dosis.trim()),
+    )
+    .map((item) => item.medicamento as string);
+
+  return {
+    alertaAlergiasOrdenes:
+      allergyMatches.length > 0
+        ? `Verificar alergias registradas: ${allergyMatches.join(', ')}`
+        : 'Sin alertas de alergia con los medicamentos capturados.',
+    alertaDuplicidadOrdenes:
+      duplicatedMedicationNames.length > 0
+        ? `Posible duplicidad: ${[...new Set(duplicatedMedicationNames)].join(', ')}`
+        : 'Sin duplicidad terapéutica detectada por nombre.',
+    alertaDosisOrdenes:
+      missingDoseItems.length > 0
+        ? `Capturar dosis para: ${missingDoseItems.join(', ')}`
+        : 'Dosis capturada para los medicamentos indicados.',
+  };
+}
+
+function buildEmergencyOrdersTraceability(args: {
+  medications: unknown;
+  studies: unknown;
+  solutions: unknown;
+  responsibleUserName: string;
+}) {
+  const rows: string[] = [];
+
+  normalizeObjectArrayField(args.medications).forEach((item, index) => {
+    const medication =
+      typeof item.medicamento === 'string' && item.medicamento.trim()
+        ? item.medicamento
+        : `Medicamento ${index + 1}`;
+    rows.push(
+      `${medication} | pendiente | ${args.responsibleUserName} | sin ejecución | enfermería`,
+    );
+  });
+
+  normalizeObjectArrayField(args.studies).forEach((item, index) => {
+    const study =
+      typeof item.estudio === 'string' && item.estudio.trim()
+        ? item.estudio
+        : `Estudio ${index + 1}`;
+    const type = typeof item.tipo === 'string' && item.tipo ? item.tipo : 'auxiliar';
+    const status =
+      typeof item.estado === 'string' && item.estado ? item.estado : 'PENDIENTE';
+    rows.push(
+      `${study} | ${status.toLowerCase()} | ${args.responsibleUserName} | sin ejecución | ${type.toLowerCase()}`,
+    );
+  });
+
+  normalizeObjectArrayField(args.solutions).forEach((item, index) => {
+    const solution =
+      typeof item.tipoSolucion === 'string' && item.tipoSolucion.trim()
+        ? item.tipoSolucion
+        : `Solución ${index + 1}`;
+    rows.push(
+      `${solution} | pendiente | ${args.responsibleUserName} | sin ejecución | enfermería`,
+    );
+  });
+
+  return rows.join('\n') || 'Sin órdenes operativas capturadas.';
+}
+
+function buildEmergencyOrdersSnapshot(args: {
+  detail: EncounterDetailResponse;
+  initialNoteRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  evolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const initialFormData = args.initialNoteRecord?.formData ?? {};
+  const evolutionFormData = args.evolutionRecord?.formData ?? {};
+  const currentFormData = args.currentFormData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const medicationSuggestion =
+    readString(evolutionFormData.tratamientoEvolUrg) ||
+    readString(initialFormData.medicamentosPlan);
+  const studySuggestion =
+    readString(evolutionFormData.estudiosPendientesUrg) ||
+    readString(initialFormData.estudiosPlan) ||
+    readString(initialFormData.estudiosAnalisis);
+  const interventionSuggestion = readString(initialFormData.intervencionesPlan);
+  const medications =
+    Array.isArray(currentFormData.medicamentosOrdenesUrg) &&
+    currentFormData.medicamentosOrdenesUrg.length > 0
+      ? currentFormData.medicamentosOrdenesUrg
+      : medicationSuggestion
+        ? [
+            {
+              medicamento: medicationSuggestion,
+              dosis: '',
+              via: '',
+              frecuencia: '',
+              duracion: '',
+              indicacion: 'Sugerido desde plan clínico',
+              prioridad: 'NORMAL',
+            },
+          ]
+        : [];
+  const studies =
+    Array.isArray(currentFormData.estudiosSolicitadosOrdenes) &&
+    currentFormData.estudiosSolicitadosOrdenes.length > 0
+      ? currentFormData.estudiosSolicitadosOrdenes
+      : studySuggestion
+        ? [
+            {
+              tipo: 'LABORATORIO',
+              estudio: studySuggestion,
+              prioridad: 'NORMAL',
+              justificacion: 'Sugerido desde plan clínico',
+              frecuencia: '',
+              estado: 'PENDIENTE',
+            },
+          ]
+        : [];
+  const safetyAlerts = buildEmergencyOrderSafetyAlerts({
+    medications,
+    allergies: args.detail.patient.allergiesSummary,
+  });
+
+  return {
+    tipoRegistro: 'Órdenes e indicaciones',
+    medicamentosOrdenesUrg: medications,
+    estudiosSolicitadosOrdenes: studies,
+    monitoreoOrdenes:
+      readString(currentFormData.monitoreoOrdenes) || interventionSuggestion,
+    ...safetyAlerts,
+    estadoOrdenesTrazabilidad: buildEmergencyOrdersTraceability({
+      medications,
+      studies,
+      solutions: currentFormData.solucionesIntravenosasOrdenes,
+      responsibleUserName:
+        args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    }),
+    ordenesLegalMedico:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    ordenesLegalCedula:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    ordenesLegalEspecialidad: args.detail.specialty?.name ?? 'Sin especialidad',
+    ordenesLegalLugar:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
+  };
+}
+
+function calculateConsultationTarget(priority: RecordFieldValue | undefined) {
+  const targets: Record<string, string> = {
+    INMEDIATA: '30 minutos',
+    URGENTE: '1 hora',
+    PREFERENTE: '4 horas',
+    DIFERIDA: 'Diferida',
+  };
+  return typeof priority === 'string' ? targets[priority] ?? '' : '';
+}
+
+function buildEmergencyConsultationSnapshot(args: {
+  detail: EncounterDetailResponse;
+  initialNoteRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  evolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  ordersRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const initial = args.initialNoteRecord?.formData ?? {};
+  const evolution = args.evolutionRecord?.formData ?? {};
+  const orders = args.ordersRecord?.formData ?? {};
+  const current = args.currentFormData ?? {};
+  const read = (value: unknown) => (typeof value === 'string' ? value : '');
+  const requestDate = read(current.fechaInterconsulta) || args.recordedAt.slice(0, 10);
+  const requestTime = read(current.horaInterconsulta) || args.recordedAt.slice(11, 16);
+  const requestedAt = new Date(`${requestDate}T${requestTime}`);
+  const receivedAt =
+    typeof current.horaRecepcionInterconsulta === 'string'
+      ? new Date(current.horaRecepcionInterconsulta)
+      : null;
+  const respondedAt =
+    typeof current.horaRespuestaInterconsulta === 'string'
+      ? new Date(current.horaRespuestaInterconsulta)
+      : null;
+  const endAt =
+    respondedAt && !Number.isNaN(respondedAt.getTime())
+      ? respondedAt
+      : receivedAt && !Number.isNaN(receivedAt.getTime())
+        ? receivedAt
+        : null;
+  const priority =
+    read(current.prioridadInterconsulta) ||
+    (read(initial.riesgoVitalNota) === 'ALTO' ||
+    read(evolution.estadoClinicoEvolucionUrg) === 'CRITICO'
+      ? 'INMEDIATA'
+      : 'URGENTE');
+
+  return {
+    tipoRegistro: 'Interconsultas',
+    fechaInterconsulta: requestDate,
+    horaInterconsulta: requestTime,
+    medicoSolicitanteInterconsulta:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaSolicitanteInterconsulta:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    servicioSolicitanteInterconsulta: 'Urgencias',
+    prioridadInterconsulta: priority,
+    tiempoObjetivoInterconsulta: calculateConsultationTarget(priority),
+    estatusInterconsulta: read(current.estatusInterconsulta) || 'PENDIENTE',
+    motivoInterconsulta:
+      read(current.motivoInterconsulta) ||
+      read(initial.motivoAtencion) ||
+      read(evolution.referenciaPacienteUrg),
+    resumenClinicoInterconsulta:
+      read(current.resumenClinicoInterconsulta) ||
+      read(evolution.justificacionClinicaNom004) ||
+      read(initial.resumenPronostico) ||
+      read(initial.estudiosAnalisis),
+    diagnosticoRelacionadoInterconsulta:
+      read(current.diagnosticoRelacionadoInterconsulta) ||
+      read(initial.diagnosticoNota),
+    cie10Interconsulta: read(initial.cie10Nota),
+    ordenesAsociadasInterconsulta:
+      read(current.ordenesAsociadasInterconsulta) ||
+      read(orders.estadoOrdenesTrazabilidad),
+    horaSolicitudInterconsulta:
+      Number.isNaN(requestedAt.getTime()) ? '' : requestedAt.toISOString(),
+    tiempoRespuestaInterconsulta:
+      endAt && !Number.isNaN(requestedAt.getTime()) && endAt >= requestedAt
+        ? `${Math.round((endAt.getTime() - requestedAt.getTime()) / 60000)} min`
+        : '',
+    interconsultaLegalNombre:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    interconsultaLegalCedula:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    interconsultaLegalEspecialidad:
+      args.detail.specialty?.name ?? 'Sin especialidad',
+    interconsultaLegalLugar:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
         .filter(Boolean)
         .join(' · ') || 'Lugar no configurado',
@@ -2212,10 +2499,89 @@ export function EpisodeDetailPage() {
             ...currentValue,
             noteType: 'Evolución en urgencias',
             formData: nextFormData,
-          }
+      }
         : currentValue,
     );
   }, [activeRecordId, activeTab, detail, recordForm]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isEmergencyOrdersTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const nextFormData: Record<string, RecordFieldValue> = {
+      ...recordForm.formData,
+      ...buildEmergencyOrdersSnapshot({
+        detail,
+        initialNoteRecord: getLatestRecordByTab(detail.sectionRecords, 'Nota inicial'),
+        evolutionRecord: getLatestRecordByTab(detail.sectionRecords, 'Evolución'),
+        currentFormData: recordForm.formData,
+      }),
+    };
+    const hasChanges = Object.entries(nextFormData).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges && recordForm.noteType === 'Órdenes e indicaciones') {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Órdenes e indicaciones',
+            formData: nextFormData,
+      }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isEmergencyConsultationTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const nextFormData: Record<string, RecordFieldValue> = {
+      ...recordForm.formData,
+      ...buildEmergencyConsultationSnapshot({
+        detail,
+        initialNoteRecord: getLatestRecordByTab(detail.sectionRecords, 'Nota inicial'),
+        evolutionRecord: getLatestRecordByTab(detail.sectionRecords, 'Evolución'),
+        ordersRecord: getLatestRecordByTab(
+          detail.sectionRecords,
+          'Órdenes / Indicaciones',
+        ),
+        recordedAt: recordForm.recordedAt,
+        currentFormData: recordForm.formData,
+      }),
+    };
+    const hasChanges = Object.entries(nextFormData).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges && recordForm.noteType === 'Interconsultas') {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Interconsultas',
+            formData: nextFormData,
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
 
   if (!detail || !form) {
     return (
@@ -2293,6 +2659,14 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isEmergencyOrdersSection = isEmergencyOrdersTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isEmergencyConsultationSection = isEmergencyConsultationTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -2340,6 +2714,12 @@ export function EpisodeDetailPage() {
     : getLatestRecordByTab(detail.sectionRecords, 'Nota inicial');
   const latestEmergencyEvolutionRecord = isEmergencyEvolutionSection
     ? getLatestRecordByTab(activeTabRecords, 'Evolución')
+    : getLatestRecordByTab(detail.sectionRecords, 'Evolución');
+  const latestEmergencyOrdersRecord = isEmergencyOrdersSection
+    ? getLatestRecordByTab(activeTabRecords, 'Órdenes / Indicaciones')
+    : getLatestRecordByTab(detail.sectionRecords, 'Órdenes / Indicaciones');
+  const latestEmergencyConsultationRecord = isEmergencyConsultationSection
+    ? getLatestRecordByTab(activeTabRecords, 'Interconsultas')
     : null;
   const selectedRecord =
     activeRecordId === null
@@ -2391,6 +2771,10 @@ export function EpisodeDetailPage() {
     (latestEmergencyInitialNoteRecord?.metadata.versionNumber ?? 0) + 1;
   const nextEmergencyEvolutionVersionNumber =
     (latestEmergencyEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextEmergencyOrdersVersionNumber =
+    (latestEmergencyOrdersRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextEmergencyConsultationVersionNumber =
+    (latestEmergencyConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -2637,6 +3021,68 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isEmergencyOrdersSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Órdenes e indicaciones',
+          title: buildEmergencyOrdersTitle(nextEmergencyOrdersVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType)[
+              'Órdenes / Indicaciones'
+            ],
+            ...buildEmergencyOrdersSnapshot({
+              detail,
+              initialNoteRecord: latestEmergencyInitialNoteRecord,
+              evolutionRecord: latestEmergencyEvolutionRecord,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
+    if (isEmergencyConsultationSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Interconsultas',
+          title: buildEmergencyConsultationTitle(
+            nextEmergencyConsultationVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType).Interconsultas,
+            ...buildEmergencyConsultationSnapshot({
+              detail,
+              initialNoteRecord: latestEmergencyInitialNoteRecord,
+              evolutionRecord: latestEmergencyEvolutionRecord,
+              ordersRecord: latestEmergencyOrdersRecord,
+              recordedAt: nextRecordedAt,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -2772,6 +3218,30 @@ export function EpisodeDetailPage() {
                                 record.formData as Record<string, RecordFieldValue>,
                             }),
                           }
+                        : isEmergencyOrdersSection
+                          ? {
+                              ...(record.formData as Record<string, RecordFieldValue>),
+                              ...buildEmergencyOrdersSnapshot({
+                                detail,
+                                initialNoteRecord: latestEmergencyInitialNoteRecord,
+                                evolutionRecord: latestEmergencyEvolutionRecord,
+                                currentFormData:
+                                  record.formData as Record<string, RecordFieldValue>,
+                              }),
+                            }
+                          : isEmergencyConsultationSection
+                            ? {
+                                ...(record.formData as Record<string, RecordFieldValue>),
+                                ...buildEmergencyConsultationSnapshot({
+                                  detail,
+                                  initialNoteRecord: latestEmergencyInitialNoteRecord,
+                                  evolutionRecord: latestEmergencyEvolutionRecord,
+                                  ordersRecord: latestEmergencyOrdersRecord,
+                                  recordedAt: record.recordedAt.slice(0, 16),
+                                  currentFormData:
+                                    record.formData as Record<string, RecordFieldValue>,
+                                }),
+                              }
                     : record.formData,
       }),
     );
@@ -2935,6 +3405,28 @@ export function EpisodeDetailPage() {
                             currentFormData: recordForm.formData,
                           }),
                         }
+                      : isEmergencyOrdersSection
+                        ? {
+                            ...recordForm.formData,
+                            ...buildEmergencyOrdersSnapshot({
+                              detail,
+                              initialNoteRecord: latestEmergencyInitialNoteRecord,
+                              evolutionRecord: latestEmergencyEvolutionRecord,
+                              currentFormData: recordForm.formData,
+                            }),
+                          }
+                        : isEmergencyConsultationSection
+                          ? {
+                              ...recordForm.formData,
+                              ...buildEmergencyConsultationSnapshot({
+                                detail,
+                                initialNoteRecord: latestEmergencyInitialNoteRecord,
+                                evolutionRecord: latestEmergencyEvolutionRecord,
+                                ordersRecord: latestEmergencyOrdersRecord,
+                                recordedAt: recordForm.recordedAt,
+                                currentFormData: recordForm.formData,
+                              }),
+                            }
                   : recordForm.formData,
     };
 
@@ -3818,6 +4310,76 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isEmergencyOrdersSection ? (
+                            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildEmergencyOrdersTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildEmergencyOrdersTitle(
+                                          nextEmergencyOrdersVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Órdenes operativas del episodio con validaciones y
+                                    trazabilidad automática.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Órdenes e indicaciones
+                                  </Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
+                          ) : isEmergencyConsultationSection ? (
+                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildEmergencyConsultationTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildEmergencyConsultationTitle(
+                                          nextEmergencyConsultationVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Solicitud formal entre servicios con auditoría de
+                                    tiempos y respuesta trazable.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">Interconsultas</Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -3903,7 +4465,9 @@ export function EpisodeDetailPage() {
                           isConsultationDocumentsSection ||
                           isEmergencyTriageSection ||
                           isEmergencyInitialNoteSection ||
-                          isEmergencyEvolutionSection ? null : (
+                          isEmergencyEvolutionSection ||
+                          isEmergencyOrdersSection ||
+                          isEmergencyConsultationSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -4066,7 +4630,9 @@ export function EpisodeDetailPage() {
                         isConsultationDocumentsSection ||
                         isEmergencyTriageSection ||
                         isEmergencyInitialNoteSection ||
-                        isEmergencyEvolutionSection ? (
+                        isEmergencyEvolutionSection ||
+                        isEmergencyOrdersSection ||
+                        isEmergencyConsultationSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -4079,6 +4645,10 @@ export function EpisodeDetailPage() {
                                         ? 'Documento de Nota inicial'
                                         : isEmergencyEvolutionSection
                                           ? 'Documento de Evolución'
+                                          : isEmergencyOrdersSection
+                                            ? 'Documento de Órdenes'
+                                            : isEmergencyConsultationSection
+                                              ? 'Documento de Interconsulta'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -4090,6 +4660,10 @@ export function EpisodeDetailPage() {
                                         ? 'La vista previa y el PDF usan el snapshot clínico guardado de la nota inicial.'
                                         : isEmergencyEvolutionSection
                                           ? 'La vista previa y el PDF usan la medición y el seguimiento guardados en esta evolución.'
+                                          : isEmergencyOrdersSection
+                                            ? 'La vista previa y el PDF usan las órdenes estructuradas y su trazabilidad.'
+                                            : isEmergencyConsultationSection
+                                              ? 'La vista previa y el PDF usan la solicitud, respuesta y auditoría de tiempos.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -4118,7 +4692,9 @@ export function EpisodeDetailPage() {
                                     (selectedRecord.status !== 'SIGNED' &&
                                       !isEmergencyTriageSection &&
                                       !isEmergencyInitialNoteSection &&
-                                      !isEmergencyEvolutionSection) ||
+                                      !isEmergencyEvolutionSection &&
+                                      !isEmergencyOrdersSection &&
+                                      !isEmergencyConsultationSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending

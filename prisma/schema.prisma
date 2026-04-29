@@ -222,6 +222,7 @@ model Tenant {
   patientBillingProfiles     PatientBillingProfile[]
   encounterProfiles          EncounterProfile[]
   encounterSectionRecords    EncounterSectionRecord[]
+  emergencyConsultations     EmergencyConsultation[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -462,6 +463,8 @@ model User {
   uploadedAttachments  Attachment[]
   auditLogs            AuditLog[]
   authoredEncounterSectionRecords EncounterSectionRecord[]
+  requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
+  respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -747,6 +750,7 @@ model Patient {
   clinicalProfile      PatientClinicalProfile?
   billingProfile       PatientBillingProfile?
   encounterSectionRecords EncounterSectionRecord[]
+  emergencyConsultations EmergencyConsultation[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1164,6 +1168,7 @@ model Encounter {
   auditLogs            AuditLog[]
   profile              EncounterProfile?
   sectionRecords       EncounterSectionRecord[]
+  emergencyConsultations EmergencyConsultation[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1265,6 +1270,7 @@ model EncounterSectionRecord {
   encounter      Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   patient        Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   authoredByUser User?     @relation(fields: [authoredByUserId], references: [id], onDelete: SetNull)
+  emergencyConsultation EmergencyConsultation?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1274,6 +1280,70 @@ model EncounterSectionRecord {
   @@index([status])
   @@index([recordedAt])
   @@index([authoredByUserId])
+}
+
+/// Interconsulta formal generada desde Urgencias.
+/// Se normaliza para auditoría clínica, tiempos de respuesta y responsabilidad compartida.
+model EmergencyConsultation {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status String @default("PENDIENTE")
+  priority String
+  targetResponseMinutes Int?
+
+  requestedAt DateTime
+  receivedAt DateTime?
+  respondedAt DateTime?
+  responseTimeMinutes Int?
+
+  notificationMedium String?
+  requestingService String @default("Urgencias")
+  requestedService String
+
+  requesterUserId String?
+  requesterName String
+  requesterLicense String?
+
+  consultantUserId String?
+  consultantName String?
+  consultantLicense String?
+
+  reason String
+  clinicalSummary String
+  relatedDiagnosis String?
+  relatedCie10 String?
+
+  consultantDiagnosis String?
+  suggestedConduct String?
+  recommendedFollowUp String?
+
+  decision String?
+  linkedOrdersSummary String?
+
+  signedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  requester     User?                  @relation("EmergencyConsultationRequester", fields: [requesterUserId], references: [id], onDelete: SetNull)
+  consultant    User?                  @relation("EmergencyConsultationResponder", fields: [consultantUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([priority])
+  @@index([requestedAt])
 }
 
 //////////////////////////////////////////////////////

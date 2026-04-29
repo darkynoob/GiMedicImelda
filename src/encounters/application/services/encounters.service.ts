@@ -784,6 +784,18 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const emergencyOrdersVersionContext =
+      await this.resolveEmergencyOrdersVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
+    const emergencyConsultationVersionContext =
+      await this.resolveEmergencyConsultationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -797,10 +809,12 @@ export class EncountersService {
       triageVersionContext,
       emergencyInitialNoteVersionContext,
       emergencyEvolutionVersionContext,
+      emergencyOrdersVersionContext,
+      emergencyConsultationVersionContext,
       responsibleUser,
     });
 
-    await this.prisma.encounterSectionRecord.create({
+    const createdRecord = await this.prisma.encounterSectionRecord.create({
       data: {
         tenantId,
         encounterId: encounter.id,
@@ -819,6 +833,18 @@ export class EncountersService {
             ? new Date()
             : null,
       },
+    });
+    await this.syncEmergencyConsultationRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -915,6 +941,20 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const emergencyOrdersVersionContext =
+      await this.resolveEmergencyOrdersVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
+    const emergencyConsultationVersionContext =
+      await this.resolveEmergencyConsultationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -928,6 +968,8 @@ export class EncountersService {
       triageVersionContext,
       emergencyInitialNoteVersionContext,
       emergencyEvolutionVersionContext,
+      emergencyOrdersVersionContext,
+      emergencyConsultationVersionContext,
       responsibleUser,
     });
 
@@ -947,6 +989,18 @@ export class EncountersService {
             ? currentRecord.signedAt ?? new Date()
             : null,
       },
+    });
+    await this.syncEmergencyConsultationRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1033,6 +1087,19 @@ export class EncountersService {
           },
         });
       }
+
+      if (
+        this.isEmergencyConsultationRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.$executeRaw`
+          UPDATE "EmergencyConsultation"
+          SET "signedAt" = ${signedAt}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1081,7 +1148,9 @@ export class EncountersService {
       record.status !== EncounterRecordStatus.SIGNED &&
       !this.isEmergencyTriageRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey) &&
-      !this.isEmergencyEvolutionRecord(record.encounterType, record.tabKey)
+      !this.isEmergencyEvolutionRecord(record.encounterType, record.tabKey) &&
+      !this.isEmergencyOrdersRecord(record.encounterType, record.tabKey) &&
+      !this.isEmergencyConsultationRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -2070,6 +2139,75 @@ export class EncountersService {
     };
   }
 
+  private async resolveEmergencyOrdersVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Órdenes / Indicaciones',
+        noteType: 'Órdenes e indicaciones',
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
+  private async resolveEmergencyConsultationVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isEmergencyConsultationRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Interconsultas',
+        noteType: 'Interconsultas',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -2104,6 +2242,12 @@ export class EncountersService {
     >;
     emergencyEvolutionVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyEvolutionVersionContext']>
+    >;
+    emergencyOrdersVersionContext: Awaited<
+      ReturnType<EncountersService['resolveEmergencyOrdersVersionContext']>
+    >;
+    emergencyConsultationVersionContext: Awaited<
+      ReturnType<EncountersService['resolveEmergencyConsultationVersionContext']>
     >;
     responsibleUser: {
       id: string;
@@ -2145,6 +2289,113 @@ export class EncountersService {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
           versionNumber,
           inheritedFromRecordId: currentRecordMetadata.inheritedFromRecordId ?? null,
+        },
+      };
+    }
+
+    if (
+      this.isEmergencyConsultationRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const latestInitialNoteRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Nota inicial',
+      );
+      const latestEvolutionRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Evolución',
+      );
+      const latestOrdersRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Órdenes / Indicaciones',
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.emergencyConsultationVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildEmergencyConsultationFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        latestInitialNoteFormDataJson: latestInitialNoteRecord?.formDataJson ?? null,
+        latestEvolutionFormDataJson: latestEvolutionRecord?.formDataJson ?? null,
+        latestOrdersFormDataJson: latestOrdersRecord?.formDataJson ?? null,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Interconsultas',
+        noteType: 'Interconsultas',
+        title: `Interconsultas V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            latestOrdersRecord?.id ??
+            latestEvolutionRecord?.id ??
+            latestInitialNoteRecord?.id ??
+            null,
+        },
+      };
+    }
+
+    if (
+      this.isEmergencyOrdersRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const latestInitialNoteRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Nota inicial',
+      );
+      const latestEvolutionRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Evolución',
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.emergencyOrdersVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildEmergencyOrdersFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        latestInitialNoteFormDataJson: latestInitialNoteRecord?.formDataJson ?? null,
+        latestEvolutionFormDataJson: latestEvolutionRecord?.formDataJson ?? null,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Órdenes / Indicaciones',
+        noteType: 'Órdenes e indicaciones',
+        title: `Órdenes e indicaciones V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            latestEvolutionRecord?.id ??
+            latestInitialNoteRecord?.id ??
+            null,
         },
       };
     }
@@ -2621,6 +2872,20 @@ export class EncountersService {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Evolución';
   }
 
+  private isEmergencyOrdersRecord(encounterType: EncounterType, tabKey: string) {
+    return (
+      encounterType === EncounterType.EMERGENCY &&
+      tabKey === 'Órdenes / Indicaciones'
+    );
+  }
+
+  private isEmergencyConsultationRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.EMERGENCY && tabKey === 'Interconsultas';
+  }
+
   private buildEmergencyTriageFormData(input: {
     incomingFormData: Record<string, unknown>;
     recordedAt: Date;
@@ -2835,6 +3100,197 @@ export class EncountersService {
     return baseFormData;
   }
 
+  private buildEmergencyOrdersFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    latestInitialNoteFormDataJson: Prisma.JsonValue | null;
+    latestEvolutionFormDataJson: Prisma.JsonValue | null;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const latestInitialNoteFormData =
+      this.normalizeJsonObject(input.latestInitialNoteFormDataJson);
+    const latestEvolutionFormData =
+      this.normalizeJsonObject(input.latestEvolutionFormDataJson);
+    const baseFormData: Record<string, unknown> = {
+      ...input.incomingFormData,
+      tipoRegistro: 'Órdenes e indicaciones',
+      ordenesLegalMedico:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      ordenesLegalCedula:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      ordenesLegalEspecialidad:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      ordenesLegalLugar:
+        [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+          .filter(Boolean)
+          .join(' · ') || 'Lugar no configurado',
+    };
+    const medicationSuggestion =
+      this.readStringValue(latestEvolutionFormData.tratamientoEvolUrg) ||
+      this.readStringValue(latestInitialNoteFormData.medicamentosPlan);
+    const studySuggestion =
+      this.readStringValue(latestEvolutionFormData.estudiosPendientesUrg) ||
+      this.readStringValue(latestInitialNoteFormData.estudiosPlan) ||
+      this.readStringValue(latestInitialNoteFormData.estudiosAnalisis);
+    const interventionSuggestion =
+      this.readStringValue(latestInitialNoteFormData.intervencionesPlan);
+
+    if (
+      !this.hasCapturedValue(baseFormData.medicamentosOrdenesUrg) &&
+      medicationSuggestion
+    ) {
+      baseFormData.medicamentosOrdenesUrg = [
+        {
+          medicamento: medicationSuggestion,
+          dosis: '',
+          via: '',
+          frecuencia: '',
+          duracion: '',
+          indicacion: 'Sugerido desde plan clínico',
+          prioridad: 'NORMAL',
+        },
+      ];
+    }
+
+    if (
+      !this.hasCapturedValue(baseFormData.estudiosSolicitadosOrdenes) &&
+      studySuggestion
+    ) {
+      baseFormData.estudiosSolicitadosOrdenes = [
+        {
+          tipo: 'LABORATORIO',
+          estudio: studySuggestion,
+          prioridad: 'NORMAL',
+          justificacion: 'Sugerido desde plan clínico',
+          frecuencia: '',
+          estado: 'PENDIENTE',
+        },
+      ];
+    }
+
+    if (
+      !this.hasCapturedValue(baseFormData.monitoreoOrdenes) &&
+      interventionSuggestion
+    ) {
+      baseFormData.monitoreoOrdenes = interventionSuggestion;
+    }
+
+    const safetyAlerts = this.buildEmergencyOrderSafetyAlerts({
+      medications: baseFormData.medicamentosOrdenesUrg,
+      allergies: input.encounter.allergies.map((allergy) => allergy.substance),
+    });
+
+    return {
+      ...baseFormData,
+      alertaAlergiasOrdenes: safetyAlerts.allergyAlerts,
+      alertaDuplicidadOrdenes: safetyAlerts.duplicationAlerts,
+      alertaDosisOrdenes: safetyAlerts.doseAlerts,
+      estadoOrdenesTrazabilidad: this.buildEmergencyOrdersTraceability({
+        medications: baseFormData.medicamentosOrdenesUrg,
+        studies: baseFormData.estudiosSolicitadosOrdenes,
+        solutions: baseFormData.solucionesIntravenosasOrdenes,
+        responsibleUserName:
+          input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      }),
+    };
+  }
+
+  private buildEmergencyConsultationFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    latestInitialNoteFormDataJson: Prisma.JsonValue | null;
+    latestEvolutionFormDataJson: Prisma.JsonValue | null;
+    latestOrdersFormDataJson: Prisma.JsonValue | null;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const initialNote = this.normalizeJsonObject(input.latestInitialNoteFormDataJson);
+    const evolution = this.normalizeJsonObject(input.latestEvolutionFormDataJson);
+    const orders = this.normalizeJsonObject(input.latestOrdersFormDataJson);
+    const baseFormData: Record<string, unknown> = {
+      ...input.incomingFormData,
+      tipoRegistro: 'Interconsultas',
+      fechaInterconsulta: this.readStringValue(input.incomingFormData.fechaInterconsulta) || input.recordedAt.toISOString().slice(0, 10),
+      horaInterconsulta: this.readStringValue(input.incomingFormData.horaInterconsulta) || input.recordedAt.toISOString().slice(11, 16),
+      medicoSolicitanteInterconsulta:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaSolicitanteInterconsulta:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      servicioSolicitanteInterconsulta: 'Urgencias',
+      interconsultaLegalNombre:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      interconsultaLegalCedula:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      interconsultaLegalEspecialidad:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      interconsultaLegalLugar:
+        [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+          .filter(Boolean)
+          .join(' · ') || 'Lugar no configurado',
+    };
+    const priority = this.readStringValue(baseFormData.prioridadInterconsulta);
+    const requestedAt = this.combineDateAndTime(
+      baseFormData.fechaInterconsulta,
+      baseFormData.horaInterconsulta,
+    ) ?? input.recordedAt;
+    const receivedAt = this.parseOptionalDate(baseFormData.horaRecepcionInterconsulta);
+    const respondedAt = this.parseOptionalDate(baseFormData.horaRespuestaInterconsulta);
+
+    if (!this.hasCapturedValue(baseFormData.prioridadInterconsulta)) {
+      baseFormData.prioridadInterconsulta =
+        this.readStringValue(initialNote.riesgoVitalNota) === 'ALTO' ||
+        this.readStringValue(evolution.estadoClinicoEvolucionUrg) === 'CRITICO'
+          ? 'INMEDIATA'
+          : 'URGENTE';
+    }
+    if (!this.hasCapturedValue(baseFormData.estatusInterconsulta)) {
+      baseFormData.estatusInterconsulta = 'PENDIENTE';
+    }
+    if (!this.hasCapturedValue(baseFormData.motivoInterconsulta)) {
+      baseFormData.motivoInterconsulta =
+        this.readStringValue(initialNote.motivoAtencion) ||
+        this.readStringValue(evolution.referenciaPacienteUrg);
+    }
+    if (!this.hasCapturedValue(baseFormData.resumenClinicoInterconsulta)) {
+      baseFormData.resumenClinicoInterconsulta =
+        this.readStringValue(evolution.justificacionClinicaNom004) ||
+        this.readStringValue(initialNote.resumenPronostico) ||
+        this.readStringValue(initialNote.estudiosAnalisis);
+    }
+    if (!this.hasCapturedValue(baseFormData.diagnosticoRelacionadoInterconsulta)) {
+      baseFormData.diagnosticoRelacionadoInterconsulta =
+        this.readStringValue(initialNote.diagnosticoNota);
+    }
+    if (!this.hasCapturedValue(baseFormData.cie10Interconsulta)) {
+      baseFormData.cie10Interconsulta = this.readStringValue(initialNote.cie10Nota);
+    }
+    if (!this.hasCapturedValue(baseFormData.ordenesAsociadasInterconsulta)) {
+      baseFormData.ordenesAsociadasInterconsulta =
+        this.readStringValue(orders.estadoOrdenesTrazabilidad);
+    }
+
+    return {
+      ...baseFormData,
+      tiempoObjetivoInterconsulta: this.calculateConsultationTargetTime(
+        this.readStringValue(baseFormData.prioridadInterconsulta) || priority,
+      ),
+      horaSolicitudInterconsulta: requestedAt.toISOString(),
+      tiempoRespuestaInterconsulta: this.calculateConsultationResponseTime(
+        requestedAt,
+        receivedAt,
+        respondedAt,
+      ),
+    };
+  }
+
   private normalizeJsonObject(rawValue: Prisma.JsonValue | null) {
     return rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
       ? (rawValue as Record<string, unknown>)
@@ -2861,6 +3317,229 @@ export class EncountersService {
           },
         ]
       : [];
+  }
+
+  private buildEmergencyOrderSafetyAlerts(input: {
+    medications: unknown;
+    allergies: string[];
+  }) {
+    const medications = this.normalizeObjectArray(input.medications);
+    const medicationNames = medications
+      .map((item) => this.readStringValue(item.medicamento).trim())
+      .filter(Boolean);
+    const lowerMedicationNames = medicationNames.map((name) => name.toLowerCase());
+    const allergyMatches = input.allergies.filter((allergy) =>
+      lowerMedicationNames.some((medication) =>
+        medication.includes(allergy.toLowerCase()),
+      ),
+    );
+    const duplicatedMedicationNames = medicationNames.filter(
+      (name, index) =>
+        lowerMedicationNames.indexOf(name.toLowerCase()) !== index,
+    );
+    const missingDoseItems = medications
+      .filter((item) => {
+        const medication = this.readStringValue(item.medicamento);
+        const dose = this.readStringValue(item.dosis);
+        return medication && !dose;
+      })
+      .map((item) => this.readStringValue(item.medicamento));
+
+    return {
+      allergyAlerts:
+        allergyMatches.length > 0
+          ? `Verificar alergias registradas: ${allergyMatches.join(', ')}`
+          : 'Sin alertas de alergia con los medicamentos capturados.',
+      duplicationAlerts:
+        duplicatedMedicationNames.length > 0
+          ? `Posible duplicidad: ${[...new Set(duplicatedMedicationNames)].join(', ')}`
+          : 'Sin duplicidad terapéutica detectada por nombre.',
+      doseAlerts:
+        missingDoseItems.length > 0
+          ? `Capturar dosis para: ${missingDoseItems.join(', ')}`
+          : 'Dosis capturada para los medicamentos indicados.',
+    };
+  }
+
+  private buildEmergencyOrdersTraceability(input: {
+    medications: unknown;
+    studies: unknown;
+    solutions: unknown;
+    responsibleUserName: string;
+  }) {
+    const rows: string[] = [];
+
+    this.normalizeObjectArray(input.medications).forEach((item, index) => {
+      const medication = this.readStringValue(item.medicamento) || `Medicamento ${index + 1}`;
+      rows.push(
+        `${medication} | pendiente | ${input.responsibleUserName} | sin ejecución | enfermería`,
+      );
+    });
+
+    this.normalizeObjectArray(input.studies).forEach((item, index) => {
+      const study = this.readStringValue(item.estudio) || `Estudio ${index + 1}`;
+      const type = this.readStringValue(item.tipo) || 'auxiliar';
+      const status = this.readStringValue(item.estado) || 'PENDIENTE';
+      rows.push(
+        `${study} | ${status.toLowerCase()} | ${input.responsibleUserName} | sin ejecución | ${type.toLowerCase()}`,
+      );
+    });
+
+    this.normalizeObjectArray(input.solutions).forEach((item, index) => {
+      const solution = this.readStringValue(item.tipoSolucion) || `Solución ${index + 1}`;
+      rows.push(
+        `${solution} | pendiente | ${input.responsibleUserName} | sin ejecución | enfermería`,
+      );
+    });
+
+    return rows.join('\n') || 'Sin órdenes operativas capturadas.';
+  }
+
+  private normalizeObjectArray(value: unknown) {
+    return Array.isArray(value)
+      ? value.filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+        )
+      : [];
+  }
+
+  private calculateConsultationTargetTime(priority: string) {
+    const targets: Record<string, string> = {
+      INMEDIATA: '30 minutos',
+      URGENTE: '1 hora',
+      PREFERENTE: '4 horas',
+      DIFERIDA: 'Diferida',
+    };
+
+    return targets[priority] ?? '';
+  }
+
+  private calculateConsultationTargetMinutes(priority: string) {
+    const targets: Record<string, number | null> = {
+      INMEDIATA: 30,
+      URGENTE: 60,
+      PREFERENTE: 240,
+      DIFERIDA: null,
+    };
+
+    return targets[priority] ?? null;
+  }
+
+  private combineDateAndTime(dateValue: unknown, timeValue: unknown) {
+    const dateText = this.readStringValue(dateValue);
+    const timeText = this.readStringValue(timeValue);
+
+    if (!dateText || !timeText) {
+      return null;
+    }
+
+    const parsedDate = new Date(`${dateText}T${timeText}`);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  }
+
+  private calculateConsultationResponseTime(
+    requestedAt: Date,
+    receivedAt: Date | null,
+    respondedAt: Date | null,
+  ) {
+    const endDate = respondedAt ?? receivedAt;
+
+    if (!endDate || endDate < requestedAt) {
+      return '';
+    }
+
+    return `${Math.round((endDate.getTime() - requestedAt.getTime()) / 60000)} min`;
+  }
+
+  private async syncEmergencyConsultationRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isEmergencyConsultationRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const requestedAt =
+      this.combineDateAndTime(
+        input.formData.fechaInterconsulta,
+        input.formData.horaInterconsulta,
+      ) ?? input.recordedAt;
+    const receivedAt = this.parseOptionalDate(input.formData.horaRecepcionInterconsulta);
+    const respondedAt = this.parseOptionalDate(input.formData.horaRespuestaInterconsulta);
+    const priority = this.readStringValue(input.formData.prioridadInterconsulta) || 'URGENTE';
+    const responseTimeMinutes =
+      respondedAt && respondedAt >= requestedAt
+        ? Math.round((respondedAt.getTime() - requestedAt.getTime()) / 60000)
+        : receivedAt && receivedAt >= requestedAt
+          ? Math.round((receivedAt.getTime() - requestedAt.getTime()) / 60000)
+          : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "EmergencyConsultation" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "priority", "targetResponseMinutes",
+        "requestedAt", "receivedAt", "respondedAt", "responseTimeMinutes",
+        "notificationMedium", "requestingService", "requestedService",
+        "requesterUserId", "requesterName", "requesterLicense",
+        "consultantName", "consultantLicense", "reason", "clinicalSummary",
+        "relatedDiagnosis", "relatedCie10", "consultantDiagnosis",
+        "suggestedConduct", "recommendedFollowUp", "decision",
+        "linkedOrdersSummary", "signedAt", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${this.readStringValue(input.formData.estatusInterconsulta) || 'PENDIENTE'}, ${priority}, ${this.calculateConsultationTargetMinutes(priority)},
+        ${requestedAt}, ${receivedAt}, ${respondedAt}, ${responseTimeMinutes},
+        ${this.readStringValue(input.formData.medioNotificacionInterconsulta)}, 'Urgencias', ${this.readStringValue(input.formData.servicioInterconsultado) || 'Servicio no especificado'},
+        ${input.userId}, ${this.readStringValue(input.formData.medicoSolicitanteInterconsulta) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaSolicitanteInterconsulta)},
+        ${this.readStringValue(input.formData.medicoInterconsultante)}, ${this.readStringValue(input.formData.cedulaInterconsultante)}, ${this.readStringValue(input.formData.motivoInterconsulta)}, ${this.readStringValue(input.formData.resumenClinicoInterconsulta)},
+        ${this.readStringValue(input.formData.diagnosticoRelacionadoInterconsulta)}, ${this.readStringValue(input.formData.cie10Interconsulta)}, ${this.readStringValue(input.formData.diagnosticoInterconsultante)},
+        ${this.readStringValue(input.formData.conductaSugerida)}, ${this.readStringValue(input.formData.seguimientoRecomendado)}, ${this.readStringValue(input.formData.decisionInterconsulta)},
+        ${this.readStringValue(input.formData.ordenesAsociadasInterconsulta)}, ${input.status === EncounterRecordStatus.SIGNED ? new Date() : null}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "priority" = EXCLUDED."priority",
+        "targetResponseMinutes" = EXCLUDED."targetResponseMinutes",
+        "requestedAt" = EXCLUDED."requestedAt",
+        "receivedAt" = EXCLUDED."receivedAt",
+        "respondedAt" = EXCLUDED."respondedAt",
+        "responseTimeMinutes" = EXCLUDED."responseTimeMinutes",
+        "notificationMedium" = EXCLUDED."notificationMedium",
+        "requestedService" = EXCLUDED."requestedService",
+        "requesterName" = EXCLUDED."requesterName",
+        "requesterLicense" = EXCLUDED."requesterLicense",
+        "consultantName" = EXCLUDED."consultantName",
+        "consultantLicense" = EXCLUDED."consultantLicense",
+        "reason" = EXCLUDED."reason",
+        "clinicalSummary" = EXCLUDED."clinicalSummary",
+        "relatedDiagnosis" = EXCLUDED."relatedDiagnosis",
+        "relatedCie10" = EXCLUDED."relatedCie10",
+        "consultantDiagnosis" = EXCLUDED."consultantDiagnosis",
+        "suggestedConduct" = EXCLUDED."suggestedConduct",
+        "recommendedFollowUp" = EXCLUDED."recommendedFollowUp",
+        "decision" = EXCLUDED."decision",
+        "linkedOrdersSummary" = EXCLUDED."linkedOrdersSummary",
+        "signedAt" = EXCLUDED."signedAt",
+        "updatedAt" = NOW()
+    `;
   }
 
   private buildEmergencyExternalResultsSummary(encounter: TenantEncounterRecord) {
@@ -4453,15 +5132,35 @@ export class EncountersService {
           'justificacionClinicaNom004',
         ]
       : [];
+    const emergencyOrdersRequiredFields = this.isEmergencyOrdersRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? ['medicamentosOrdenesUrg', 'estudiosSolicitadosOrdenes']
+      : [];
+    const emergencyConsultationRequiredFields =
+      this.isEmergencyConsultationRecord(input.encounterType, input.tabKey)
+        ? [
+            'fechaInterconsulta',
+            'horaInterconsulta',
+            'prioridadInterconsulta',
+            'estatusInterconsulta',
+            'servicioInterconsultado',
+            'motivoInterconsulta',
+            'resumenClinicoInterconsulta',
+          ]
+        : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
       ...triageRequiredFields,
       ...emergencyInitialNoteRequiredFields,
       ...emergencyEvolutionRequiredFields,
+      ...emergencyOrdersRequiredFields,
+      ...emergencyConsultationRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
-      return typeof value !== 'string' || value.trim().length === 0;
+      return !this.hasCapturedValue(value);
     });
 
     if (missingFields.length > 0) {
@@ -4472,7 +5171,11 @@ export class EncountersService {
             ? 'Completa los campos obligatorios de la nota inicial antes de firmarla'
             : this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)
               ? 'Completa los campos obligatorios de la evolución antes de firmarla'
-              : 'Completa los campos obligatorios del documento antes de firmarlo',
+              : this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)
+                ? 'Completa medicamentos y estudios solicitados antes de firmar las órdenes'
+                : this.isEmergencyConsultationRecord(input.encounterType, input.tabKey)
+                  ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
+                  : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
     }
   }
