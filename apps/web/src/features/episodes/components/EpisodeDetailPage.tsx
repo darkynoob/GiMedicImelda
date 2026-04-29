@@ -161,8 +161,16 @@ function isEmergencyTriageTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Triage';
 }
 
+function isEmergencyInitialNoteTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'EMERGENCY' && tabTitle === 'Nota inicial';
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
+}
+
+function buildEmergencyInitialNoteTitle(versionNumber: number) {
+  return `Nota inicial V${versionNumber}`;
 }
 
 function readNumericFormValue(value: RecordFieldValue | undefined) {
@@ -289,6 +297,78 @@ function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) 
   if (news2Total !== null && news2Total >= 5) alerts.push('NEWS2 alto');
 
   return [...new Set(alerts)].join('\n');
+}
+
+function getLatestRecordByTab(
+  records: EncounterDetailResponse['sectionRecords'],
+  tabKey: string,
+) {
+  return [...records]
+    .filter((record) => record.tabKey === tabKey)
+    .sort((left, right) => {
+      const leftVersion = left.metadata.versionNumber ?? 0;
+      const rightVersion = right.metadata.versionNumber ?? 0;
+
+      if (leftVersion !== rightVersion) {
+        return rightVersion - leftVersion;
+      }
+
+      return right.recordedAt.localeCompare(left.recordedAt);
+    })[0] ?? null;
+}
+
+function buildEmergencyInitialNoteSnapshot(args: {
+  detail: EncounterDetailResponse;
+  triageRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const triageFormData = args.triageRecord?.formData ?? {};
+  const currentFormData = args.currentFormData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const readCurrentOrTriage = (currentKey: string, triageKey: string) =>
+    currentFormData[currentKey] !== undefined &&
+    currentFormData[currentKey] !== null &&
+    `${currentFormData[currentKey]}`.trim().length > 0
+      ? currentFormData[currentKey]
+      : readString(triageFormData[triageKey]);
+
+  return {
+    tipoRegistro: 'Nota inicial',
+    modoLlegadaNota: readCurrentOrTriage('modoLlegadaNota', 'modoLlegada'),
+    taSistolicaNota: readCurrentOrTriage('taSistolicaNota', 'taSistolica'),
+    taDiastolicaNota: readCurrentOrTriage('taDiastolicaNota', 'taDiastolica'),
+    fcNota: readCurrentOrTriage('fcNota', 'fc'),
+    frNota: readCurrentOrTriage('frNota', 'fr'),
+    tempNota: readCurrentOrTriage('tempNota', 'temp'),
+    spo2Nota: readCurrentOrTriage('spo2Nota', 'spo2'),
+    evaNota: readCurrentOrTriage('evaNota', 'eva'),
+    glucosaNota: readCurrentOrTriage('glucosaNota', 'glucosa'),
+    glasgowNota: readCurrentOrTriage('glasgowNota', 'glasgowTotal'),
+    estadoMentalNota: readCurrentOrTriage('estadoMentalNota', 'estadoMental'),
+    llegadaVisual: readString(triageFormData.horaLlegada),
+    triageVisual: readString(triageFormData.horaTriage),
+    inicioAtencionVisual:
+      readString(currentFormData.inicioAtencionVisual) || args.recordedAt,
+    decisionVisual: readString(currentFormData.horaDecision),
+    alertasTriage: readString(triageFormData.alertasAutomaticas),
+    antecedentesNota:
+      readString(currentFormData.antecedentesNota) ||
+      [
+        args.detail.patient.allergiesSummary.length
+          ? `Alergias: ${args.detail.patient.allergiesSummary.join(', ')}`
+          : '',
+        args.detail.patient.activeProblems.length
+          ? `Problemas activos: ${args.detail.patient.activeProblems.join(', ')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    notaInicialLegalMedico:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    notaInicialLegalCedula:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+  };
 }
 
 function getConsultationTypeLabel(
@@ -1855,6 +1935,43 @@ export function EpisodeDetailPage() {
     );
   }, [activeTab, detail, recordForm]);
 
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isEmergencyInitialNoteTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const nextFormData: Record<string, RecordFieldValue> = {
+      ...recordForm.formData,
+      ...buildEmergencyInitialNoteSnapshot({
+        detail,
+        triageRecord: getLatestRecordByTab(detail.sectionRecords, 'Triage'),
+        recordedAt: recordForm.recordedAt,
+        currentFormData: recordForm.formData,
+      }),
+    };
+    const hasChanges = Object.entries(nextFormData).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges && recordForm.noteType === 'Nota inicial') {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Nota inicial',
+            formData: nextFormData,
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -1923,6 +2040,10 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isEmergencyInitialNoteSection = isEmergencyInitialNoteTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -1963,16 +2084,10 @@ export function EpisodeDetailPage() {
       })[0] ?? null
     : null;
   const latestTriageRecord = isEmergencyTriageSection
-    ? [...activeTabRecords].sort((left, right) => {
-        const leftVersion = left.metadata.versionNumber ?? 0;
-        const rightVersion = right.metadata.versionNumber ?? 0;
-
-        if (leftVersion !== rightVersion) {
-          return rightVersion - leftVersion;
-        }
-
-        return right.recordedAt.localeCompare(left.recordedAt);
-      })[0] ?? null
+    ? getLatestRecordByTab(activeTabRecords, 'Triage')
+    : getLatestRecordByTab(detail.sectionRecords, 'Triage');
+  const latestEmergencyInitialNoteRecord = isEmergencyInitialNoteSection
+    ? getLatestRecordByTab(activeTabRecords, 'Nota inicial')
     : null;
   const selectedRecord =
     activeRecordId === null
@@ -2020,6 +2135,8 @@ export function EpisodeDetailPage() {
     (latestDocumentRecord?.metadata.versionNumber ?? 0) + 1;
   const nextTriageVersionNumber =
     (latestTriageRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextEmergencyInitialNoteVersionNumber =
+    (latestEmergencyInitialNoteRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -2207,6 +2324,36 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isEmergencyInitialNoteSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Nota inicial',
+          title: buildEmergencyInitialNoteTitle(
+            nextEmergencyInitialNoteVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType)['Nota inicial'],
+            ...buildEmergencyInitialNoteSnapshot({
+              detail,
+              triageRecord: latestTriageRecord,
+              recordedAt: nextRecordedAt,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -2310,6 +2457,17 @@ export function EpisodeDetailPage() {
                           detail.attendingClinician?.professionalLicense ??
                           'Sin cédula',
                       }
+                    : isEmergencyInitialNoteSection
+                      ? {
+                          ...(record.formData as Record<string, RecordFieldValue>),
+                          ...buildEmergencyInitialNoteSnapshot({
+                            detail,
+                            triageRecord: latestTriageRecord,
+                            recordedAt: record.recordedAt.slice(0, 16),
+                            currentFormData:
+                              record.formData as Record<string, RecordFieldValue>,
+                          }),
+                        }
                     : record.formData,
       }),
     );
@@ -2452,6 +2610,16 @@ export function EpisodeDetailPage() {
                       triageLegalCedula:
                         detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
                     }
+                  : isEmergencyInitialNoteSection
+                    ? {
+                        ...recordForm.formData,
+                        ...buildEmergencyInitialNoteSnapshot({
+                          detail,
+                          triageRecord: latestTriageRecord,
+                          recordedAt: recordForm.recordedAt,
+                          currentFormData: recordForm.formData,
+                        }),
+                      }
                   : recordForm.formData,
     };
 
@@ -3265,6 +3433,40 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isEmergencyInitialNoteSection ? (
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildEmergencyInitialNoteTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildEmergencyInitialNoteTitle(
+                                          nextEmergencyInitialNoteVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Nota médica inicial basada en el último Triage del
+                                    episodio, con snapshot editable de signos vitales.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">Nota inicial</Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -3348,7 +3550,8 @@ export function EpisodeDetailPage() {
                           isConsultationEvolutionSection ||
                           isConsultationPrescriptionSection ||
                           isConsultationDocumentsSection ||
-                          isEmergencyTriageSection ? null : (
+                          isEmergencyTriageSection ||
+                          isEmergencyInitialNoteSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -3509,7 +3712,8 @@ export function EpisodeDetailPage() {
 
                         {isConsultationPrescriptionSection ||
                         isConsultationDocumentsSection ||
-                        isEmergencyTriageSection ? (
+                        isEmergencyTriageSection ||
+                        isEmergencyInitialNoteSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -3518,6 +3722,8 @@ export function EpisodeDetailPage() {
                                     ? 'Validaciones automáticas de seguridad'
                                     : isEmergencyTriageSection
                                       ? 'Documento de Triage'
+                                      : isEmergencyInitialNoteSection
+                                        ? 'Documento de Nota inicial'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -3525,6 +3731,8 @@ export function EpisodeDetailPage() {
                                     ? 'Estas alertas se recalculan con los medicamentos capturados y se muestran antes de firmar la receta.'
                                     : isEmergencyTriageSection
                                       ? 'La vista previa y el PDF usan la información del registro y respetan su estado firmado o borrador.'
+                                      : isEmergencyInitialNoteSection
+                                        ? 'La vista previa y el PDF usan el snapshot clínico guardado de la nota inicial.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -3551,7 +3759,8 @@ export function EpisodeDetailPage() {
                                   disabled={
                                     !selectedRecord ||
                                     (selectedRecord.status !== 'SIGNED' &&
-                                      !isEmergencyTriageSection) ||
+                                      !isEmergencyTriageSection &&
+                                      !isEmergencyInitialNoteSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending

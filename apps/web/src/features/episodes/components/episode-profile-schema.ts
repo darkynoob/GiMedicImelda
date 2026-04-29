@@ -94,6 +94,40 @@ const triageDestinationOptions: EpisodeFieldOption[] = [
   { value: 'REFERENCIA', label: 'Referencia / traslado' },
 ];
 
+const emergencyEventTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'MEDICO', label: 'Médico' },
+  { value: 'TRAUMA', label: 'Trauma' },
+  { value: 'QUIRURGICO', label: 'Quirúrgico' },
+  { value: 'GINECO_OBSTETRICO', label: 'Gineco-obstétrico' },
+  { value: 'TOXICOLOGICO', label: 'Toxicológico' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const killipOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'I', label: 'I - Sin insuficiencia cardiaca' },
+  { value: 'II', label: 'II - Estertores / S3' },
+  { value: 'III', label: 'III - Edema pulmonar' },
+  { value: 'IV', label: 'IV - Choque cardiogénico' },
+];
+
+const scoreRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'INTERMEDIO', label: 'Intermedio' },
+  { value: 'ALTO', label: 'Alto' },
+];
+
+const clinicalStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESTABLE', label: 'Estable' },
+  { value: 'OBSERVACION', label: 'En observación' },
+  { value: 'DELICADO', label: 'Delicado' },
+  { value: 'GRAVE', label: 'Grave' },
+  { value: 'CRITICO', label: 'Crítico' },
+];
+
 const glasgowEyeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
   { value: '4', label: '4 - Espontánea' },
@@ -1344,52 +1378,143 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Subjetivo, objetivo, análisis, plan y resolución inicial.',
       sections: [
         {
-          key: 'soap_inicial',
-          title: 'Nota inicial de urgencias',
+          key: 'nota_inicial_tipo',
+          title: 'Tipo de registro',
           fields: [
-            { key: 'subjetivoInicial', label: 'S - Subjetivo', type: 'textarea' },
-            {
-              key: 'objetivoInicial',
-              label: 'O - Objetivo / exploración física',
-              type: 'textarea',
-            },
-            {
-              key: 'analisisInicial',
-              label: 'A - Análisis / escalas / diagnóstico',
-              type: 'textarea',
-            },
-            { key: 'planInicial', label: 'P - Plan', type: 'textarea' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
           ],
         },
         {
-          key: 'complementos_iniciales',
-          title: 'Complementos',
+          key: 'nota_inicial_subjetivo',
+          title: 'S - Subjetivo',
+          fields: [
+            { key: 'motivoAtencion', label: 'Motivo de atención', type: 'textarea' },
+            { key: 'horaInicioSintomas', label: 'Hora inicio síntomas', type: 'datetime-local' },
+            { key: 'tipoEvento', label: 'Tipo evento', type: 'select', options: emergencyEventTypeOptions },
+            { key: 'modoLlegadaNota', label: 'Modo de llegada', type: 'select', options: triageArrivalModeOptions },
+            { key: 'evolucionSubjetiva', label: 'Evolución', type: 'textarea' },
+            { key: 'factoresSubjetivos', label: 'Factores', type: 'textarea' },
+            { key: 'eventosPrevios', label: 'Eventos previos', type: 'textarea' },
+            { key: 'antecedentesNota', label: 'Antecedentes', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'nota_inicial_objetivo',
+          title: 'O - Objetivo',
           fields: [
             {
-              key: 'consentimientoInicial',
-              label: 'Consentimiento informado',
+              key: 'exploracionFisicaNota',
+              label: 'Exploración física',
               type: 'textarea',
             },
+            { key: 'taSistolicaNota', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolicaNota', label: 'TA diastólica', type: 'number' },
+            { key: 'fcNota', label: 'FC', type: 'number' },
+            { key: 'frNota', label: 'FR', type: 'number' },
+            { key: 'tempNota', label: 'Temp', type: 'number' },
+            { key: 'spo2Nota', label: 'SpO2', type: 'number' },
+            { key: 'evaNota', label: 'EVA', type: 'number' },
+            { key: 'glucosaNota', label: 'Glucosa', type: 'number' },
+            { key: 'glasgowNota', label: 'Glasgow', type: 'number' },
+          ],
+        },
+        {
+          key: 'nota_inicial_analisis',
+          title: 'A - Análisis',
+          fields: [
+            { key: 'killipNota', label: 'Killip', type: 'select', options: killipOptions },
+            { key: 'timiNota', label: 'TIMI', type: 'select', options: scoreRiskOptions },
+            { key: 'heartNota', label: 'HEART', type: 'select', options: scoreRiskOptions },
+            { key: 'riesgoVitalNota', label: 'Riesgo vital', type: 'select', options: riskClassificationOptions },
             {
-              key: 'tiemposAtencion',
-              label: 'Tiempos de atención',
+              key: 'estudiosAnalisis',
+              label: 'Estudios',
               type: 'textarea',
             },
-            {
-              key: 'pronosticoEstado',
-              label: 'Pronóstico y estado',
-              type: 'textarea',
-            },
+            { key: 'diagnosticoNota', label: 'Diagnóstico', type: 'text' },
+            { key: 'cie10Nota', label: 'CIE-10', type: 'text' },
+            { key: 'estadoClinicoNota', label: 'Estado clínico', type: 'select', options: clinicalStatusOptions },
+          ],
+        },
+        {
+          key: 'nota_inicial_plan',
+          title: 'P - Plan',
+          fields: [
+            { key: 'medicamentosPlan', label: 'Medicamentos', type: 'textarea' },
+            { key: 'estudiosPlan', label: 'Estudios', type: 'textarea' },
+            { key: 'intervencionesPlan', label: 'Intervenciones', type: 'textarea' },
+            { key: 'interconsultasPlan', label: 'Interconsultas', type: 'textarea' },
+            { key: 'destinoPlan', label: 'Destino', type: 'select', options: triageDestinationOptions },
+            { key: 'horaDecision', label: 'Hora decisión', type: 'datetime-local' },
+          ],
+        },
+        {
+          key: 'nota_inicial_consentimiento',
+          title: 'Consentimiento',
+          fields: [
+            { key: 'consentimientoInicial', label: 'Consentimiento informado', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'nota_inicial_tiempos',
+          title: 'Tiempos',
+          fields: [
+            { key: 'llegadaVisual', label: 'Llegada', type: 'readonly' },
+            { key: 'triageVisual', label: 'Triage', type: 'readonly' },
+            { key: 'inicioAtencionVisual', label: 'Inicio atención', type: 'readonly' },
+            { key: 'decisionVisual', label: 'Decisión', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'nota_inicial_alertas',
+          title: 'Alertas',
+          fields: [
+            { key: 'alertasTriage', label: 'Alertas de triage', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'nota_inicial_pronostico',
+          title: 'Pronóstico',
+          fields: [
+            { key: 'pronosticoNota', label: 'Pronóstico', type: 'textarea' },
+            { key: 'estadoMentalNota', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
+            { key: 'resumenPronostico', label: 'Resumen', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'nota_inicial_procedimientos',
+          title: 'Procedimientos',
+          fields: [
             {
               key: 'procedimientosUrgencias',
-              label: 'Procedimientos realizados en urgencias',
-              type: 'textarea',
+              label: 'Procedimientos',
+              type: 'object-array',
+              itemAddLabel: 'Agregar procedimiento',
+              itemFields: [
+                { key: 'procedimiento', label: 'Procedimiento', type: 'text' },
+                { key: 'hora', label: 'Hora', type: 'datetime-local' },
+                { key: 'responsable', label: 'Responsable', type: 'text' },
+                { key: 'observaciones', label: 'Observaciones', type: 'text' },
+              ],
             },
-            {
-              key: 'destinoResolucionInicial',
-              label: 'Destino y resolución',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'nota_inicial_destino',
+          title: 'Destino',
+          fields: [
+            { key: 'servicioDestino', label: 'Servicio destino', type: 'text' },
+            { key: 'unidadDestino', label: 'Unidad', type: 'text' },
+            { key: 'medicoReceptor', label: 'Médico receptor', type: 'text' },
+          ],
+        },
+        {
+          key: 'nota_inicial_firma',
+          title: 'Firma',
+          fields: [
+            { key: 'notaInicialLegalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'notaInicialLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarNotaInicial', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],

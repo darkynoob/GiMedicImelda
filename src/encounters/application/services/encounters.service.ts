@@ -772,6 +772,12 @@ export class EncountersService {
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
+    const emergencyInitialNoteVersionContext =
+      await this.resolveEmergencyInitialNoteVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -783,6 +789,7 @@ export class EncountersService {
       prescriptionVersionContext,
       documentVersionContext,
       triageVersionContext,
+      emergencyInitialNoteVersionContext,
       responsibleUser,
     });
 
@@ -887,6 +894,13 @@ export class EncountersService {
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
     });
+    const emergencyInitialNoteVersionContext =
+      await this.resolveEmergencyInitialNoteVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
       encounter,
       input,
@@ -898,6 +912,7 @@ export class EncountersService {
       prescriptionVersionContext,
       documentVersionContext,
       triageVersionContext,
+      emergencyInitialNoteVersionContext,
       responsibleUser,
     });
 
@@ -1049,7 +1064,8 @@ export class EncountersService {
 
     if (
       record.status !== EncounterRecordStatus.SIGNED &&
-      !this.isEmergencyTriageRecord(record.encounterType, record.tabKey)
+      !this.isEmergencyTriageRecord(record.encounterType, record.tabKey) &&
+      !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -1962,6 +1978,44 @@ export class EncountersService {
     };
   }
 
+  private async resolveEmergencyInitialNoteVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Nota inicial',
+        noteType: 'Nota inicial',
+        ...(input.currentRecordId
+          ? {
+              NOT: {
+                id: input.currentRecordId,
+              },
+            }
+          : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -1990,6 +2044,9 @@ export class EncountersService {
     >;
     triageVersionContext: Awaited<
       ReturnType<EncountersService['resolveTriageVersionContext']>
+    >;
+    emergencyInitialNoteVersionContext: Awaited<
+      ReturnType<EncountersService['resolveEmergencyInitialNoteVersionContext']>
     >;
     responsibleUser: {
       id: string;
@@ -2031,6 +2088,48 @@ export class EncountersService {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
           versionNumber,
           inheritedFromRecordId: currentRecordMetadata.inheritedFromRecordId ?? null,
+        },
+      };
+    }
+
+    if (
+      this.isEmergencyInitialNoteRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const latestTriageRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Triage',
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.emergencyInitialNoteVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildEmergencyInitialNoteFormData({
+        incomingFormData: input.input.formData,
+        triageFormDataJson: latestTriageRecord?.formDataJson ?? null,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Nota inicial',
+        noteType: 'Nota inicial',
+        title: `Nota inicial V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ?? latestTriageRecord?.id ?? null,
         },
       };
     }
@@ -2405,6 +2504,13 @@ export class EncountersService {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Triage';
   }
 
+  private isEmergencyInitialNoteRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.EMERGENCY && tabKey === 'Nota inicial';
+  }
+
   private buildEmergencyTriageFormData(input: {
     incomingFormData: Record<string, unknown>;
     recordedAt: Date;
@@ -2451,6 +2557,76 @@ export class EncountersService {
       banderaRojaAutomatica: alertasAutomaticas.length > 0 ? 'SI' : 'NO',
       alertasAutomaticas: alertasAutomaticas.join('\n'),
     };
+  }
+
+  private buildEmergencyInitialNoteFormData(input: {
+    incomingFormData: Record<string, unknown>;
+    triageFormDataJson: Prisma.JsonValue | null;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const triageFormData =
+      input.triageFormDataJson &&
+      typeof input.triageFormDataJson === 'object' &&
+      !Array.isArray(input.triageFormDataJson)
+        ? (input.triageFormDataJson as Record<string, unknown>)
+        : {};
+    const baseFormData: Record<string, unknown> = {
+      ...input.incomingFormData,
+      tipoRegistro: 'Nota inicial',
+      llegadaVisual: this.readStringValue(triageFormData.horaLlegada),
+      triageVisual: this.readStringValue(triageFormData.horaTriage),
+      inicioAtencionVisual:
+        this.readStringValue(input.incomingFormData.inicioAtencionVisual) ||
+        input.recordedAt.toISOString().slice(0, 16),
+      decisionVisual: this.readStringValue(input.incomingFormData.horaDecision),
+      alertasTriage: this.readStringValue(triageFormData.alertasAutomaticas),
+      notaInicialLegalMedico:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      notaInicialLegalCedula:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+    };
+
+    const triageSnapshotFields: Record<string, unknown> = {
+      modoLlegadaNota: triageFormData.modoLlegada,
+      taSistolicaNota: triageFormData.taSistolica,
+      taDiastolicaNota: triageFormData.taDiastolica,
+      fcNota: triageFormData.fc,
+      frNota: triageFormData.fr,
+      tempNota: triageFormData.temp,
+      spo2Nota: triageFormData.spo2,
+      evaNota: triageFormData.eva,
+      glucosaNota: triageFormData.glucosa,
+      glasgowNota: triageFormData.glasgowTotal,
+      estadoMentalNota: triageFormData.estadoMental,
+    };
+
+    for (const [fieldKey, value] of Object.entries(triageSnapshotFields)) {
+      if (
+        !this.hasCapturedValue(baseFormData[fieldKey]) &&
+        this.hasCapturedValue(value)
+      ) {
+        baseFormData[fieldKey] = value;
+      }
+    }
+
+    return baseFormData;
+  }
+
+  private hasCapturedValue(value: unknown) {
+    if (typeof value === 'string') {
+      return value.trim().length > 0;
+    }
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value);
+    }
+
+    return value !== null && value !== undefined;
   }
 
   private calculateTriageTargetTime(priority: unknown) {
@@ -3953,10 +4129,28 @@ export class EncountersService {
           'destinoInicial',
         ]
       : [];
+    const emergencyInitialNoteRequiredFields = this.isEmergencyInitialNoteRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? [
+          'motivoAtencion',
+          'horaInicioSintomas',
+          'riesgoVitalNota',
+          'estudiosAnalisis',
+          'diagnosticoNota',
+          'cie10Nota',
+          'estadoClinicoNota',
+          'medicamentosPlan',
+          'destinoPlan',
+          'pronosticoNota',
+        ]
+      : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
       ...triageRequiredFields,
+      ...emergencyInitialNoteRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return typeof value !== 'string' || value.trim().length === 0;
@@ -3966,6 +4160,8 @@ export class EncountersService {
       throw new BadRequestException(
         this.isEmergencyTriageRecord(input.encounterType, input.tabKey)
           ? 'Completa los campos obligatorios del triage antes de firmarlo'
+          : this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)
+            ? 'Completa los campos obligatorios de la nota inicial antes de firmarla'
           : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
     }
