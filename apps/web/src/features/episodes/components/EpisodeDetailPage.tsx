@@ -84,6 +84,7 @@ type FormState = {
 type StructuredSectionsState = Record<string, Record<string, string>>;
 type RecordFieldValue =
   | string
+  | number
   | boolean
   | string[]
   | Array<Record<string, unknown>>
@@ -154,6 +155,140 @@ function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) 
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
   return encounterType === 'OUTPATIENT' && tabTitle === 'Documentos';
+}
+
+function isEmergencyTriageTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'EMERGENCY' && tabTitle === 'Triage';
+}
+
+function buildTriageTitle(versionNumber: number) {
+  return `Triage V${versionNumber}`;
+}
+
+function readNumericFormValue(value: RecordFieldValue | undefined) {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsedValue = Number(value);
+    return Number.isFinite(parsedValue) ? parsedValue : null;
+  }
+
+  return null;
+}
+
+function calculateTriageTargetTime(priority: RecordFieldValue | undefined) {
+  const priorityMap: Record<string, string> = {
+    '1': 'Atención inmediata',
+    '2': '10 minutos',
+    '3': '30 minutos',
+    '4': '60 minutos',
+    '5': '120 minutos',
+  };
+
+  return typeof priority === 'string' ? priorityMap[priority] ?? '' : '';
+}
+
+function calculateTriageWaitTime(
+  arrival: RecordFieldValue | undefined,
+  triage: RecordFieldValue | undefined,
+) {
+  if (typeof arrival !== 'string' || typeof triage !== 'string') {
+    return '';
+  }
+
+  const arrivalDate = new Date(arrival);
+  const triageDate = new Date(triage);
+
+  if (
+    Number.isNaN(arrivalDate.getTime()) ||
+    Number.isNaN(triageDate.getTime()) ||
+    triageDate < arrivalDate
+  ) {
+    return '';
+  }
+
+  return `${Math.round((triageDate.getTime() - arrivalDate.getTime()) / 60000)} min`;
+}
+
+function calculateGlasgowTotal(formData: Record<string, RecordFieldValue>) {
+  const eye = readNumericFormValue(formData.glasgowE);
+  const verbal = readNumericFormValue(formData.glasgowV);
+  const motor = readNumericFormValue(formData.glasgowM);
+
+  return eye === null || verbal === null || motor === null
+    ? ''
+    : String(eye + verbal + motor);
+}
+
+function calculateNews2(formData: Record<string, RecordFieldValue>) {
+  const fr = readNumericFormValue(formData.fr);
+  const spo2 = readNumericFormValue(formData.spo2);
+  const temp = readNumericFormValue(formData.temp);
+  const taSistolica = readNumericFormValue(formData.taSistolica);
+  const fc = readNumericFormValue(formData.fc);
+
+  if (
+    fr === null ||
+    spo2 === null ||
+    temp === null ||
+    taSistolica === null ||
+    fc === null
+  ) {
+    return '';
+  }
+
+  const scoreFr = fr <= 8 ? 3 : fr <= 11 ? 1 : fr <= 20 ? 0 : fr <= 24 ? 2 : 3;
+  const scoreSpo2 = spo2 <= 91 ? 3 : spo2 <= 93 ? 2 : spo2 <= 95 ? 1 : 0;
+  const scoreTemp = temp <= 35 ? 3 : temp <= 36 ? 1 : temp <= 38 ? 0 : temp <= 39 ? 1 : 2;
+  const scoreTa =
+    taSistolica <= 90
+      ? 3
+      : taSistolica <= 100
+        ? 2
+        : taSistolica <= 110
+          ? 1
+          : taSistolica <= 219
+            ? 0
+            : 3;
+  const scoreFc = fc <= 40 ? 3 : fc <= 50 ? 1 : fc <= 90 ? 0 : fc <= 110 ? 1 : fc <= 130 ? 2 : 3;
+
+  return String(scoreFr + scoreSpo2 + scoreTemp + scoreTa + scoreFc);
+}
+
+function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) {
+  const alerts: string[] = [];
+  const discriminators = [
+    ['discDolorToracico', 'Dolor torácico'],
+    ['discDisneaSevera', 'Disnea severa'],
+    ['discSangradoActivo', 'Sangrado activo'],
+    ['discAlteracionConciencia', 'Alteración del estado de conciencia'],
+    ['discSepsis', 'Sospecha de sepsis'],
+    ['discTraumaMayor', 'Trauma mayor'],
+  ] as const;
+
+  discriminators.forEach(([key, label]) => {
+    if (formData[key] === true) {
+      alerts.push(label);
+    }
+  });
+
+  const spo2 = readNumericFormValue(formData.spo2);
+  const taSistolica = readNumericFormValue(formData.taSistolica);
+  const fc = readNumericFormValue(formData.fc);
+  const temp = readNumericFormValue(formData.temp);
+  const glasgowTotal = readNumericFormValue(formData.glasgowTotal);
+  const news2Total = readNumericFormValue(formData.news2Total);
+
+  if (spo2 !== null && spo2 < 92) alerts.push('SpO2 menor a 92%');
+  if (taSistolica !== null && taSistolica < 90) alerts.push('TA sistólica menor a 90 mmHg');
+  if (fc !== null && (fc < 40 || fc > 130)) alerts.push('Frecuencia cardiaca crítica');
+  if (temp !== null && temp >= 39) alerts.push('Fiebre alta');
+  if (glasgowTotal !== null && glasgowTotal < 13) alerts.push('Glasgow menor a 13');
+  if (news2Total !== null && news2Total >= 5) alerts.push('NEWS2 alto');
+
+  return [...new Set(alerts)].join('\n');
 }
 
 function getConsultationTypeLabel(
@@ -1672,6 +1807,54 @@ export function EpisodeDetailPage() {
     );
   }, [activeTab, detail, metaQuery.data, recordForm, session?.user]);
 
+  useEffect(() => {
+    if (!recordForm || !detail || !isEmergencyTriageTab(detail.encounterType, activeTab)) {
+      return;
+    }
+
+    const nextFormData: Record<string, RecordFieldValue> = {
+      ...recordForm.formData,
+      tipoTriage: 'Triage',
+      tipoRegistro: 'Triage',
+      tiempoObjetivoAtencion: calculateTriageTargetTime(
+        recordForm.formData.nivelPrioridadTriage,
+      ),
+      tiempoEspera: calculateTriageWaitTime(
+        recordForm.formData.horaLlegada,
+        recordForm.formData.horaTriage,
+      ),
+      glasgowTotal: calculateGlasgowTotal(recordForm.formData),
+      news2Total: calculateNews2(recordForm.formData),
+      responsableTriage:
+        detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+      triageLegalMedico:
+        detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+      triageLegalCedula:
+        detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    };
+    nextFormData.alertasAutomaticas = buildTriageAutomaticAlerts(nextFormData);
+    nextFormData.banderaRojaAutomatica = nextFormData.alertasAutomaticas ? 'SI' : 'NO';
+
+    const hasChanges = Object.entries(nextFormData).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Triage',
+            title: currentValue.title,
+            formData: nextFormData,
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -1736,6 +1919,10 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isEmergencyTriageSection = isEmergencyTriageTab(
+    detail.encounterType,
+    activeTab,
+  );
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -1764,6 +1951,18 @@ export function EpisodeDetailPage() {
       })[0] ?? null
     : null;
   const latestPrescriptionRecord = isConsultationPrescriptionSection
+    ? [...activeTabRecords].sort((left, right) => {
+        const leftVersion = left.metadata.versionNumber ?? 0;
+        const rightVersion = right.metadata.versionNumber ?? 0;
+
+        if (leftVersion !== rightVersion) {
+          return rightVersion - leftVersion;
+        }
+
+        return right.recordedAt.localeCompare(left.recordedAt);
+      })[0] ?? null
+    : null;
+  const latestTriageRecord = isEmergencyTriageSection
     ? [...activeTabRecords].sort((left, right) => {
         const leftVersion = left.metadata.versionNumber ?? 0;
         const rightVersion = right.metadata.versionNumber ?? 0;
@@ -1819,6 +2018,8 @@ export function EpisodeDetailPage() {
     (latestPrescriptionRecord?.metadata.versionNumber ?? 0) + 1;
   const nextDocumentVersionNumber =
     (latestDocumentRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextTriageVersionNumber =
+    (latestTriageRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -1972,6 +2173,40 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isEmergencyTriageSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Triage',
+          title: buildTriageTitle(nextTriageVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType)['Triage'],
+            tipoTriage: 'Triage',
+            tipoRegistro: 'Triage',
+            fechaLlegada: nextRecordedAt,
+            horaLlegada: nextRecordedAt,
+            horaTriage: nextRecordedAt,
+            responsableTriage:
+              detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+            triageLegalMedico:
+              detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+            triageLegalCedula:
+              detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -2060,7 +2295,22 @@ export function EpisodeDetailPage() {
                         encounterMeta: metaQuery.data ?? null,
                       },
                     )
-            : record.formData,
+                  : isEmergencyTriageSection
+                    ? {
+                        ...(record.formData as Record<string, RecordFieldValue>),
+                        tipoTriage: 'Triage',
+                        tipoRegistro: 'Triage',
+                        responsableTriage:
+                          detail.attendingClinician?.fullName ??
+                          'Sin profesional responsable',
+                        triageLegalMedico:
+                          detail.attendingClinician?.fullName ??
+                          'Sin profesional responsable',
+                        triageLegalCedula:
+                          detail.attendingClinician?.professionalLicense ??
+                          'Sin cédula',
+                      }
+                    : record.formData,
       }),
     );
   };
@@ -2188,7 +2438,21 @@ export function EpisodeDetailPage() {
                       encounterMeta: metaQuery.data ?? null,
                     },
                   )
-              : recordForm.formData,
+                : isEmergencyTriageSection
+                  ? {
+                      ...recordForm.formData,
+                      tipoTriage: 'Triage',
+                      tipoRegistro: 'Triage',
+                      responsableTriage:
+                        detail.attendingClinician?.fullName ??
+                        'Sin profesional responsable',
+                      triageLegalMedico:
+                        detail.attendingClinician?.fullName ??
+                        'Sin profesional responsable',
+                      triageLegalCedula:
+                        detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+                    }
+                  : recordForm.formData,
     };
 
     if (selectedRecord) {
@@ -2969,6 +3233,38 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isEmergencyTriageSection ? (
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildTriageTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildTriageTitle(nextTriageVersionNumber)}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    El título se calcula por episodio y este registro solo
+                                    pertenece al tab Triage de Urgencias.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">Triage</Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -3051,7 +3347,8 @@ export function EpisodeDetailPage() {
                           isConsultationCurrentSection ||
                           isConsultationEvolutionSection ||
                           isConsultationPrescriptionSection ||
-                          isConsultationDocumentsSection ? null : (
+                          isConsultationDocumentsSection ||
+                          isEmergencyTriageSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -3210,19 +3507,25 @@ export function EpisodeDetailPage() {
                           </div>
                         ) : null}
 
-                        {isConsultationPrescriptionSection || isConsultationDocumentsSection ? (
+                        {isConsultationPrescriptionSection ||
+                        isConsultationDocumentsSection ||
+                        isEmergencyTriageSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
                                 <p className="text-sm font-semibold text-slate-900">
                                   {isConsultationPrescriptionSection
                                     ? 'Validaciones automáticas de seguridad'
-                                    : 'Documento oficial del episodio'}
+                                    : isEmergencyTriageSection
+                                      ? 'Documento de Triage'
+                                      : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {isConsultationPrescriptionSection
                                     ? 'Estas alertas se recalculan con los medicamentos capturados y se muestran antes de firmar la receta.'
-                                    : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
+                                    : isEmergencyTriageSection
+                                      ? 'La vista previa y el PDF usan la información del registro y respetan su estado firmado o borrador.'
+                                      : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
                               <div className="flex flex-wrap gap-2">
@@ -3247,7 +3550,8 @@ export function EpisodeDetailPage() {
                                 <Button
                                   disabled={
                                     !selectedRecord ||
-                                    selectedRecord.status !== 'SIGNED' ||
+                                    (selectedRecord.status !== 'SIGNED' &&
+                                      !isEmergencyTriageSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending
@@ -3392,6 +3696,21 @@ export function EpisodeDetailPage() {
                                 }
 
                                 const fieldValue = recordForm.formData[field.key];
+
+                                if (field.type === 'readonly') {
+                                  return (
+                                    <ReadOnlyField
+                                      key={field.key}
+                                      label={field.label}
+                                      value={
+                                        typeof fieldValue === 'string' ||
+                                        typeof fieldValue === 'number'
+                                          ? String(fieldValue)
+                                          : ''
+                                      }
+                                    />
+                                  );
+                                }
 
                                 if (field.type === 'textarea') {
                                   return (

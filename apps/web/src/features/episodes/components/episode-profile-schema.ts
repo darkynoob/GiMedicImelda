@@ -55,6 +55,72 @@ const priorityOptions: EpisodeFieldOption[] = [
   { value: 'BAJA', label: 'Baja' },
 ];
 
+const triagePriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '1', label: '1 - Reanimación' },
+  { value: '2', label: '2 - Emergente' },
+  { value: '3', label: '3 - Urgente' },
+  { value: '4', label: '4 - Menos urgente' },
+  { value: '5', label: '5 - No urgente' },
+];
+
+const triageCategoryOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'TRAUMA', label: 'Trauma' },
+  { value: 'CARDIORESPIRATORIO', label: 'Cardiorrespiratorio' },
+  { value: 'NEUROLOGICO', label: 'Neurológico' },
+  { value: 'GASTROINTESTINAL', label: 'Gastrointestinal' },
+  { value: 'INFECCIOSO', label: 'Infeccioso' },
+  { value: 'GINECO_OBSTETRICO', label: 'Gineco-obstétrico' },
+  { value: 'PEDIATRICO', label: 'Pediátrico' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const triageArrivalModeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'AMBULANCIA', label: 'Ambulancia' },
+  { value: 'PROPIO_PIE', label: 'Por propio pie' },
+  { value: 'TRASLADO', label: 'Traslado' },
+  { value: 'POLICIA_PROTECCION_CIVIL', label: 'Policía / protección civil' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const triageDestinationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'CHOQUE', label: 'Área de choque' },
+  { value: 'CONSULTORIO_URGENCIAS', label: 'Consultorio de urgencias' },
+  { value: 'OBSERVACION', label: 'Observación' },
+  { value: 'CAMA_URGENCIAS', label: 'Cama de urgencias' },
+  { value: 'REFERENCIA', label: 'Referencia / traslado' },
+];
+
+const glasgowEyeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '4', label: '4 - Espontánea' },
+  { value: '3', label: '3 - A la voz' },
+  { value: '2', label: '2 - Al dolor' },
+  { value: '1', label: '1 - Ninguna' },
+];
+
+const glasgowVerbalOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '5', label: '5 - Orientada' },
+  { value: '4', label: '4 - Confusa' },
+  { value: '3', label: '3 - Palabras inapropiadas' },
+  { value: '2', label: '2 - Sonidos incomprensibles' },
+  { value: '1', label: '1 - Ninguna' },
+];
+
+const glasgowMotorOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '6', label: '6 - Obedece órdenes' },
+  { value: '5', label: '5 - Localiza dolor' },
+  { value: '4', label: '4 - Retira al dolor' },
+  { value: '3', label: '3 - Flexión anormal' },
+  { value: '2', label: '2 - Extensión anormal' },
+  { value: '1', label: '1 - Ninguna' },
+];
+
 const clinicalStateOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'ESTABLE', label: 'Estable' },
@@ -1113,6 +1179,14 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Ingreso, prioridad, tiempos y estado inicial.',
       sections: [
         {
+          key: 'triage_tipo',
+          title: 'Tipo de registro',
+          fields: [
+            { key: 'tipoTriage', label: 'Tipo de triage', type: 'readonly' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
           key: 'triage_prioridad',
           title: 'Sistema de triage y prioridad',
           fields: [
@@ -1128,62 +1202,138 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               ],
             },
             {
-              key: 'prioridadTriage',
-              label: 'Prioridad',
+              key: 'nivelPrioridadTriage',
+              label: 'Nivel de prioridad 1-5',
               type: 'select',
-              options: priorityOptions,
+              options: triagePriorityOptions,
+            },
+            { key: 'tiempoObjetivoAtencion', label: 'Tiempo objetivo de atención', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_llegada',
+          title: 'Datos de llegada y tiempos',
+          fields: [
+            { key: 'fechaLlegada', label: 'Fecha de llegada', type: 'datetime-local' },
+            { key: 'horaLlegada', label: 'Hora de llegada', type: 'datetime-local' },
+            { key: 'horaTriage', label: 'Hora de triage', type: 'datetime-local' },
+            { key: 'horaPrimerContactoMedico', label: 'Hora primer contacto médico', type: 'datetime-local' },
+            { key: 'tiempoEspera', label: 'Tiempo de espera', type: 'readonly' },
+            {
+              key: 'modoLlegada',
+              label: 'Modo de llegada',
+              type: 'select',
+              options: triageArrivalModeOptions,
+            },
+            { key: 'acompanante', label: 'Acompañante', type: 'text' },
+          ],
+        },
+        {
+          key: 'triage_motivo',
+          title: 'Motivo de urgencia',
+          fields: [
+            { key: 'motivoPrincipal', label: 'Motivo principal', type: 'text' },
+            {
+              key: 'categoriaMotivo',
+              label: 'Categoría',
+              type: 'select',
+              options: triageCategoryOptions,
             },
             {
-              key: 'datosLlegadaTiempos',
-              label: 'Datos de llegada y tiempos',
-              type: 'textarea',
-            },
-            {
-              key: 'motivoUrgencia',
-              label: 'Motivo de urgencia estructurado',
+              key: 'descripcionMotivo',
+              label: 'Descripción',
               type: 'textarea',
             },
           ],
         },
         {
-          key: 'triage_clinico',
-          title: 'Estado clínico inicial',
+          key: 'triage_discriminadores',
+          title: 'Discriminadores clínicos',
           fields: [
-            {
-              key: 'discriminadoresClinicos',
-              label: 'Discriminadores clínicos',
-              type: 'textarea',
-            },
-            {
-              key: 'signosVitalesTriage',
-              label: 'Signos vitales en triage',
-              type: 'textarea',
-            },
-            {
-              key: 'soporteClinicoEstado',
-              label: 'Soporte clínico y estado',
-              type: 'textarea',
-            },
-            {
-              key: 'escalasEvaluacion',
-              label: 'Escalas de evaluación / NEWS2',
-              type: 'textarea',
-            },
-            {
-              key: 'alertasAutomaticas',
-              label: 'Alertas automáticas',
-              type: 'textarea',
-            },
-            {
-              key: 'destinoReevaluacion',
-              label: 'Destino y reevaluación',
-              type: 'textarea',
-            },
-            {
-              key: 'responsableTriage',
-              label: 'Responsable de triage',
-              type: 'textarea',
-            },
+            { key: 'discDolorToracico', label: 'Dolor torácico', type: 'checkbox' },
+            { key: 'discDisneaSevera', label: 'Disnea severa', type: 'checkbox' },
+            { key: 'discSangradoActivo', label: 'Sangrado activo', type: 'checkbox' },
+            { key: 'discAlteracionConciencia', label: 'Alteración de conciencia', type: 'checkbox' },
+            { key: 'discSepsis', label: 'Sospecha de sepsis', type: 'checkbox' },
+            { key: 'discTraumaMayor', label: 'Trauma mayor', type: 'checkbox' },
+            { key: 'banderaRojaAutomatica', label: 'Bandera roja automática', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_signos_vitales',
+          title: 'Signos vitales',
+          fields: [
+            { key: 'taSistolica', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolica', label: 'TA diastólica', type: 'number' },
+            { key: 'fc', label: 'FC', type: 'number' },
+            { key: 'fr', label: 'FR', type: 'number' },
+            { key: 'temp', label: 'Temp', type: 'number' },
+            { key: 'spo2', label: 'SpO2', type: 'number' },
+            { key: 'peso', label: 'Peso', type: 'number' },
+            { key: 'glucosa', label: 'Glucosa', type: 'number' },
+            { key: 'eva', label: 'EVA', type: 'number' },
+            { key: 'llenadoCapilar', label: 'Llenado capilar', type: 'text' },
+          ],
+        },
+        {
+          key: 'triage_estado_rapido',
+          title: 'Estado clínico rápido',
+          fields: [
+            { key: 'viaAerea', label: 'Vía aérea', type: 'select', options: normalAlteredOptions },
+            { key: 'estadoHemodinamico', label: 'Estado hemodinámico', type: 'select', options: clinicalStateOptions },
+            { key: 'estadoNeurologico', label: 'Estado neurológico', type: 'select', options: normalAlteredOptions },
+          ],
+        },
+        {
+          key: 'triage_glasgow',
+          title: 'Glasgow',
+          fields: [
+            { key: 'glasgowE', label: 'E', type: 'select', options: glasgowEyeOptions },
+            { key: 'glasgowV', label: 'V', type: 'select', options: glasgowVerbalOptions },
+            { key: 'glasgowM', label: 'M', type: 'select', options: glasgowMotorOptions },
+            { key: 'glasgowTotal', label: 'Total', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_news_alertas',
+          title: 'NEWS2 y alertas automáticas',
+          fields: [
+            { key: 'news2Total', label: 'NEWS2', type: 'readonly' },
+            { key: 'alertasAutomaticas', label: 'Alertas automáticas', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_destino',
+          title: 'Destino y reevaluación',
+          fields: [
+            { key: 'destinoInicial', label: 'Destino inicial', type: 'select', options: triageDestinationOptions },
+            { key: 'reevaluacion', label: 'Reevaluación', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'triage_responsable_procedencia',
+          title: 'Responsable y procedencia',
+          fields: [
+            { key: 'responsableTriage', label: 'Responsable', type: 'readonly' },
+            { key: 'procedenciaAdministrativa', label: 'Procedencia', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'triage_estado_inicial',
+          title: 'Estado inicial',
+          fields: [
+            { key: 'estadoGeneral', label: 'Estado general', type: 'textarea' },
+            { key: 'estadoMental', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
+            { key: 'riesgoVital', label: 'Riesgo vital', type: 'select', options: riskClassificationOptions },
+          ],
+        },
+        {
+          key: 'triage_legal',
+          title: 'Datos legales',
+          fields: [
+            { key: 'triageLegalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarTriage', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
