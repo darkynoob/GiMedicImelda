@@ -173,7 +173,10 @@ function isEmergencyEvolutionTab(encounterType: string, tabTitle: string) {
 }
 
 function isEmergencyOrdersTab(encounterType: string, tabTitle: string) {
-  return encounterType === 'EMERGENCY' && tabTitle === 'Órdenes / Indicaciones';
+  return (
+    encounterType === 'EMERGENCY' &&
+    (tabTitle === 'Órdenes / Indicaciones' || tabTitle === 'Órdenes e indicaciones')
+  );
 }
 
 function isEmergencyConsultationTab(encounterType: string, tabTitle: string) {
@@ -2632,6 +2635,8 @@ export function EpisodeDetailPage() {
     activeTab,
   )
     ? 'Evolución'
+    : isEmergencyOrdersTab(detail.encounterType, activeTab)
+      ? 'Órdenes / Indicaciones'
     : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeRecordTabKey,
@@ -3049,7 +3054,7 @@ export function EpisodeDetailPage() {
           recordedAt: nextRecordedAt,
           rawFormData: {
             ...buildInitialStructuredSections(detail.encounterType)[
-              'Órdenes / Indicaciones'
+              'Órdenes e indicaciones'
             ],
             ...buildEmergencyOrdersSnapshot({
               detail,

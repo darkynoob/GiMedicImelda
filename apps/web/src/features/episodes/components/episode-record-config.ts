@@ -57,6 +57,11 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     defaultActionLabel: 'Nueva orden',
     noteTypes: ['Orden médica', 'Hoja de indicaciones'],
   },
+  'Órdenes e indicaciones': {
+    contextLabel: 'Órdenes e indicaciones',
+    defaultActionLabel: 'Nueva orden',
+    noteTypes: ['Orden médica', 'Hoja de indicaciones'],
+  },
   Interconsultas: {
     contextLabel: 'Interconsultas',
     defaultActionLabel: 'Nueva interconsulta',

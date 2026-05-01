@@ -858,6 +858,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncEmergencyOrdersRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1026,6 +1038,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncEmergencyOrdersRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1133,6 +1157,19 @@ export class EncountersService {
       ) {
         await transaction.$executeRaw`
           UPDATE "EmergencyEvolution"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+      }
+
+      if (
+        this.isEmergencyOrdersRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.$executeRaw`
+          UPDATE "EmergencyOrderSet"
           SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
           WHERE "sectionRecordId" = ${currentRecord.id}
         `;
@@ -3608,6 +3645,208 @@ export class EncountersService {
     `;
   }
 
+  private async syncEmergencyOrdersRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isEmergencyOrdersRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const orderSetId = input.sectionRecordId;
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const medications = this.normalizeObjectArray(input.formData.medicamentosOrdenesUrg);
+    const solutions = this.normalizeObjectArray(input.formData.solucionesIntravenosasOrdenes);
+    const studies = this.normalizeObjectArray(input.formData.estudiosSolicitadosOrdenes);
+    const transfusionApplies =
+      input.formData.transfusionAplica === true ||
+      this.readStringValue(input.formData.transfusionAplica).toLowerCase() === 'true';
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`
+        INSERT INTO "EmergencyOrderSet" (
+          "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+          "versionNumber", "title", "status", "recordedAt", "recordType",
+          "monitoringInstructions", "oxygenType", "oxygenFlow", "oxygenTarget",
+          "diet", "rest", "fluidControl", "allergyAlert",
+          "therapeuticDuplicationAlert", "safeDoseAlert", "professionalName",
+          "professionalLicense", "professionalSpecialty", "careLocation",
+          "signerUserId", "signedAt", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${orderSetId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+          ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, 'Órdenes e indicaciones',
+          ${this.readStringValue(input.formData.monitoreoOrdenes)}, ${this.readStringValue(input.formData.oxigenoTipoOrdenes)}, ${this.readStringValue(input.formData.oxigenoFlujoOrdenes)}, ${this.readStringValue(input.formData.oxigenoMetaOrdenes)},
+          ${this.readStringValue(input.formData.dietaOrdenes)}, ${this.readStringValue(input.formData.reposoOrdenes)}, ${this.readStringValue(input.formData.controlLiquidosOrdenes)}, ${this.readStringValue(input.formData.alertaAlergiasOrdenes)},
+          ${this.readStringValue(input.formData.alertaDuplicidadOrdenes)}, ${this.readStringValue(input.formData.alertaDosisOrdenes)}, ${this.readStringValue(input.formData.ordenesLegalMedico) || 'Sin profesional responsable'},
+          ${this.readStringValue(input.formData.ordenesLegalCedula)}, ${this.readStringValue(input.formData.ordenesLegalEspecialidad)}, ${this.readStringValue(input.formData.ordenesLegalLugar)},
+          ${signedAt ? input.userId : null}, ${signedAt}, NOW(), NOW()
+        )
+        ON CONFLICT ("sectionRecordId") DO UPDATE SET
+          "versionNumber" = EXCLUDED."versionNumber",
+          "title" = EXCLUDED."title",
+          "status" = EXCLUDED."status",
+          "recordedAt" = EXCLUDED."recordedAt",
+          "monitoringInstructions" = EXCLUDED."monitoringInstructions",
+          "oxygenType" = EXCLUDED."oxygenType",
+          "oxygenFlow" = EXCLUDED."oxygenFlow",
+          "oxygenTarget" = EXCLUDED."oxygenTarget",
+          "diet" = EXCLUDED."diet",
+          "rest" = EXCLUDED."rest",
+          "fluidControl" = EXCLUDED."fluidControl",
+          "allergyAlert" = EXCLUDED."allergyAlert",
+          "therapeuticDuplicationAlert" = EXCLUDED."therapeuticDuplicationAlert",
+          "safeDoseAlert" = EXCLUDED."safeDoseAlert",
+          "professionalName" = EXCLUDED."professionalName",
+          "professionalLicense" = EXCLUDED."professionalLicense",
+          "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+          "careLocation" = EXCLUDED."careLocation",
+          "signerUserId" = EXCLUDED."signerUserId",
+          "signedAt" = EXCLUDED."signedAt",
+          "updatedAt" = NOW()
+      `;
+
+      await transaction.$executeRaw`DELETE FROM "EmergencyOrderMedication" WHERE "orderSetId" = ${orderSetId}`;
+      await transaction.$executeRaw`DELETE FROM "EmergencyOrderIntravenousSolution" WHERE "orderSetId" = ${orderSetId}`;
+      await transaction.$executeRaw`DELETE FROM "EmergencyOrderRequestedStudy" WHERE "orderSetId" = ${orderSetId}`;
+      await transaction.$executeRaw`DELETE FROM "EmergencyOrderTrace" WHERE "orderSetId" = ${orderSetId}`;
+      await transaction.$executeRaw`DELETE FROM "EmergencyOrderTransfusion" WHERE "orderSetId" = ${orderSetId}`;
+
+      for (const [index, medication] of medications.entries()) {
+        await transaction.$executeRaw`
+          INSERT INTO "EmergencyOrderMedication" (
+            "id", "tenantId", "orderSetId", "medicationName", "dose", "route",
+            "frequency", "duration", "indication", "priority", "sortOrder",
+            "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${randomUUID()}, ${input.tenantId}, ${orderSetId}, ${this.readStringValue(medication.medicamento)},
+            ${this.readStringValue(medication.dosis)}, ${this.readStringValue(medication.via)},
+            ${this.readStringValue(medication.frecuencia)}, ${this.readStringValue(medication.duracion)},
+            ${this.readStringValue(medication.indicacion)}, ${this.readStringValue(medication.prioridad) || 'NORMAL'},
+            ${index}, NOW(), NOW()
+          )
+        `;
+        await this.insertEmergencyOrderTrace(transaction, {
+          tenantId: input.tenantId,
+          orderSetId,
+          orderLabel: this.readStringValue(medication.medicamento) || `Medicamento ${index + 1}`,
+          status: 'PENDIENTE',
+          responsibleName: this.readStringValue(input.formData.ordenesLegalMedico),
+          area: 'ENFERMERIA',
+          sourceType: 'MEDICAMENTO',
+          sourceIndex: index,
+        });
+      }
+
+      for (const [index, solution] of solutions.entries()) {
+        await transaction.$executeRaw`
+          INSERT INTO "EmergencyOrderIntravenousSolution" (
+            "id", "tenantId", "orderSetId", "solutionType", "volume", "rate",
+            "duration", "addedMedication", "instructions", "sortOrder",
+            "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${randomUUID()}, ${input.tenantId}, ${orderSetId}, ${this.readStringValue(solution.tipoSolucion)},
+            ${this.readNumericValue(solution.volumen)}, ${this.readStringValue(solution.velocidad)},
+            ${this.readStringValue(solution.duracion)}, ${this.readStringValue(solution.medicamentoAnadido)},
+            ${this.readStringValue(solution.indicaciones)}, ${index}, NOW(), NOW()
+          )
+        `;
+        await this.insertEmergencyOrderTrace(transaction, {
+          tenantId: input.tenantId,
+          orderSetId,
+          orderLabel: this.readStringValue(solution.tipoSolucion) || `Solución ${index + 1}`,
+          status: 'PENDIENTE',
+          responsibleName: this.readStringValue(input.formData.ordenesLegalMedico),
+          area: 'ENFERMERIA',
+          sourceType: 'SOLUCION',
+          sourceIndex: index,
+        });
+      }
+
+      for (const [index, study] of studies.entries()) {
+        const studyType = this.readStringValue(study.tipo) || 'LABORATORIO';
+        await transaction.$executeRaw`
+          INSERT INTO "EmergencyOrderRequestedStudy" (
+            "id", "tenantId", "orderSetId", "studyType", "studyName", "priority",
+            "justification", "frequency", "status", "sortOrder",
+            "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${randomUUID()}, ${input.tenantId}, ${orderSetId}, ${studyType},
+            ${this.readStringValue(study.estudio)}, ${this.readStringValue(study.prioridad) || 'NORMAL'},
+            ${this.readStringValue(study.justificacion)}, ${this.readStringValue(study.frecuencia)},
+            ${this.readStringValue(study.estado) || 'PENDIENTE'}, ${index}, NOW(), NOW()
+          )
+        `;
+        await this.insertEmergencyOrderTrace(transaction, {
+          tenantId: input.tenantId,
+          orderSetId,
+          orderLabel: this.readStringValue(study.estudio) || `Estudio ${index + 1}`,
+          status: 'PENDIENTE',
+          responsibleName: this.readStringValue(input.formData.ordenesLegalMedico),
+          area: studyType === 'LABORATORIO' ? 'LABORATORIO' : 'GABINETE',
+          sourceType: 'ESTUDIO',
+          sourceIndex: index,
+        });
+      }
+
+      if (transfusionApplies) {
+        await transaction.$executeRaw`
+          INSERT INTO "EmergencyOrderTransfusion" (
+            "id", "tenantId", "orderSetId", "bloodProductType", "volume",
+            "startedAt", "endedAt", "adverseReactions", "responsibleName",
+            "sortOrder", "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${randomUUID()}, ${input.tenantId}, ${orderSetId}, ${this.readStringValue(input.formData.transfusionTipoHemoderivado)},
+            ${this.readNumericValue(input.formData.transfusionVolumen)}, ${this.parseOptionalDate(input.formData.transfusionHoraInicio)},
+            ${this.parseOptionalDate(input.formData.transfusionHoraFin)}, ${this.readStringValue(input.formData.transfusionReacciones)},
+            ${this.readStringValue(input.formData.transfusionResponsable)}, 0, NOW(), NOW()
+          )
+        `;
+      }
+    });
+  }
+
+  private async insertEmergencyOrderTrace(
+    transaction: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      orderSetId: string;
+      orderLabel: string;
+      status: string;
+      responsibleName: string;
+      area: string;
+      sourceType: string;
+      sourceIndex: number;
+    },
+  ) {
+    await transaction.$executeRaw`
+      INSERT INTO "EmergencyOrderTrace" (
+        "id", "tenantId", "orderSetId", "orderLabel", "status",
+        "responsibleName", "executedAt", "area", "sourceType", "sourceIndex",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.orderSetId}, ${input.orderLabel},
+        ${input.status}, ${input.responsibleName}, NULL, ${input.area},
+        ${input.sourceType}, ${input.sourceIndex}, NOW(), NOW()
+      )
+    `;
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -5334,6 +5573,10 @@ export class EncountersService {
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
     }
+
+    if (this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)) {
+      this.assertEmergencyOrdersReadyForSignature(formData);
+    }
   }
 
   private assertEncounterEditable(encounter: TenantEncounterRecord) {
@@ -5381,6 +5624,38 @@ export class EncountersService {
 
   private sanitizeFileName(fileName: string) {
     return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  }
+
+  private assertEmergencyOrdersReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const medications = this.normalizeObjectArray(formData.medicamentosOrdenesUrg);
+    const studies = this.normalizeObjectArray(formData.estudiosSolicitadosOrdenes);
+    const medicationRequiredFields = [
+      'medicamento',
+      'dosis',
+      'via',
+      'frecuencia',
+      'duracion',
+      'prioridad',
+    ];
+    const studyRequiredFields = ['tipo', 'estudio', 'prioridad', 'justificacion'];
+    const hasIncompleteMedication = medications.some((item) =>
+      medicationRequiredFields.some(
+        (fieldKey) => !this.hasCapturedValue(item[fieldKey]),
+      ),
+    );
+    const hasIncompleteStudy = studies.some((item) =>
+      studyRequiredFields.some(
+        (fieldKey) => !this.hasCapturedValue(item[fieldKey]),
+      ),
+    );
+
+    if (hasIncompleteMedication || hasIncompleteStudy) {
+      throw new BadRequestException(
+        'Completa medicamento, dosis, vía, frecuencia, duración, prioridad, estudio y justificación antes de firmar las órdenes',
+      );
+    }
   }
 
   private toVitalSignsSummary(
