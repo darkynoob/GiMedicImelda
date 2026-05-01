@@ -222,6 +222,7 @@ model Tenant {
   patientBillingProfiles     PatientBillingProfile[]
   encounterProfiles          EncounterProfile[]
   encounterSectionRecords    EncounterSectionRecord[]
+  emergencyEvolutions        EmergencyEvolution[]
   emergencyConsultations     EmergencyConsultation[]
 }
 
@@ -463,6 +464,7 @@ model User {
   uploadedAttachments  Attachment[]
   auditLogs            AuditLog[]
   authoredEncounterSectionRecords EncounterSectionRecord[]
+  signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -750,6 +752,7 @@ model Patient {
   clinicalProfile      PatientClinicalProfile?
   billingProfile       PatientBillingProfile?
   encounterSectionRecords EncounterSectionRecord[]
+  emergencyEvolutions EmergencyEvolution[]
   emergencyConsultations EmergencyConsultation[]
 
   @@index([tenantId])
@@ -1168,6 +1171,7 @@ model Encounter {
   auditLogs            AuditLog[]
   profile              EncounterProfile?
   sectionRecords       EncounterSectionRecord[]
+  emergencyEvolutions  EmergencyEvolution[]
   emergencyConsultations EmergencyConsultation[]
 
   @@unique([facilityId, encounterNumber])
@@ -1270,6 +1274,7 @@ model EncounterSectionRecord {
   encounter      Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   patient        Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   authoredByUser User?     @relation(fields: [authoredByUserId], references: [id], onDelete: SetNull)
+  emergencyEvolution EmergencyEvolution?
   emergencyConsultation EmergencyConsultation?
 
   @@index([tenantId])
@@ -1280,6 +1285,85 @@ model EncounterSectionRecord {
   @@index([status])
   @@index([recordedAt])
   @@index([authoredByUserId])
+}
+
+/// Evolución médica longitudinal dentro de un episodio de Urgencias.
+/// Mantiene datos normalizados para auditoría NOM-004, signos vitales por toma
+/// y diagnósticos que evolucionan sin sobrescribir registros previos.
+model EmergencyEvolution {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  evolutionDate DateTime?
+  evolutionTime String?
+  evolutionDay Int?
+  clinicalStatus String?
+
+  patientReference String?
+
+  systolicBp Int?
+  diastolicBp Int?
+  heartRate Int?
+  respiratoryRate Int?
+  temperature Decimal? @db.Decimal(4, 1)
+  oxygenSaturation Int?
+  painScale Int?
+  glucose Int?
+  glasgow Int?
+
+  directedPhysicalExam String?
+  externalResultsSummary String?
+  diagnosesJson Json?
+
+  adverseEvents String?
+  complications String?
+
+  treatmentPlan String?
+  pendingStudies String?
+  interconsultationsPlan String?
+  followUpPlan String?
+
+  consentStatus String?
+  informationProvided String?
+
+  clinicalJustification String?
+  treatmentResponse String?
+
+  nursingSnapshotJson Json?
+  auxiliaryServicesSnapshotJson Json?
+
+  professionalName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+  signerUserId String?
+  signedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("EmergencyEvolutionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([clinicalStatus])
+  @@index([signerUserId])
 }
 
 /// Interconsulta formal generada desde Urgencias.

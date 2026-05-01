@@ -48,6 +48,10 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     contextLabel: 'Notas de evolución',
     defaultActionLabel: 'Nueva nota de evolución',
   },
+  'Evolución en urgencias': {
+    contextLabel: 'Notas de evolución',
+    defaultActionLabel: 'Nueva nota de evolución',
+  },
   'Órdenes / Indicaciones': {
     contextLabel: 'Órdenes e indicaciones',
     defaultActionLabel: 'Nueva orden',

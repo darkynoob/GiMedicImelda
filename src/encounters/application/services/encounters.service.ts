@@ -846,6 +846,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncEmergencyEvolutionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1002,6 +1014,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncEmergencyEvolutionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1097,6 +1121,19 @@ export class EncountersService {
         await transaction.$executeRaw`
           UPDATE "EmergencyConsultation"
           SET "signedAt" = ${signedAt}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+      }
+
+      if (
+        this.isEmergencyEvolutionRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.$executeRaw`
+          UPDATE "EmergencyEvolution"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
           WHERE "sectionRecordId" = ${currentRecord.id}
         `;
       }
@@ -3450,6 +3487,125 @@ export class EncountersService {
     }
 
     return `${Math.round((endDate.getTime() - requestedAt.getTime()) / 60000)} min`;
+  }
+
+  private jsonbParameter(value: unknown): Prisma.Sql {
+    if (value === null || value === undefined) {
+      return Prisma.sql`NULL`;
+    }
+
+    return Prisma.sql`CAST(${JSON.stringify(value)} AS JSONB)`;
+  }
+
+  private async syncEmergencyEvolutionRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isEmergencyEvolutionRecord(input.encounter.encounterType, input.tabKey)
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const nursingSnapshot = {
+      habitus: this.readStringValue(input.formData.enfermeriaHabitusUrg),
+      dolor: this.readStringValue(input.formData.enfermeriaDolorUrg),
+      riesgoCaidas: this.readStringValue(input.formData.enfermeriaRiesgoCaidasUrg),
+      medicacionAdministrada: this.readStringValue(input.formData.enfermeriaMedicacionUrg),
+      procedimientos: this.readStringValue(input.formData.enfermeriaProcedimientosUrg),
+      observaciones: this.readStringValue(input.formData.enfermeriaObservacionesUrg),
+      responsableCedula: this.readStringValue(input.formData.enfermeriaResponsableUrg),
+    };
+    const auxiliarySnapshot = {
+      ecg: this.readStringValue(input.formData.auxEcgUrg),
+      laboratorios: this.readStringValue(input.formData.auxLaboratoriosUrg),
+      interpretacion: this.readStringValue(input.formData.auxInterpretacionUrg),
+      incidentes: this.readStringValue(input.formData.auxIncidentesUrg),
+    };
+    const evolutionDate = this.parseOptionalDate(input.formData.fechaEvolucionUrg);
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "EmergencyEvolution" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "evolutionDate",
+        "evolutionTime", "evolutionDay", "clinicalStatus", "patientReference",
+        "systolicBp", "diastolicBp", "heartRate", "respiratoryRate",
+        "temperature", "oxygenSaturation", "painScale", "glucose", "glasgow",
+        "directedPhysicalExam", "externalResultsSummary", "diagnosesJson",
+        "adverseEvents", "complications", "treatmentPlan", "pendingStudies",
+        "interconsultationsPlan", "followUpPlan", "consentStatus",
+        "informationProvided", "clinicalJustification", "treatmentResponse",
+        "nursingSnapshotJson", "auxiliaryServicesSnapshotJson",
+        "professionalName", "professionalLicense", "professionalSpecialty",
+        "careLocation", "signerUserId", "signedAt", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${evolutionDate},
+        ${this.readStringValue(input.formData.horaEvolucionUrg)}, ${this.readNumericValue(input.formData.diaEvolucionUrg)}, ${this.readStringValue(input.formData.estadoClinicoEvolucionUrg)}, ${this.readStringValue(input.formData.referenciaPacienteUrg)},
+        ${this.readNumericValue(input.formData.taSistolicaEvolUrg)}, ${this.readNumericValue(input.formData.taDiastolicaEvolUrg)}, ${this.readNumericValue(input.formData.fcEvolUrg)}, ${this.readNumericValue(input.formData.frEvolUrg)},
+        ${this.readNumericValue(input.formData.tempEvolUrg)}, ${this.readNumericValue(input.formData.spo2EvolUrg)}, ${this.readNumericValue(input.formData.evaEvolUrg)}, ${this.readNumericValue(input.formData.glucosaEvolUrg)}, ${this.readNumericValue(input.formData.glasgowEvolUrg)},
+        ${this.readStringValue(input.formData.exploracionDirigidaUrg)}, ${this.readStringValue(input.formData.resultadosEstudiosIntegrados)}, ${this.jsonbParameter(input.formData.diagnosticosEvolucionUrg)},
+        ${this.readStringValue(input.formData.eventosAdversosUrg)}, ${this.readStringValue(input.formData.complicacionesUrg)}, ${this.readStringValue(input.formData.tratamientoEvolUrg)}, ${this.readStringValue(input.formData.estudiosPendientesUrg)},
+        ${this.readStringValue(input.formData.interconsultasEvolUrg)}, ${this.readStringValue(input.formData.seguimientoEvolUrg)}, ${this.readStringValue(input.formData.consentimientoVigenteUrg)},
+        ${this.readStringValue(input.formData.informacionBrindadaUrg)}, ${this.readStringValue(input.formData.justificacionClinicaNom004)}, ${this.readStringValue(input.formData.respuestaTratamientoUrg)},
+        ${this.jsonbParameter(nursingSnapshot)}, ${this.jsonbParameter(auxiliarySnapshot)},
+        ${this.readStringValue(input.formData.evolucionUrgLegalNombre) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.evolucionUrgLegalCedula)}, ${this.readStringValue(input.formData.evolucionUrgLegalEspecialidad)},
+        ${this.readStringValue(input.formData.evolucionUrgLegalLugar)}, ${signedAt ? input.userId : null}, ${signedAt}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "evolutionDate" = EXCLUDED."evolutionDate",
+        "evolutionTime" = EXCLUDED."evolutionTime",
+        "evolutionDay" = EXCLUDED."evolutionDay",
+        "clinicalStatus" = EXCLUDED."clinicalStatus",
+        "patientReference" = EXCLUDED."patientReference",
+        "systolicBp" = EXCLUDED."systolicBp",
+        "diastolicBp" = EXCLUDED."diastolicBp",
+        "heartRate" = EXCLUDED."heartRate",
+        "respiratoryRate" = EXCLUDED."respiratoryRate",
+        "temperature" = EXCLUDED."temperature",
+        "oxygenSaturation" = EXCLUDED."oxygenSaturation",
+        "painScale" = EXCLUDED."painScale",
+        "glucose" = EXCLUDED."glucose",
+        "glasgow" = EXCLUDED."glasgow",
+        "directedPhysicalExam" = EXCLUDED."directedPhysicalExam",
+        "externalResultsSummary" = EXCLUDED."externalResultsSummary",
+        "diagnosesJson" = EXCLUDED."diagnosesJson",
+        "adverseEvents" = EXCLUDED."adverseEvents",
+        "complications" = EXCLUDED."complications",
+        "treatmentPlan" = EXCLUDED."treatmentPlan",
+        "pendingStudies" = EXCLUDED."pendingStudies",
+        "interconsultationsPlan" = EXCLUDED."interconsultationsPlan",
+        "followUpPlan" = EXCLUDED."followUpPlan",
+        "consentStatus" = EXCLUDED."consentStatus",
+        "informationProvided" = EXCLUDED."informationProvided",
+        "clinicalJustification" = EXCLUDED."clinicalJustification",
+        "treatmentResponse" = EXCLUDED."treatmentResponse",
+        "nursingSnapshotJson" = EXCLUDED."nursingSnapshotJson",
+        "auxiliaryServicesSnapshotJson" = EXCLUDED."auxiliaryServicesSnapshotJson",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "updatedAt" = NOW()
+    `;
   }
 
   private async syncEmergencyConsultationRecord(input: {

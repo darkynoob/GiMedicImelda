@@ -166,7 +166,10 @@ function isEmergencyInitialNoteTab(encounterType: string, tabTitle: string) {
 }
 
 function isEmergencyEvolutionTab(encounterType: string, tabTitle: string) {
-  return encounterType === 'EMERGENCY' && tabTitle === 'Evolución';
+  return (
+    encounterType === 'EMERGENCY' &&
+    (tabTitle === 'Evolución en urgencias' || tabTitle === 'Evolución')
+  );
 }
 
 function isEmergencyOrdersTab(encounterType: string, tabTitle: string) {
@@ -2624,8 +2627,14 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const activeRecordTabKey = isEmergencyEvolutionTab(
+    detail.encounterType,
+    activeTab,
+  )
+    ? 'Evolución'
+    : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
-    (record) => record.tabKey === activeTab,
+    (record) => record.tabKey === activeRecordTabKey,
   );
   const isConsultationHistorySection = isConsultationHistoryTab(
     detail.encounterType,
@@ -3008,7 +3017,9 @@ export function EpisodeDetailPage() {
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: {
-            ...buildInitialStructuredSections(detail.encounterType)['Evolución'],
+            ...buildInitialStructuredSections(detail.encounterType)[
+              'Evolución en urgencias'
+            ],
             ...buildEmergencyEvolutionSnapshot({
               detail,
               initialNoteRecord: latestEmergencyInitialNoteRecord,
@@ -3338,7 +3349,7 @@ export function EpisodeDetailPage() {
     setFeedback(null);
 
     const payload = {
-      tabKey: activeTab,
+      tabKey: activeRecordTabKey,
       noteType: recordForm.noteType.trim(),
       title: recordForm.title.trim() || undefined,
       status: recordForm.status || undefined,
