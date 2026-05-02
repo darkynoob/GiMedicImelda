@@ -53,7 +53,7 @@ import {
 import {
   buildDefaultFieldValue,
   getConsultationDocumentTabDefinition,
-  getConsultationDocumentTypes,
+  getEpisodeDocumentTypes,
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
@@ -154,7 +154,10 @@ function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) 
 }
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
-  return encounterType === 'OUTPATIENT' && tabTitle === 'Documentos';
+  return (
+    (encounterType === 'OUTPATIENT' || encounterType === 'EMERGENCY') &&
+    tabTitle === 'Documentos'
+  );
 }
 
 function isEmergencyTriageTab(encounterType: string, tabTitle: string) {
@@ -2943,7 +2946,7 @@ export function EpisodeDetailPage() {
     selectedRecord?.noteType ??
     recordForm?.noteType ??
     activeTabPanelConfig?.noteTypes?.[0] ??
-    getConsultationDocumentTypes()[0];
+    getEpisodeDocumentTypes(detail.encounterType)[0];
   const documentWorkspaceDefinition = isConsultationDocumentsSection
     ? getConsultationDocumentTabDefinition(selectedDocumentNoteType)
     : undefined;
@@ -3117,7 +3120,7 @@ export function EpisodeDetailPage() {
       const nextNoteType =
         noteType ??
         activeTabPanelConfig?.noteTypes?.[0] ??
-        getConsultationDocumentTypes()[0];
+        getEpisodeDocumentTypes(detail.encounterType)[0];
       const nextTabDefinition = getConsultationDocumentTabDefinition(nextNoteType);
 
       setFeedback(null);
@@ -4486,7 +4489,8 @@ export function EpisodeDetailPage() {
                                         encounterRecordStatusConfig.DRAFT).label
                                     }
                                   </Badge>
-                                  {recordForm.noteType === 'Nota de cierre' ? (
+                                  {detail.encounterType !== 'EMERGENCY' &&
+                                  recordForm.noteType === 'Nota de cierre' ? (
                                     <Badge variant="warning">
                                       Al firmarla se cerrará el episodio
                                     </Badge>
@@ -4720,7 +4724,17 @@ export function EpisodeDetailPage() {
                             </label>
                           )}
 
-                          {isConsultationDocumentsSection ? (
+                          {isConsultationDocumentsSection &&
+                          detail.encounterType === 'EMERGENCY' ? (
+                            <div className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">
+                                Tipo de documento
+                              </span>
+                              <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm text-slate-700">
+                                {recordForm.noteType}
+                              </div>
+                            </div>
+                          ) : isConsultationDocumentsSection ? (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de documento</span>
                               <select
@@ -4731,7 +4745,7 @@ export function EpisodeDetailPage() {
                                 }
                                 value={recordForm.noteType}
                               >
-                                {getConsultationDocumentTypes().map((noteType) => (
+                                {getEpisodeDocumentTypes(detail.encounterType).map((noteType) => (
                                   <option key={noteType} value={noteType}>
                                     {noteType}
                                   </option>

@@ -3158,6 +3158,14 @@ const consultationDocumentSectionDefinitions: Record<string, EpisodeSectionDefin
   ],
 };
 
+const emergencyDocumentTypeNames = [
+  'Solicitud de laboratorio',
+  'Solicitud de imagenología',
+  'Referencia / contrarreferencia',
+  'Consentimiento informado',
+  'Certificado / constancia',
+];
+
 const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
   {
     key: 'documento_legales',
@@ -3165,6 +3173,40 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
     description:
       'Los datos legales se completan desde el profesional responsable del episodio.',
     fields: [
+      {
+        key: 'tipoRegistro',
+        label: 'Tipo de registro',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoFecha',
+        label: 'Fecha',
+        type: 'date',
+      },
+      {
+        key: 'documentoHora',
+        label: 'Hora',
+        type: 'time',
+      },
+      {
+        key: 'documentoFolio',
+        label: 'Folio del documento',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoVersion',
+        label: 'Versión',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoEstado',
+        label: 'Estado',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
       {
         key: 'documentoInstitucionEmisora',
         label: 'Institución emisora',
@@ -3226,6 +3268,14 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
 
 export function getConsultationDocumentTypes() {
   return Object.keys(consultationDocumentSectionDefinitions);
+}
+
+export function getEpisodeDocumentTypes(encounterType: string) {
+  if (encounterType === 'EMERGENCY') {
+    return emergencyDocumentTypeNames;
+  }
+
+  return getConsultationDocumentTypes();
 }
 
 export function getConsultationDocumentTabDefinition(

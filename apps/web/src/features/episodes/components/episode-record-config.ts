@@ -80,10 +80,9 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     noteTypes: [
       'Solicitud de laboratorio',
       'Solicitud de imagenología',
-      'Consentimiento informado',
       'Referencia / contrarreferencia',
-      'Egreso voluntario',
-      'Ministerio público',
+      'Consentimiento informado',
+      'Certificado / constancia',
     ],
   },
 };

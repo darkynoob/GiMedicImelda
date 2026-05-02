@@ -230,6 +230,7 @@ model Tenant {
   emergencyOrderTraces       EmergencyOrderTrace[]
   emergencyOrderTransfusions EmergencyOrderTransfusion[]
   emergencyDischarges        EmergencyDischarge[]
+  emergencyDocuments         EmergencyDocument[]
   emergencyConsultations     EmergencyConsultation[]
 }
 
@@ -474,6 +475,7 @@ model User {
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
+  signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -764,6 +766,7 @@ model Patient {
   emergencyEvolutions EmergencyEvolution[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
+  emergencyDocuments EmergencyDocument[]
   emergencyConsultations EmergencyConsultation[]
 
   @@index([tenantId])
@@ -1185,6 +1188,7 @@ model Encounter {
   emergencyEvolutions  EmergencyEvolution[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
+  emergencyDocuments   EmergencyDocument[]
   emergencyConsultations EmergencyConsultation[]
 
   @@unique([facilityId, encounterNumber])
@@ -1290,6 +1294,7 @@ model EncounterSectionRecord {
   emergencyEvolution EmergencyEvolution?
   emergencyOrderSet EmergencyOrderSet?
   emergencyDischarge EmergencyDischarge?
+  emergencyDocument EmergencyDocument?
   emergencyConsultation EmergencyConsultation?
 
   @@index([tenantId])
@@ -1646,6 +1651,56 @@ model EmergencyDischarge {
   @@index([status])
   @@index([recordedAt])
   @@index([dischargeType])
+  @@index([signerUserId])
+}
+
+/// Documento complementario versionado de Urgencias.
+/// Excluye Nota de cierre; el cierre del episodio vive en Egreso de urgencias.
+model EmergencyDocument {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  documentType String
+  versionNumber Int
+  title String
+  folio String @unique
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  documentDate DateTime?
+  documentTime String?
+
+  responsibleName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+  verificationCode String?
+  contentJson Json?
+
+  signerUserId String?
+  signedAt DateTime?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("EmergencyDocumentSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@unique([encounterId, documentType, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([documentType])
+  @@index([status])
+  @@index([recordedAt])
   @@index([signerUserId])
 }
 
