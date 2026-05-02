@@ -229,6 +229,7 @@ model Tenant {
   emergencyOrderStudies      EmergencyOrderRequestedStudy[]
   emergencyOrderTraces       EmergencyOrderTrace[]
   emergencyOrderTransfusions EmergencyOrderTransfusion[]
+  emergencyDischarges        EmergencyDischarge[]
   emergencyConsultations     EmergencyConsultation[]
 }
 
@@ -472,6 +473,7 @@ model User {
   authoredEncounterSectionRecords EncounterSectionRecord[]
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
+  signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -761,6 +763,7 @@ model Patient {
   encounterSectionRecords EncounterSectionRecord[]
   emergencyEvolutions EmergencyEvolution[]
   emergencyOrderSets EmergencyOrderSet[]
+  emergencyDischarges EmergencyDischarge[]
   emergencyConsultations EmergencyConsultation[]
 
   @@index([tenantId])
@@ -1181,6 +1184,7 @@ model Encounter {
   sectionRecords       EncounterSectionRecord[]
   emergencyEvolutions  EmergencyEvolution[]
   emergencyOrderSets   EmergencyOrderSet[]
+  emergencyDischarge   EmergencyDischarge?
   emergencyConsultations EmergencyConsultation[]
 
   @@unique([facilityId, encounterNumber])
@@ -1285,6 +1289,7 @@ model EncounterSectionRecord {
   authoredByUser User?     @relation(fields: [authoredByUserId], references: [id], onDelete: SetNull)
   emergencyEvolution EmergencyEvolution?
   emergencyOrderSet EmergencyOrderSet?
+  emergencyDischarge EmergencyDischarge?
   emergencyConsultation EmergencyConsultation?
 
   @@index([tenantId])
@@ -1553,6 +1558,95 @@ model EmergencyOrderTransfusion {
 
   @@index([tenantId])
   @@index([orderSetId])
+}
+
+/// Documento único de egreso de Urgencias.
+/// Cierra legal y clínicamente el episodio al firmarse.
+model EmergencyDischarge {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String @unique
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int @default(1)
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  dischargeType String?
+  destination String?
+  receivingService String?
+  receivingPhysician String?
+  dischargedAt DateTime?
+
+  admissionReason String?
+  dischargeDiagnosis String?
+  cie10 String?
+  emergencyManagement String?
+  performedProcedures String?
+  stayEvolution String?
+  dischargeCondition String?
+
+  dischargeMedications String?
+  generalCare String?
+  specificCare String?
+  diet String?
+  physicalActivity String?
+  followUp String?
+  alarmSigns String?
+
+  linkedPrescription String?
+  prescriptionJustification String?
+  incapacityGranted String?
+  incapacityDays Int?
+  incapacityType String?
+
+  patientEducation String?
+  patientComprehension String?
+
+  transferOriginUnit String?
+  transferDestinationUnit String?
+  transferVitalSigns String?
+  transferClinicalSummary String?
+  transferDiagnosis String?
+  transferPreviousTreatment String?
+  transferConditions String?
+  transferReceivingPhysician String?
+
+  consentProcedure String?
+  consentRisks String?
+  consentBenefits String?
+  consentAuthorization String?
+  consentSignatures String?
+
+  publicMinistryNotice String?
+  deathCertificateData String?
+
+  professionalName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+  signerUserId String?
+  signedAt DateTime?
+  closedEncounterAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("EmergencyDischargeSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([dischargeType])
+  @@index([signerUserId])
 }
 
 /// Interconsulta formal generada desde Urgencias.

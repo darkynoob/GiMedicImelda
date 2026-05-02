@@ -67,13 +67,12 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     defaultActionLabel: 'Nueva interconsulta',
   },
   Egreso: {
-    contextLabel: 'Notas de egreso',
-    defaultActionLabel: 'Nueva nota de alta',
-    noteTypes: [
-      'Nota de alta desde urgencias',
-      'Nota de ingreso a hospitalización',
-      'Nota de referencia / traslado',
-    ],
+    contextLabel: 'Egreso de urgencias',
+    defaultActionLabel: 'Nuevo egreso',
+  },
+  'Egreso de urgencias': {
+    contextLabel: 'Egreso de urgencias',
+    defaultActionLabel: 'Nuevo egreso',
   },
   Documentos: {
     contextLabel: 'Documentos del episodio',

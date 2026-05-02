@@ -277,6 +277,37 @@ const consultationDecisionOptions: EpisodeFieldOption[] = [
   { value: 'DIFERIDA', label: 'Diferida' },
 ];
 
+const emergencyDischargeTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ALTA_DOMICILIO', label: 'Alta a domicilio' },
+  { value: 'HOSPITALIZACION', label: 'Hospitalización' },
+  { value: 'REFERENCIA_TRASLADO', label: 'Referencia / traslado' },
+  { value: 'DEFUNCION', label: 'Defunción' },
+];
+
+const emergencyDischargeDestinationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'DOMICILIO', label: 'Domicilio' },
+  { value: 'HOSPITALIZACION', label: 'Hospitalización' },
+  { value: 'UNIDAD_REFERENCIA', label: 'Unidad de referencia' },
+  { value: 'MORTUORIO', label: 'Mortuorio' },
+];
+
+const emergencyDischargeConditionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESTABLE', label: 'Estable' },
+  { value: 'GRAVE', label: 'Grave' },
+  { value: 'CRITICO', label: 'Crítico' },
+  { value: 'FALLECIDO', label: 'Fallecido' },
+];
+
+const incapacityTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'INICIAL', label: 'Inicial' },
+  { value: 'SUBSECUENTE', label: 'Subsecuente' },
+  { value: 'RIESGO_TRABAJO', label: 'Riesgo de trabajo' },
+];
+
 const glasgowEyeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
   { value: '4', label: '4 - Espontánea' },
@@ -2022,64 +2053,128 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Resumen clínico, indicaciones, educación y eventos legales si aplican.',
       sections: [
         {
-          key: 'egreso_urgencias',
-          title: 'Egreso',
+          key: 'egreso_urg_tipo',
+          title: 'Tipo de registro',
           fields: [
-            {
-              key: 'tipoDestinoEgreso',
-              label: 'Tipo y destino de egreso',
-              type: 'textarea',
-            },
-            {
-              key: 'resumenClinicoEgreso',
-              label: 'Resumen clínico estructurado',
-              type: 'textarea',
-            },
-            {
-              key: 'indicacionesEgresoUrg',
-              label: 'Indicaciones de egreso',
-              type: 'textarea',
-            },
-            {
-              key: 'signosAlarmaUrg',
-              label: 'Signos de alarma',
-              type: 'textarea',
-            },
-            {
-              key: 'recetaIncapacidadUrg',
-              label: 'Receta e incapacidad',
-              type: 'textarea',
-            },
-            {
-              key: 'educacionPacienteUrg',
-              label: 'Educación al paciente',
-              type: 'textarea',
-            },
-            {
-              key: 'responsableEgresoUrg',
-              label: 'Responsable del egreso',
-              type: 'textarea',
-            },
-            {
-              key: 'referenciaTrasladoUrg',
-              label: 'Referencia / traslado',
-              type: 'textarea',
-            },
-            {
-              key: 'consentimientoEgresoUrg',
-              label: 'Consentimiento informado',
-              type: 'textarea',
-            },
-            {
-              key: 'avisoMinisterioPublico',
-              label: 'Aviso al Ministerio Público',
-              type: 'textarea',
-            },
-            {
-              key: 'certificadoDefuncion',
-              label: 'Certificado de defunción / muerte fetal',
-              type: 'textarea',
-            },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'egreso_urg_destino',
+          title: 'Tipo y destino de egreso',
+          fields: [
+            { key: 'tipoEgresoUrg', label: 'Tipo de egreso', type: 'select', options: emergencyDischargeTypeOptions },
+            { key: 'destinoEgresoUrg', label: 'Destino', type: 'select', options: emergencyDischargeDestinationOptions },
+            { key: 'servicioReceptorUrg', label: 'Servicio receptor', type: 'select', options: emergencyConsultationServiceOptions },
+            { key: 'medicoReceptorUrg', label: 'Médico receptor', type: 'text' },
+            { key: 'fechaHoraEgresoUrg', label: 'Fecha y hora de egreso', type: 'datetime-local' },
+          ],
+        },
+        {
+          key: 'egreso_urg_resumen',
+          title: 'Resumen clínico estructurado',
+          fields: [
+            { key: 'generarResumenEgresoUrg', label: 'Resumen automático', type: 'action', actionLabel: 'Generar resumen automático' },
+            { key: 'motivoIngresoEgresoUrg', label: 'Motivo de ingreso', type: 'textarea' },
+            { key: 'diagnosticoEgresoUrg', label: 'Diagnóstico de egreso', type: 'text' },
+            { key: 'cie10EgresoUrg', label: 'CIE-10', type: 'text' },
+            { key: 'manejoUrgenciasEgresoUrg', label: 'Manejo realizado en urgencias', type: 'textarea' },
+            { key: 'procedimientosRealizadosEgresoUrg', label: 'Procedimientos realizados', type: 'textarea' },
+            { key: 'evolucionEstanciaEgresoUrg', label: 'Evolución durante estancia', type: 'textarea' },
+            { key: 'estadoAlEgresoUrg', label: 'Estado al egreso', type: 'select', options: emergencyDischargeConditionOptions },
+          ],
+        },
+        {
+          key: 'egreso_urg_indicaciones',
+          title: 'Indicaciones de egreso',
+          fields: [
+            { key: 'medicamentosEgresoUrg', label: 'Medicamentos al egreso', type: 'textarea' },
+            { key: 'cuidadosGeneralesEgresoUrg', label: 'Cuidados generales', type: 'textarea' },
+            { key: 'cuidadosEspecificosEgresoUrg', label: 'Cuidados específicos', type: 'textarea' },
+            { key: 'dietaEgresoUrg', label: 'Dieta', type: 'text' },
+            { key: 'actividadFisicaEgresoUrg', label: 'Actividad física', type: 'textarea' },
+            { key: 'seguimientoEgresoUrg', label: 'Seguimiento', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_alarma',
+          title: 'Signos de alarma',
+          fields: [
+            { key: 'signosAlarmaEgresoUrg', label: 'Signos de alarma', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_receta_incapacidad',
+          title: 'Receta e incapacidad',
+          fields: [
+            { key: 'recetaAsociadaEgresoUrg', label: 'Receta médica asociada', type: 'readonly' },
+            { key: 'justificacionSinRecetaEgresoUrg', label: 'Justificación si no hay receta', type: 'textarea' },
+            { key: 'incapacidadOtorgadaUrg', label: 'Incapacidad otorgada', type: 'select', options: yesNoUnknownOptions },
+            { key: 'diasIncapacidadUrg', label: 'Días de incapacidad', type: 'number' },
+            { key: 'tipoIncapacidadUrg', label: 'Tipo de incapacidad', type: 'select', options: incapacityTypeOptions },
+          ],
+        },
+        {
+          key: 'egreso_urg_educacion',
+          title: 'Educación al paciente',
+          fields: [
+            { key: 'educacionOtorgadaEgresoUrg', label: 'Educación otorgada', type: 'textarea' },
+            { key: 'comprensionPacienteEgresoUrg', label: 'Comprensión del paciente', type: 'select', options: comprehensionOptions },
+          ],
+        },
+        {
+          key: 'egreso_urg_responsable',
+          title: 'Responsable del egreso',
+          fields: [
+            { key: 'medicoResponsableEgresoUrg', label: 'Médico responsable', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'cedulaResponsableEgresoUrg', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'especialidadResponsableEgresoUrg', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'lugarAtencionEgresoUrg', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'fechaHoraFirmaEgresoUrg', label: 'Fecha y hora de firma', type: 'readonly', inheritanceMode: 'system' },
+          ],
+        },
+        {
+          key: 'egreso_urg_traslado',
+          title: 'Referencia / Traslado',
+          fields: [
+            { key: 'unidadOrigenTrasladoUrg', label: 'Unidad origen', type: 'text' },
+            { key: 'unidadDestinoTrasladoUrg', label: 'Unidad destino', type: 'text' },
+            { key: 'signosVitalesTrasladoUrg', label: 'Signos vitales', type: 'textarea' },
+            { key: 'resumenTrasladoUrg', label: 'Resumen clínico', type: 'textarea' },
+            { key: 'diagnosticoTrasladoUrg', label: 'Diagnóstico', type: 'text' },
+            { key: 'tratamientoPrevioTrasladoUrg', label: 'Tratamiento previo', type: 'textarea' },
+            { key: 'condicionesTrasladoUrg', label: 'Condiciones de traslado', type: 'textarea' },
+            { key: 'medicoReceptorTrasladoUrg', label: 'Médico receptor', type: 'text' },
+          ],
+        },
+        {
+          key: 'egreso_urg_consentimiento',
+          title: 'Consentimiento informado',
+          fields: [
+            { key: 'procedimientoConsentimientoUrg', label: 'Procedimiento', type: 'text' },
+            { key: 'riesgosConsentimientoUrg', label: 'Riesgos', type: 'textarea' },
+            { key: 'beneficiosConsentimientoUrg', label: 'Beneficios', type: 'textarea' },
+            { key: 'autorizacionConsentimientoUrg', label: 'Autorización', type: 'textarea' },
+            { key: 'firmasConsentimientoUrg', label: 'Firmas', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_legales_condicionales',
+          title: 'Aviso MP / Defunción',
+          fields: [
+            { key: 'avisoMinisterioPublico', label: 'Aviso al Ministerio Público', type: 'textarea' },
+            { key: 'certificadoDefuncion', label: 'Certificado de defunción', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_firma',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'egresoLegalNombre', label: 'Nombre del profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'egresoLegalCedula', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'egresoLegalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'egresoLegalLugar', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarEgresoUrg', label: 'Firma electrónica', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
