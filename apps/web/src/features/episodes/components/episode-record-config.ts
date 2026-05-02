@@ -48,7 +48,16 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     contextLabel: 'Notas de evolución',
     defaultActionLabel: 'Nueva nota de evolución',
   },
+  'Evolución en urgencias': {
+    contextLabel: 'Notas de evolución',
+    defaultActionLabel: 'Nueva nota de evolución',
+  },
   'Órdenes / Indicaciones': {
+    contextLabel: 'Órdenes e indicaciones',
+    defaultActionLabel: 'Nueva orden',
+    noteTypes: ['Orden médica', 'Hoja de indicaciones'],
+  },
+  'Órdenes e indicaciones': {
     contextLabel: 'Órdenes e indicaciones',
     defaultActionLabel: 'Nueva orden',
     noteTypes: ['Orden médica', 'Hoja de indicaciones'],
@@ -58,13 +67,12 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     defaultActionLabel: 'Nueva interconsulta',
   },
   Egreso: {
-    contextLabel: 'Notas de egreso',
-    defaultActionLabel: 'Nueva nota de alta',
-    noteTypes: [
-      'Nota de alta desde urgencias',
-      'Nota de ingreso a hospitalización',
-      'Nota de referencia / traslado',
-    ],
+    contextLabel: 'Egreso de urgencias',
+    defaultActionLabel: 'Nuevo egreso',
+  },
+  'Egreso de urgencias': {
+    contextLabel: 'Egreso de urgencias',
+    defaultActionLabel: 'Nuevo egreso',
   },
   Documentos: {
     contextLabel: 'Documentos del episodio',
@@ -72,10 +80,9 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     noteTypes: [
       'Solicitud de laboratorio',
       'Solicitud de imagenología',
-      'Consentimiento informado',
       'Referencia / contrarreferencia',
-      'Egreso voluntario',
-      'Ministerio público',
+      'Consentimiento informado',
+      'Certificado / constancia',
     ],
   },
 };

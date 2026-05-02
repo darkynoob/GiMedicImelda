@@ -11,6 +11,7 @@ export type EpisodeFieldDefinition = {
     | 'textarea'
     | 'select'
     | 'datetime-local'
+    | 'time'
     | 'number'
     | 'checkbox'
     | 'date'
@@ -23,6 +24,7 @@ export type EpisodeFieldDefinition = {
   inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
   itemFields?: EpisodeFieldDefinition[];
   itemAddLabel?: string;
+  disableItemRemoval?: boolean;
   actionLabel?: string;
 };
 
@@ -53,6 +55,284 @@ const priorityOptions: EpisodeFieldOption[] = [
   { value: 'ALTA', label: 'Alta' },
   { value: 'MEDIA', label: 'Media' },
   { value: 'BAJA', label: 'Baja' },
+];
+
+const triagePriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '1', label: '1 - Reanimación' },
+  { value: '2', label: '2 - Emergente' },
+  { value: '3', label: '3 - Urgente' },
+  { value: '4', label: '4 - Menos urgente' },
+  { value: '5', label: '5 - No urgente' },
+];
+
+const triageCategoryOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'TRAUMA', label: 'Trauma' },
+  { value: 'CARDIORESPIRATORIO', label: 'Cardiorrespiratorio' },
+  { value: 'NEUROLOGICO', label: 'Neurológico' },
+  { value: 'GASTROINTESTINAL', label: 'Gastrointestinal' },
+  { value: 'INFECCIOSO', label: 'Infeccioso' },
+  { value: 'GINECO_OBSTETRICO', label: 'Gineco-obstétrico' },
+  { value: 'PEDIATRICO', label: 'Pediátrico' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const triageArrivalModeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'AMBULANCIA', label: 'Ambulancia' },
+  { value: 'PROPIO_PIE', label: 'Por propio pie' },
+  { value: 'TRASLADO', label: 'Traslado' },
+  { value: 'POLICIA_PROTECCION_CIVIL', label: 'Policía / protección civil' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const triageDestinationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'CHOQUE', label: 'Área de choque' },
+  { value: 'CONSULTORIO_URGENCIAS', label: 'Consultorio de urgencias' },
+  { value: 'OBSERVACION', label: 'Observación' },
+  { value: 'CAMA_URGENCIAS', label: 'Cama de urgencias' },
+  { value: 'REFERENCIA', label: 'Referencia / traslado' },
+];
+
+const emergencyEventTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'MEDICO', label: 'Médico' },
+  { value: 'TRAUMA', label: 'Trauma' },
+  { value: 'QUIRURGICO', label: 'Quirúrgico' },
+  { value: 'GINECO_OBSTETRICO', label: 'Gineco-obstétrico' },
+  { value: 'TOXICOLOGICO', label: 'Toxicológico' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const killipOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'I', label: 'I - Sin insuficiencia cardiaca' },
+  { value: 'II', label: 'II - Estertores / S3' },
+  { value: 'III', label: 'III - Edema pulmonar' },
+  { value: 'IV', label: 'IV - Choque cardiogénico' },
+];
+
+const scoreRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'INTERMEDIO', label: 'Intermedio' },
+  { value: 'ALTO', label: 'Alto' },
+];
+
+const clinicalStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESTABLE', label: 'Estable' },
+  { value: 'OBSERVACION', label: 'En observación' },
+  { value: 'DELICADO', label: 'Delicado' },
+  { value: 'GRAVE', label: 'Grave' },
+  { value: 'CRITICO', label: 'Crítico' },
+];
+
+const treatmentResponseOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'FAVORABLE', label: 'Favorable' },
+  { value: 'PARCIAL', label: 'Parcial' },
+  { value: 'SIN_CAMBIOS', label: 'Sin cambios' },
+  { value: 'DESFAVORABLE', label: 'Desfavorable' },
+];
+
+const consentStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'VIGENTE', label: 'Vigente' },
+  { value: 'NO_VIGENTE', label: 'No vigente' },
+  { value: 'NO_APLICA', label: 'No aplica' },
+];
+
+const fallRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'MEDIO', label: 'Medio' },
+  { value: 'ALTO', label: 'Alto' },
+];
+
+const orderPriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'STAT', label: 'STAT' },
+  { value: 'URGENTE', label: 'Urgente' },
+  { value: 'NORMAL', label: 'Normal' },
+];
+
+const orderFrequencyOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'DOSIS_UNICA', label: 'Dosis única' },
+  { value: 'CADA_4_H', label: 'Cada 4 horas' },
+  { value: 'CADA_6_H', label: 'Cada 6 horas' },
+  { value: 'CADA_8_H', label: 'Cada 8 horas' },
+  { value: 'CADA_12_H', label: 'Cada 12 horas' },
+  { value: 'CADA_24_H', label: 'Cada 24 horas' },
+  { value: 'PRN', label: 'PRN' },
+];
+
+const orderDurationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'DOSIS_UNICA', label: 'Dosis única' },
+  { value: '24_HORAS', label: '24 horas' },
+  { value: '48_HORAS', label: '48 horas' },
+  { value: '72_HORAS', label: '72 horas' },
+  { value: 'HASTA_REVALORACION', label: 'Hasta revaloración' },
+];
+
+const studyTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'LABORATORIO', label: 'Laboratorio' },
+  { value: 'GABINETE', label: 'Gabinete' },
+  { value: 'IMAGEN', label: 'Imagen' },
+];
+
+const orderStatusOptions: EpisodeFieldOption[] = [
+  { value: 'PENDIENTE', label: 'Pendiente' },
+  { value: 'EN_PROCESO', label: 'En proceso' },
+  { value: 'RESULTADO', label: 'Resultado' },
+];
+
+const oxygenTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'PUNTAS_NASALES', label: 'Puntas nasales' },
+  { value: 'MASCARILLA_SIMPLE', label: 'Mascarilla simple' },
+  { value: 'MASCARILLA_RESERVORIO', label: 'Mascarilla con reservorio' },
+  { value: 'VENTURI', label: 'Venturi' },
+  { value: 'ALTO_FLUJO', label: 'Alto flujo' },
+];
+
+const dietOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'AYUNO', label: 'Ayuno' },
+  { value: 'LIQUIDA', label: 'Líquida' },
+  { value: 'BLANDA', label: 'Blanda' },
+  { value: 'NORMAL', label: 'Normal' },
+  { value: 'ESPECIAL', label: 'Especial' },
+];
+
+const restOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'ABSOLUTO', label: 'Absoluto' },
+  { value: 'RELATIVO', label: 'Relativo' },
+  { value: 'AMBULACION_ASISTIDA', label: 'Ambulación asistida' },
+];
+
+const fluidControlOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'NO', label: 'No' },
+  { value: 'BALANCE_HIDRICO', label: 'Balance hídrico' },
+  { value: 'INGRESOS_EGRESOS', label: 'Ingresos / egresos' },
+  { value: 'RESTRICCION', label: 'Restricción hídrica' },
+];
+
+const transfusionProductOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'CE', label: 'Concentrado eritrocitario' },
+  { value: 'PFC', label: 'Plasma fresco congelado' },
+  { value: 'PLAQUETAS', label: 'Plaquetas' },
+  { value: 'CRIOPRECIPITADO', label: 'Crioprecipitado' },
+];
+
+const notificationMediumOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'SISTEMA', label: 'Sistema' },
+  { value: 'TELEFONO', label: 'Teléfono' },
+  { value: 'PRESENCIAL', label: 'Presencial' },
+  { value: 'RADIO', label: 'Radio' },
+];
+
+const emergencyConsultationServiceOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'MEDICINA_INTERNA', label: 'Medicina interna' },
+  { value: 'CIRUGIA_GENERAL', label: 'Cirugía general' },
+  { value: 'TRAUMATOLOGIA', label: 'Traumatología' },
+  { value: 'GINECO_OBSTETRICIA', label: 'Gineco-obstetricia' },
+  { value: 'PEDIATRIA', label: 'Pediatría' },
+  { value: 'TERAPIA_INTENSIVA', label: 'Terapia intensiva' },
+  { value: 'CARDIOLOGIA', label: 'Cardiología' },
+  { value: 'NEUROLOGIA', label: 'Neurología' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const consultationPriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'INMEDIATA', label: 'Inmediata (≤30 min)' },
+  { value: 'URGENTE', label: 'Urgente (<1 h)' },
+  { value: 'PREFERENTE', label: 'Preferente (<4 h)' },
+  { value: 'DIFERIDA', label: 'Diferida' },
+];
+
+const consultationStatusOptions: EpisodeFieldOption[] = [
+  { value: 'PENDIENTE', label: 'Pendiente' },
+  { value: 'RECIBIDA', label: 'Recibida' },
+  { value: 'EN_PROCESO', label: 'En proceso' },
+  { value: 'RESPONDIDA', label: 'Respondida' },
+  { value: 'CERRADA', label: 'Cerrada' },
+];
+
+const consultationDecisionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin decisión' },
+  { value: 'ACEPTADA', label: 'Aceptada' },
+  { value: 'RECHAZADA', label: 'Rechazada' },
+  { value: 'DIFERIDA', label: 'Diferida' },
+];
+
+const emergencyDischargeTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ALTA_DOMICILIO', label: 'Alta a domicilio' },
+  { value: 'HOSPITALIZACION', label: 'Hospitalización' },
+  { value: 'REFERENCIA_TRASLADO', label: 'Referencia / traslado' },
+  { value: 'DEFUNCION', label: 'Defunción' },
+];
+
+const emergencyDischargeDestinationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'DOMICILIO', label: 'Domicilio' },
+  { value: 'HOSPITALIZACION', label: 'Hospitalización' },
+  { value: 'UNIDAD_REFERENCIA', label: 'Unidad de referencia' },
+  { value: 'MORTUORIO', label: 'Mortuorio' },
+];
+
+const emergencyDischargeConditionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESTABLE', label: 'Estable' },
+  { value: 'GRAVE', label: 'Grave' },
+  { value: 'CRITICO', label: 'Crítico' },
+  { value: 'FALLECIDO', label: 'Fallecido' },
+];
+
+const incapacityTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Sin especificar' },
+  { value: 'INICIAL', label: 'Inicial' },
+  { value: 'SUBSECUENTE', label: 'Subsecuente' },
+  { value: 'RIESGO_TRABAJO', label: 'Riesgo de trabajo' },
+];
+
+const glasgowEyeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '4', label: '4 - Espontánea' },
+  { value: '3', label: '3 - A la voz' },
+  { value: '2', label: '2 - Al dolor' },
+  { value: '1', label: '1 - Ninguna' },
+];
+
+const glasgowVerbalOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '5', label: '5 - Orientada' },
+  { value: '4', label: '4 - Confusa' },
+  { value: '3', label: '3 - Palabras inapropiadas' },
+  { value: '2', label: '2 - Sonidos incomprensibles' },
+  { value: '1', label: '1 - Ninguna' },
+];
+
+const glasgowMotorOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: '6', label: '6 - Obedece órdenes' },
+  { value: '5', label: '5 - Localiza dolor' },
+  { value: '4', label: '4 - Retira al dolor' },
+  { value: '3', label: '3 - Flexión anormal' },
+  { value: '2', label: '2 - Extensión anormal' },
+  { value: '1', label: '1 - Ninguna' },
 ];
 
 const clinicalStateOptions: EpisodeFieldOption[] = [
@@ -1113,6 +1393,14 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Ingreso, prioridad, tiempos y estado inicial.',
       sections: [
         {
+          key: 'triage_tipo',
+          title: 'Tipo de registro',
+          fields: [
+            { key: 'tipoTriage', label: 'Tipo de triage', type: 'readonly' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
           key: 'triage_prioridad',
           title: 'Sistema de triage y prioridad',
           fields: [
@@ -1128,62 +1416,138 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               ],
             },
             {
-              key: 'prioridadTriage',
-              label: 'Prioridad',
+              key: 'nivelPrioridadTriage',
+              label: 'Nivel de prioridad 1-5',
               type: 'select',
-              options: priorityOptions,
+              options: triagePriorityOptions,
+            },
+            { key: 'tiempoObjetivoAtencion', label: 'Tiempo objetivo de atención', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_llegada',
+          title: 'Datos de llegada y tiempos',
+          fields: [
+            { key: 'fechaLlegada', label: 'Fecha de llegada', type: 'datetime-local' },
+            { key: 'horaLlegada', label: 'Hora de llegada', type: 'datetime-local' },
+            { key: 'horaTriage', label: 'Hora de triage', type: 'datetime-local' },
+            { key: 'horaPrimerContactoMedico', label: 'Hora primer contacto médico', type: 'datetime-local' },
+            { key: 'tiempoEspera', label: 'Tiempo de espera', type: 'readonly' },
+            {
+              key: 'modoLlegada',
+              label: 'Modo de llegada',
+              type: 'select',
+              options: triageArrivalModeOptions,
+            },
+            { key: 'acompanante', label: 'Acompañante', type: 'text' },
+          ],
+        },
+        {
+          key: 'triage_motivo',
+          title: 'Motivo de urgencia',
+          fields: [
+            { key: 'motivoPrincipal', label: 'Motivo principal', type: 'text' },
+            {
+              key: 'categoriaMotivo',
+              label: 'Categoría',
+              type: 'select',
+              options: triageCategoryOptions,
             },
             {
-              key: 'datosLlegadaTiempos',
-              label: 'Datos de llegada y tiempos',
-              type: 'textarea',
-            },
-            {
-              key: 'motivoUrgencia',
-              label: 'Motivo de urgencia estructurado',
+              key: 'descripcionMotivo',
+              label: 'Descripción',
               type: 'textarea',
             },
           ],
         },
         {
-          key: 'triage_clinico',
-          title: 'Estado clínico inicial',
+          key: 'triage_discriminadores',
+          title: 'Discriminadores clínicos',
           fields: [
-            {
-              key: 'discriminadoresClinicos',
-              label: 'Discriminadores clínicos',
-              type: 'textarea',
-            },
-            {
-              key: 'signosVitalesTriage',
-              label: 'Signos vitales en triage',
-              type: 'textarea',
-            },
-            {
-              key: 'soporteClinicoEstado',
-              label: 'Soporte clínico y estado',
-              type: 'textarea',
-            },
-            {
-              key: 'escalasEvaluacion',
-              label: 'Escalas de evaluación / NEWS2',
-              type: 'textarea',
-            },
-            {
-              key: 'alertasAutomaticas',
-              label: 'Alertas automáticas',
-              type: 'textarea',
-            },
-            {
-              key: 'destinoReevaluacion',
-              label: 'Destino y reevaluación',
-              type: 'textarea',
-            },
-            {
-              key: 'responsableTriage',
-              label: 'Responsable de triage',
-              type: 'textarea',
-            },
+            { key: 'discDolorToracico', label: 'Dolor torácico', type: 'checkbox' },
+            { key: 'discDisneaSevera', label: 'Disnea severa', type: 'checkbox' },
+            { key: 'discSangradoActivo', label: 'Sangrado activo', type: 'checkbox' },
+            { key: 'discAlteracionConciencia', label: 'Alteración de conciencia', type: 'checkbox' },
+            { key: 'discSepsis', label: 'Sospecha de sepsis', type: 'checkbox' },
+            { key: 'discTraumaMayor', label: 'Trauma mayor', type: 'checkbox' },
+            { key: 'banderaRojaAutomatica', label: 'Bandera roja automática', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_signos_vitales',
+          title: 'Signos vitales',
+          fields: [
+            { key: 'taSistolica', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolica', label: 'TA diastólica', type: 'number' },
+            { key: 'fc', label: 'FC', type: 'number' },
+            { key: 'fr', label: 'FR', type: 'number' },
+            { key: 'temp', label: 'Temp', type: 'number' },
+            { key: 'spo2', label: 'SpO2', type: 'number' },
+            { key: 'peso', label: 'Peso', type: 'number' },
+            { key: 'glucosa', label: 'Glucosa', type: 'number' },
+            { key: 'eva', label: 'EVA', type: 'number' },
+            { key: 'llenadoCapilar', label: 'Llenado capilar', type: 'text' },
+          ],
+        },
+        {
+          key: 'triage_estado_rapido',
+          title: 'Estado clínico rápido',
+          fields: [
+            { key: 'viaAerea', label: 'Vía aérea', type: 'select', options: normalAlteredOptions },
+            { key: 'estadoHemodinamico', label: 'Estado hemodinámico', type: 'select', options: clinicalStateOptions },
+            { key: 'estadoNeurologico', label: 'Estado neurológico', type: 'select', options: normalAlteredOptions },
+          ],
+        },
+        {
+          key: 'triage_glasgow',
+          title: 'Glasgow',
+          fields: [
+            { key: 'glasgowE', label: 'E', type: 'select', options: glasgowEyeOptions },
+            { key: 'glasgowV', label: 'V', type: 'select', options: glasgowVerbalOptions },
+            { key: 'glasgowM', label: 'M', type: 'select', options: glasgowMotorOptions },
+            { key: 'glasgowTotal', label: 'Total', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_news_alertas',
+          title: 'NEWS2 y alertas automáticas',
+          fields: [
+            { key: 'news2Total', label: 'NEWS2', type: 'readonly' },
+            { key: 'alertasAutomaticas', label: 'Alertas automáticas', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'triage_destino',
+          title: 'Destino y reevaluación',
+          fields: [
+            { key: 'destinoInicial', label: 'Destino inicial', type: 'select', options: triageDestinationOptions },
+            { key: 'reevaluacion', label: 'Reevaluación', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'triage_responsable_procedencia',
+          title: 'Responsable y procedencia',
+          fields: [
+            { key: 'responsableTriage', label: 'Responsable', type: 'readonly' },
+            { key: 'procedenciaAdministrativa', label: 'Procedencia', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'triage_estado_inicial',
+          title: 'Estado inicial',
+          fields: [
+            { key: 'estadoGeneral', label: 'Estado general', type: 'textarea' },
+            { key: 'estadoMental', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
+            { key: 'riesgoVital', label: 'Riesgo vital', type: 'select', options: riskClassificationOptions },
+          ],
+        },
+        {
+          key: 'triage_legal',
+          title: 'Datos legales',
+          fields: [
+            { key: 'triageLegalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarTriage', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -1194,52 +1558,143 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Subjetivo, objetivo, análisis, plan y resolución inicial.',
       sections: [
         {
-          key: 'soap_inicial',
-          title: 'Nota inicial de urgencias',
+          key: 'nota_inicial_tipo',
+          title: 'Tipo de registro',
           fields: [
-            { key: 'subjetivoInicial', label: 'S - Subjetivo', type: 'textarea' },
-            {
-              key: 'objetivoInicial',
-              label: 'O - Objetivo / exploración física',
-              type: 'textarea',
-            },
-            {
-              key: 'analisisInicial',
-              label: 'A - Análisis / escalas / diagnóstico',
-              type: 'textarea',
-            },
-            { key: 'planInicial', label: 'P - Plan', type: 'textarea' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
           ],
         },
         {
-          key: 'complementos_iniciales',
-          title: 'Complementos',
+          key: 'nota_inicial_subjetivo',
+          title: 'S - Subjetivo',
+          fields: [
+            { key: 'motivoAtencion', label: 'Motivo de atención', type: 'textarea' },
+            { key: 'horaInicioSintomas', label: 'Hora inicio síntomas', type: 'datetime-local' },
+            { key: 'tipoEvento', label: 'Tipo evento', type: 'select', options: emergencyEventTypeOptions },
+            { key: 'modoLlegadaNota', label: 'Modo de llegada', type: 'select', options: triageArrivalModeOptions },
+            { key: 'evolucionSubjetiva', label: 'Evolución', type: 'textarea' },
+            { key: 'factoresSubjetivos', label: 'Factores', type: 'textarea' },
+            { key: 'eventosPrevios', label: 'Eventos previos', type: 'textarea' },
+            { key: 'antecedentesNota', label: 'Antecedentes', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'nota_inicial_objetivo',
+          title: 'O - Objetivo',
           fields: [
             {
-              key: 'consentimientoInicial',
-              label: 'Consentimiento informado',
+              key: 'exploracionFisicaNota',
+              label: 'Exploración física',
               type: 'textarea',
             },
+            { key: 'taSistolicaNota', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolicaNota', label: 'TA diastólica', type: 'number' },
+            { key: 'fcNota', label: 'FC', type: 'number' },
+            { key: 'frNota', label: 'FR', type: 'number' },
+            { key: 'tempNota', label: 'Temp', type: 'number' },
+            { key: 'spo2Nota', label: 'SpO2', type: 'number' },
+            { key: 'evaNota', label: 'EVA', type: 'number' },
+            { key: 'glucosaNota', label: 'Glucosa', type: 'number' },
+            { key: 'glasgowNota', label: 'Glasgow', type: 'number' },
+          ],
+        },
+        {
+          key: 'nota_inicial_analisis',
+          title: 'A - Análisis',
+          fields: [
+            { key: 'killipNota', label: 'Killip', type: 'select', options: killipOptions },
+            { key: 'timiNota', label: 'TIMI', type: 'select', options: scoreRiskOptions },
+            { key: 'heartNota', label: 'HEART', type: 'select', options: scoreRiskOptions },
+            { key: 'riesgoVitalNota', label: 'Riesgo vital', type: 'select', options: riskClassificationOptions },
             {
-              key: 'tiemposAtencion',
-              label: 'Tiempos de atención',
+              key: 'estudiosAnalisis',
+              label: 'Estudios',
               type: 'textarea',
             },
-            {
-              key: 'pronosticoEstado',
-              label: 'Pronóstico y estado',
-              type: 'textarea',
-            },
+            { key: 'diagnosticoNota', label: 'Diagnóstico', type: 'text' },
+            { key: 'cie10Nota', label: 'CIE-10', type: 'text' },
+            { key: 'estadoClinicoNota', label: 'Estado clínico', type: 'select', options: clinicalStatusOptions },
+          ],
+        },
+        {
+          key: 'nota_inicial_plan',
+          title: 'P - Plan',
+          fields: [
+            { key: 'medicamentosPlan', label: 'Medicamentos', type: 'textarea' },
+            { key: 'estudiosPlan', label: 'Estudios', type: 'textarea' },
+            { key: 'intervencionesPlan', label: 'Intervenciones', type: 'textarea' },
+            { key: 'interconsultasPlan', label: 'Interconsultas', type: 'textarea' },
+            { key: 'destinoPlan', label: 'Destino', type: 'select', options: triageDestinationOptions },
+            { key: 'horaDecision', label: 'Hora decisión', type: 'datetime-local' },
+          ],
+        },
+        {
+          key: 'nota_inicial_consentimiento',
+          title: 'Consentimiento',
+          fields: [
+            { key: 'consentimientoInicial', label: 'Consentimiento informado', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'nota_inicial_tiempos',
+          title: 'Tiempos',
+          fields: [
+            { key: 'llegadaVisual', label: 'Llegada', type: 'readonly' },
+            { key: 'triageVisual', label: 'Triage', type: 'readonly' },
+            { key: 'inicioAtencionVisual', label: 'Inicio atención', type: 'readonly' },
+            { key: 'decisionVisual', label: 'Decisión', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'nota_inicial_alertas',
+          title: 'Alertas',
+          fields: [
+            { key: 'alertasTriage', label: 'Alertas de triage', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'nota_inicial_pronostico',
+          title: 'Pronóstico',
+          fields: [
+            { key: 'pronosticoNota', label: 'Pronóstico', type: 'textarea' },
+            { key: 'estadoMentalNota', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
+            { key: 'resumenPronostico', label: 'Resumen', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'nota_inicial_procedimientos',
+          title: 'Procedimientos',
+          fields: [
             {
               key: 'procedimientosUrgencias',
-              label: 'Procedimientos realizados en urgencias',
-              type: 'textarea',
+              label: 'Procedimientos',
+              type: 'object-array',
+              itemAddLabel: 'Agregar procedimiento',
+              itemFields: [
+                { key: 'procedimiento', label: 'Procedimiento', type: 'text' },
+                { key: 'hora', label: 'Hora', type: 'datetime-local' },
+                { key: 'responsable', label: 'Responsable', type: 'text' },
+                { key: 'observaciones', label: 'Observaciones', type: 'text' },
+              ],
             },
-            {
-              key: 'destinoResolucionInicial',
-              label: 'Destino y resolución',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'nota_inicial_destino',
+          title: 'Destino',
+          fields: [
+            { key: 'servicioDestino', label: 'Servicio destino', type: 'text' },
+            { key: 'unidadDestino', label: 'Unidad', type: 'text' },
+            { key: 'medicoReceptor', label: 'Médico receptor', type: 'text' },
+          ],
+        },
+        {
+          key: 'nota_inicial_firma',
+          title: 'Firma',
+          fields: [
+            { key: 'notaInicialLegalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'notaInicialLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarNotaInicial', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -1250,37 +1705,136 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Seguimiento clínico, órdenes, estudios y eventos.',
       sections: [
         {
-          key: 'evolucion_urgencias',
-          title: 'Evolución clínica',
+          key: 'evolucion_urg_tipo',
+          title: 'Tipo de registro',
           fields: [
-            { key: 'datosNota', label: 'Datos de la nota', type: 'textarea' },
-            { key: 'subjetivoEvolucion', label: 'S - Subjetivo', type: 'textarea' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_datos',
+          title: 'Datos de la nota',
+          fields: [
+            { key: 'fechaEvolucionUrg', label: 'Fecha', type: 'date' },
+            { key: 'horaEvolucionUrg', label: 'Hora', type: 'time' },
+            { key: 'diaEvolucionUrg', label: 'Día de evolución', type: 'readonly' },
+            { key: 'estadoClinicoEvolucionUrg', label: 'Estado clínico', type: 'select', options: clinicalStatusOptions },
+          ],
+        },
+        {
+          key: 'evolucion_urg_subjetivo',
+          title: 'S - Subjetivo',
+          fields: [
+            { key: 'referenciaPacienteUrg', label: 'Referencia del paciente', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_objetivo',
+          title: 'O - Objetivo',
+          fields: [
+            { key: 'taSistolicaEvolUrg', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolicaEvolUrg', label: 'TA diastólica', type: 'number' },
+            { key: 'fcEvolUrg', label: 'FC', type: 'number' },
+            { key: 'frEvolUrg', label: 'FR', type: 'number' },
+            { key: 'tempEvolUrg', label: 'Temp', type: 'number' },
+            { key: 'spo2EvolUrg', label: 'SpO2', type: 'number' },
+            { key: 'evaEvolUrg', label: 'EVA', type: 'number' },
+            { key: 'glucosaEvolUrg', label: 'Glucosa', type: 'number' },
+            { key: 'glasgowEvolUrg', label: 'Glasgow', type: 'number' },
+            { key: 'exploracionDirigidaUrg', label: 'Exploración dirigida', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_resultados',
+          title: 'Resultados de estudios',
+          fields: [
+            { key: 'resultadosEstudiosIntegrados', label: 'Resultados integrados', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_analisis',
+          title: 'A - Análisis',
+          fields: [
             {
-              key: 'objetivoEvolucion',
-              label: 'O - Objetivo / signos y exploración',
-              type: 'textarea',
+              key: 'diagnosticosEvolucionUrg',
+              label: 'Diagnósticos',
+              type: 'object-array',
+              itemAddLabel: 'Agregar diagnóstico',
+              disableItemRemoval: true,
+              itemFields: [
+                { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+                { key: 'cie10', label: 'CIE-10', type: 'text' },
+                { key: 'estado', label: 'Estado', type: 'select', options: diagnosisStatusOptions },
+              ],
             },
-            {
-              key: 'resultadosEstudios',
-              label: 'Resultados de estudios',
-              type: 'textarea',
-            },
-            {
-              key: 'analisisEvolucion',
-              label: 'A - Análisis / diagnósticos',
-              type: 'textarea',
-            },
-            {
-              key: 'eventosAdversosComplicaciones',
-              label: 'Eventos adversos y complicaciones',
-              type: 'textarea',
-            },
-            { key: 'planEvolucionUrg', label: 'P - Plan', type: 'textarea' },
-            {
-              key: 'justificacionClinicaNom004',
-              label: 'Justificación clínica (NOM-004)',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'evolucion_urg_eventos',
+          title: 'Eventos adversos / complicaciones',
+          fields: [
+            { key: 'eventosAdversosUrg', label: 'Eventos adversos', type: 'textarea' },
+            { key: 'complicacionesUrg', label: 'Complicaciones', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_plan',
+          title: 'P - Plan',
+          fields: [
+            { key: 'tratamientoEvolUrg', label: 'Tratamiento', type: 'textarea' },
+            { key: 'estudiosPendientesUrg', label: 'Estudios pendientes', type: 'textarea' },
+            { key: 'interconsultasEvolUrg', label: 'Interconsultas', type: 'textarea' },
+            { key: 'seguimientoEvolUrg', label: 'Seguimiento', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_legales',
+          title: 'Campos legales',
+          fields: [
+            { key: 'consentimientoVigenteUrg', label: 'Consentimiento vigente', type: 'select', options: consentStatusOptions },
+            { key: 'informacionBrindadaUrg', label: 'Información brindada', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_justificacion',
+          title: 'Justificación clínica (NOM-004)',
+          fields: [
+            { key: 'justificacionClinicaNom004', label: 'Justificación clínica', type: 'textarea' },
+            { key: 'respuestaTratamientoUrg', label: 'Respuesta al tratamiento', type: 'select', options: treatmentResponseOptions },
+          ],
+        },
+        {
+          key: 'evolucion_urg_enfermeria',
+          title: 'Hoja de enfermería',
+          fields: [
+            { key: 'enfermeriaHabitusUrg', label: 'Hábitus', type: 'readonly' },
+            { key: 'enfermeriaDolorUrg', label: 'Dolor', type: 'readonly' },
+            { key: 'enfermeriaRiesgoCaidasUrg', label: 'Riesgo de caídas', type: 'readonly' },
+            { key: 'enfermeriaMedicacionUrg', label: 'Medicación administrada', type: 'readonly' },
+            { key: 'enfermeriaProcedimientosUrg', label: 'Procedimientos', type: 'readonly' },
+            { key: 'enfermeriaObservacionesUrg', label: 'Observaciones', type: 'readonly' },
+            { key: 'enfermeriaResponsableUrg', label: 'Responsable + cédula', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_auxiliares',
+          title: 'Servicios auxiliares',
+          fields: [
+            { key: 'auxEcgUrg', label: 'ECG', type: 'readonly' },
+            { key: 'auxLaboratoriosUrg', label: 'Laboratorios', type: 'readonly' },
+            { key: 'auxInterpretacionUrg', label: 'Interpretación', type: 'readonly' },
+            { key: 'auxIncidentesUrg', label: 'Incidentes', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'evolucion_urg_firma',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'evolucionUrgLegalNombre', label: 'Nombre', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'evolucionUrgLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'evolucionUrgLegalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'evolucionUrgLegalLugar', label: 'Lugar', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarEvolucionUrg', label: 'Firma electrónica', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -1291,41 +1845,118 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Tratamiento, medicamentos, estudios y trazabilidad.',
       sections: [
         {
-          key: 'ordenes_urgencias',
-          title: 'Órdenes médicas',
+          key: 'ordenes_urg_tipo',
+          title: 'Tipo de registro',
           fields: [
-            { key: 'hojaEnfermeria', label: 'Hoja de enfermería', type: 'textarea' },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_medicamentos',
+          title: 'Medicamentos',
+          fields: [
             {
-              key: 'serviciosAuxiliaresDiagnostico',
-              label: 'Servicios auxiliares de diagnóstico',
-              type: 'textarea',
+              key: 'medicamentosOrdenesUrg',
+              label: 'Medicamentos',
+              type: 'object-array',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'dosis', label: 'Dosis', type: 'text' },
+                { key: 'via', label: 'Vía', type: 'select', options: administrationRouteOptions },
+                { key: 'frecuencia', label: 'Frecuencia', type: 'select', options: orderFrequencyOptions },
+                { key: 'duracion', label: 'Duración', type: 'select', options: orderDurationOptions },
+                { key: 'indicacion', label: 'Indicación', type: 'text' },
+                { key: 'prioridad', label: 'Prioridad', type: 'select', options: orderPriorityOptions },
+              ],
             },
-            { key: 'medicamentosUrg', label: 'Medicamentos', type: 'textarea' },
+            { key: 'alertaAlergiasOrdenes', label: 'Alergias', type: 'readonly' },
+            { key: 'alertaDuplicidadOrdenes', label: 'Duplicidad terapéutica', type: 'readonly' },
+            { key: 'alertaDosisOrdenes', label: 'Dosis segura', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_soluciones',
+          title: 'Soluciones intravenosas',
+          fields: [
             {
-              key: 'solucionesIntravenosas',
+              key: 'solucionesIntravenosasOrdenes',
               label: 'Soluciones intravenosas',
-              type: 'textarea',
+              type: 'object-array',
+              itemAddLabel: 'Agregar solución',
+              itemFields: [
+                { key: 'tipoSolucion', label: 'Tipo de solución', type: 'text' },
+                { key: 'volumen', label: 'Volumen', type: 'number' },
+                { key: 'velocidad', label: 'Velocidad', type: 'text' },
+                { key: 'duracion', label: 'Duración', type: 'select', options: orderDurationOptions },
+                { key: 'medicamentoAnadido', label: 'Medicamento añadido', type: 'text' },
+                { key: 'indicaciones', label: 'Indicaciones', type: 'text' },
+              ],
             },
+          ],
+        },
+        {
+          key: 'ordenes_urg_estudios',
+          title: 'Estudios solicitados',
+          fields: [
             {
-              key: 'estudiosSolicitadosUrg',
+              key: 'estudiosSolicitadosOrdenes',
               label: 'Estudios solicitados',
-              type: 'textarea',
+              type: 'object-array',
+              itemAddLabel: 'Agregar estudio',
+              itemFields: [
+                { key: 'tipo', label: 'Tipo', type: 'select', options: studyTypeOptions },
+                { key: 'estudio', label: 'Estudio', type: 'text' },
+                { key: 'prioridad', label: 'Prioridad', type: 'select', options: orderPriorityOptions },
+                { key: 'justificacion', label: 'Justificación', type: 'text' },
+                { key: 'frecuencia', label: 'Frecuencia', type: 'text' },
+                { key: 'estado', label: 'Estado', type: 'select', options: orderStatusOptions },
+              ],
             },
-            {
-              key: 'cuidadosEspeciales',
-              label: 'Cuidados especiales',
-              type: 'textarea',
-            },
-            {
-              key: 'estadoOrdenesTrazabilidad',
-              label: 'Estado de órdenes y trazabilidad',
-              type: 'textarea',
-            },
-            {
-              key: 'registroTransfusion',
-              label: 'Registro de transfusión',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'ordenes_urg_cuidados',
+          title: 'Cuidados especiales',
+          fields: [
+            { key: 'monitoreoOrdenes', label: 'Monitoreo', type: 'textarea' },
+            { key: 'oxigenoTipoOrdenes', label: 'Oxígeno - tipo', type: 'select', options: oxygenTypeOptions },
+            { key: 'oxigenoFlujoOrdenes', label: 'Oxígeno - flujo', type: 'text' },
+            { key: 'oxigenoMetaOrdenes', label: 'Oxígeno - meta', type: 'text' },
+            { key: 'dietaOrdenes', label: 'Dieta', type: 'select', options: dietOptions },
+            { key: 'reposoOrdenes', label: 'Reposo', type: 'select', options: restOptions },
+            { key: 'controlLiquidosOrdenes', label: 'Control de líquidos', type: 'select', options: fluidControlOptions },
+          ],
+        },
+        {
+          key: 'ordenes_urg_trazabilidad',
+          title: 'Estado de órdenes y trazabilidad',
+          fields: [
+            { key: 'estadoOrdenesTrazabilidad', label: 'Trazabilidad', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_transfusion',
+          title: 'Registro de transfusión',
+          fields: [
+            { key: 'transfusionAplica', label: 'Aplica transfusión', type: 'checkbox' },
+            { key: 'transfusionTipoHemoderivado', label: 'Tipo de hemoderivado', type: 'select', options: transfusionProductOptions },
+            { key: 'transfusionVolumen', label: 'Volumen', type: 'number' },
+            { key: 'transfusionHoraInicio', label: 'Hora inicio', type: 'datetime-local' },
+            { key: 'transfusionHoraFin', label: 'Hora fin', type: 'datetime-local' },
+            { key: 'transfusionReacciones', label: 'Reacciones adversas', type: 'textarea' },
+            { key: 'transfusionResponsable', label: 'Responsable', type: 'text' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_legal',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'ordenesLegalMedico', label: 'Nombre del médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'ordenesLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'ordenesLegalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'ordenesLegalLugar', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarOrdenesUrg', label: 'Firma electrónica', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -1336,39 +1967,82 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Solicitud, respuesta y auditoría de tiempos.',
       sections: [
         {
-          key: 'interconsulta_urg',
-          title: 'Interconsulta',
+          key: 'interconsulta_tipo',
+          title: 'Tipo de registro',
           fields: [
-            {
-              key: 'solicitudInterconsulta',
-              label: 'Solicitud de interconsulta',
-              type: 'textarea',
-            },
-            {
-              key: 'prioridadTiemposInterconsulta',
-              label: 'Prioridad y tiempos',
-              type: 'textarea',
-            },
-            {
-              key: 'motivoResumenClinicoInterconsulta',
-              label: 'Motivo y resumen clínico',
-              type: 'textarea',
-            },
-            {
-              key: 'respuestaInterconsultante',
-              label: 'Respuesta del interconsultante',
-              type: 'textarea',
-            },
-            {
-              key: 'decisionCierreInterconsulta',
-              label: 'Decisión y cierre',
-              type: 'textarea',
-            },
-            {
-              key: 'auditoriaTiemposInterconsulta',
-              label: 'Auditoría de tiempos',
-              type: 'textarea',
-            },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'interconsulta_solicitud',
+          title: 'Solicitud de interconsulta',
+          fields: [
+            { key: 'fechaInterconsulta', label: 'Fecha', type: 'date' },
+            { key: 'horaInterconsulta', label: 'Hora', type: 'time' },
+            { key: 'medioNotificacionInterconsulta', label: 'Medio de notificación', type: 'select', options: notificationMediumOptions },
+            { key: 'medicoSolicitanteInterconsulta', label: 'Médico solicitante', type: 'readonly' },
+            { key: 'cedulaSolicitanteInterconsulta', label: 'Cédula profesional', type: 'readonly' },
+            { key: 'servicioSolicitanteInterconsulta', label: 'Servicio solicitante', type: 'readonly' },
+            { key: 'servicioInterconsultado', label: 'Servicio interconsultado', type: 'select', options: emergencyConsultationServiceOptions },
+          ],
+        },
+        {
+          key: 'interconsulta_prioridad',
+          title: 'Prioridad y tiempos',
+          fields: [
+            { key: 'prioridadInterconsulta', label: 'Prioridad', type: 'select', options: consultationPriorityOptions },
+            { key: 'tiempoObjetivoInterconsulta', label: 'Tiempo objetivo', type: 'readonly' },
+            { key: 'estatusInterconsulta', label: 'Estatus', type: 'select', options: consultationStatusOptions },
+          ],
+        },
+        {
+          key: 'interconsulta_motivo',
+          title: 'Motivo y resumen clínico',
+          fields: [
+            { key: 'motivoInterconsulta', label: 'Motivo de interconsulta', type: 'textarea' },
+            { key: 'resumenClinicoInterconsulta', label: 'Resumen clínico relevante', type: 'textarea' },
+            { key: 'diagnosticoRelacionadoInterconsulta', label: 'Diagnóstico relacionado', type: 'text' },
+            { key: 'cie10Interconsulta', label: 'CIE-10', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'interconsulta_respuesta',
+          title: 'Respuesta del interconsultante',
+          fields: [
+            { key: 'medicoInterconsultante', label: 'Médico interconsultante', type: 'text' },
+            { key: 'cedulaInterconsultante', label: 'Cédula', type: 'text' },
+            { key: 'diagnosticoInterconsultante', label: 'Diagnóstico del interconsultante', type: 'textarea' },
+            { key: 'conductaSugerida', label: 'Conducta sugerida', type: 'textarea' },
+            { key: 'seguimientoRecomendado', label: 'Seguimiento recomendado', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'interconsulta_decision',
+          title: 'Decisión y cierre',
+          fields: [
+            { key: 'decisionInterconsulta', label: 'Decisión', type: 'select', options: consultationDecisionOptions },
+            { key: 'ordenesAsociadasInterconsulta', label: 'Estudios / órdenes asociados', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'interconsulta_auditoria',
+          title: 'Auditoría de tiempos',
+          fields: [
+            { key: 'horaSolicitudInterconsulta', label: 'Hora solicitud', type: 'readonly' },
+            { key: 'horaRecepcionInterconsulta', label: 'Hora recepción', type: 'datetime-local' },
+            { key: 'horaRespuestaInterconsulta', label: 'Hora respuesta', type: 'datetime-local' },
+            { key: 'tiempoRespuestaInterconsulta', label: 'Tiempo de respuesta', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'interconsulta_legal',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'interconsultaLegalNombre', label: 'Nombre del profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'interconsultaLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'interconsultaLegalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'interconsultaLegalLugar', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarInterconsulta', label: 'Firma electrónica', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -1379,64 +2053,128 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Resumen clínico, indicaciones, educación y eventos legales si aplican.',
       sections: [
         {
-          key: 'egreso_urgencias',
-          title: 'Egreso',
+          key: 'egreso_urg_tipo',
+          title: 'Tipo de registro',
           fields: [
-            {
-              key: 'tipoDestinoEgreso',
-              label: 'Tipo y destino de egreso',
-              type: 'textarea',
-            },
-            {
-              key: 'resumenClinicoEgreso',
-              label: 'Resumen clínico estructurado',
-              type: 'textarea',
-            },
-            {
-              key: 'indicacionesEgresoUrg',
-              label: 'Indicaciones de egreso',
-              type: 'textarea',
-            },
-            {
-              key: 'signosAlarmaUrg',
-              label: 'Signos de alarma',
-              type: 'textarea',
-            },
-            {
-              key: 'recetaIncapacidadUrg',
-              label: 'Receta e incapacidad',
-              type: 'textarea',
-            },
-            {
-              key: 'educacionPacienteUrg',
-              label: 'Educación al paciente',
-              type: 'textarea',
-            },
-            {
-              key: 'responsableEgresoUrg',
-              label: 'Responsable del egreso',
-              type: 'textarea',
-            },
-            {
-              key: 'referenciaTrasladoUrg',
-              label: 'Referencia / traslado',
-              type: 'textarea',
-            },
-            {
-              key: 'consentimientoEgresoUrg',
-              label: 'Consentimiento informado',
-              type: 'textarea',
-            },
-            {
-              key: 'avisoMinisterioPublico',
-              label: 'Aviso al Ministerio Público',
-              type: 'textarea',
-            },
-            {
-              key: 'certificadoDefuncion',
-              label: 'Certificado de defunción / muerte fetal',
-              type: 'textarea',
-            },
+            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'egreso_urg_destino',
+          title: 'Tipo y destino de egreso',
+          fields: [
+            { key: 'tipoEgresoUrg', label: 'Tipo de egreso', type: 'select', options: emergencyDischargeTypeOptions },
+            { key: 'destinoEgresoUrg', label: 'Destino', type: 'select', options: emergencyDischargeDestinationOptions },
+            { key: 'servicioReceptorUrg', label: 'Servicio receptor', type: 'select', options: emergencyConsultationServiceOptions },
+            { key: 'medicoReceptorUrg', label: 'Médico receptor', type: 'text' },
+            { key: 'fechaHoraEgresoUrg', label: 'Fecha y hora de egreso', type: 'datetime-local' },
+          ],
+        },
+        {
+          key: 'egreso_urg_resumen',
+          title: 'Resumen clínico estructurado',
+          fields: [
+            { key: 'generarResumenEgresoUrg', label: 'Resumen automático', type: 'action', actionLabel: 'Generar resumen automático' },
+            { key: 'motivoIngresoEgresoUrg', label: 'Motivo de ingreso', type: 'textarea' },
+            { key: 'diagnosticoEgresoUrg', label: 'Diagnóstico de egreso', type: 'text' },
+            { key: 'cie10EgresoUrg', label: 'CIE-10', type: 'text' },
+            { key: 'manejoUrgenciasEgresoUrg', label: 'Manejo realizado en urgencias', type: 'textarea' },
+            { key: 'procedimientosRealizadosEgresoUrg', label: 'Procedimientos realizados', type: 'textarea' },
+            { key: 'evolucionEstanciaEgresoUrg', label: 'Evolución durante estancia', type: 'textarea' },
+            { key: 'estadoAlEgresoUrg', label: 'Estado al egreso', type: 'select', options: emergencyDischargeConditionOptions },
+          ],
+        },
+        {
+          key: 'egreso_urg_indicaciones',
+          title: 'Indicaciones de egreso',
+          fields: [
+            { key: 'medicamentosEgresoUrg', label: 'Medicamentos al egreso', type: 'textarea' },
+            { key: 'cuidadosGeneralesEgresoUrg', label: 'Cuidados generales', type: 'textarea' },
+            { key: 'cuidadosEspecificosEgresoUrg', label: 'Cuidados específicos', type: 'textarea' },
+            { key: 'dietaEgresoUrg', label: 'Dieta', type: 'text' },
+            { key: 'actividadFisicaEgresoUrg', label: 'Actividad física', type: 'textarea' },
+            { key: 'seguimientoEgresoUrg', label: 'Seguimiento', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_alarma',
+          title: 'Signos de alarma',
+          fields: [
+            { key: 'signosAlarmaEgresoUrg', label: 'Signos de alarma', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_receta_incapacidad',
+          title: 'Receta e incapacidad',
+          fields: [
+            { key: 'recetaAsociadaEgresoUrg', label: 'Receta médica asociada', type: 'readonly' },
+            { key: 'justificacionSinRecetaEgresoUrg', label: 'Justificación si no hay receta', type: 'textarea' },
+            { key: 'incapacidadOtorgadaUrg', label: 'Incapacidad otorgada', type: 'select', options: yesNoUnknownOptions },
+            { key: 'diasIncapacidadUrg', label: 'Días de incapacidad', type: 'number' },
+            { key: 'tipoIncapacidadUrg', label: 'Tipo de incapacidad', type: 'select', options: incapacityTypeOptions },
+          ],
+        },
+        {
+          key: 'egreso_urg_educacion',
+          title: 'Educación al paciente',
+          fields: [
+            { key: 'educacionOtorgadaEgresoUrg', label: 'Educación otorgada', type: 'textarea' },
+            { key: 'comprensionPacienteEgresoUrg', label: 'Comprensión del paciente', type: 'select', options: comprehensionOptions },
+          ],
+        },
+        {
+          key: 'egreso_urg_responsable',
+          title: 'Responsable del egreso',
+          fields: [
+            { key: 'medicoResponsableEgresoUrg', label: 'Médico responsable', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'cedulaResponsableEgresoUrg', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'especialidadResponsableEgresoUrg', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'lugarAtencionEgresoUrg', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'fechaHoraFirmaEgresoUrg', label: 'Fecha y hora de firma', type: 'readonly', inheritanceMode: 'system' },
+          ],
+        },
+        {
+          key: 'egreso_urg_traslado',
+          title: 'Referencia / Traslado',
+          fields: [
+            { key: 'unidadOrigenTrasladoUrg', label: 'Unidad origen', type: 'text' },
+            { key: 'unidadDestinoTrasladoUrg', label: 'Unidad destino', type: 'text' },
+            { key: 'signosVitalesTrasladoUrg', label: 'Signos vitales', type: 'textarea' },
+            { key: 'resumenTrasladoUrg', label: 'Resumen clínico', type: 'textarea' },
+            { key: 'diagnosticoTrasladoUrg', label: 'Diagnóstico', type: 'text' },
+            { key: 'tratamientoPrevioTrasladoUrg', label: 'Tratamiento previo', type: 'textarea' },
+            { key: 'condicionesTrasladoUrg', label: 'Condiciones de traslado', type: 'textarea' },
+            { key: 'medicoReceptorTrasladoUrg', label: 'Médico receptor', type: 'text' },
+          ],
+        },
+        {
+          key: 'egreso_urg_consentimiento',
+          title: 'Consentimiento informado',
+          fields: [
+            { key: 'procedimientoConsentimientoUrg', label: 'Procedimiento', type: 'text' },
+            { key: 'riesgosConsentimientoUrg', label: 'Riesgos', type: 'textarea' },
+            { key: 'beneficiosConsentimientoUrg', label: 'Beneficios', type: 'textarea' },
+            { key: 'autorizacionConsentimientoUrg', label: 'Autorización', type: 'textarea' },
+            { key: 'firmasConsentimientoUrg', label: 'Firmas', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_legales_condicionales',
+          title: 'Aviso MP / Defunción',
+          fields: [
+            { key: 'avisoMinisterioPublico', label: 'Aviso al Ministerio Público', type: 'textarea' },
+            { key: 'certificadoDefuncion', label: 'Certificado de defunción', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'egreso_urg_firma',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'egresoLegalNombre', label: 'Nombre del profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'egresoLegalCedula', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'egresoLegalEspecialidad', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'egresoLegalLugar', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarEgresoUrg', label: 'Firma electrónica', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
@@ -2420,6 +3158,14 @@ const consultationDocumentSectionDefinitions: Record<string, EpisodeSectionDefin
   ],
 };
 
+const emergencyDocumentTypeNames = [
+  'Solicitud de laboratorio',
+  'Solicitud de imagenología',
+  'Referencia / contrarreferencia',
+  'Consentimiento informado',
+  'Certificado / constancia',
+];
+
 const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
   {
     key: 'documento_legales',
@@ -2427,6 +3173,40 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
     description:
       'Los datos legales se completan desde el profesional responsable del episodio.',
     fields: [
+      {
+        key: 'tipoRegistro',
+        label: 'Tipo de registro',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoFecha',
+        label: 'Fecha',
+        type: 'date',
+      },
+      {
+        key: 'documentoHora',
+        label: 'Hora',
+        type: 'time',
+      },
+      {
+        key: 'documentoFolio',
+        label: 'Folio del documento',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoVersion',
+        label: 'Versión',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
+      {
+        key: 'documentoEstado',
+        label: 'Estado',
+        type: 'readonly',
+        inheritanceMode: 'system',
+      },
       {
         key: 'documentoInstitucionEmisora',
         label: 'Institución emisora',
@@ -2488,6 +3268,14 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
 
 export function getConsultationDocumentTypes() {
   return Object.keys(consultationDocumentSectionDefinitions);
+}
+
+export function getEpisodeDocumentTypes(encounterType: string) {
+  if (encounterType === 'EMERGENCY') {
+    return emergencyDocumentTypeNames;
+  }
+
+  return getConsultationDocumentTypes();
 }
 
 export function getConsultationDocumentTabDefinition(
