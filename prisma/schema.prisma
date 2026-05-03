@@ -236,6 +236,12 @@ model Tenant {
   hospitalEvolutions         HospitalEvolution[]
   hospitalEvolutionResults   HospitalEvolutionResult[]
   hospitalEvolutionDiagnoses HospitalEvolutionDiagnosis[]
+  hospitalMedicalOrders      HospitalMedicalOrder[]
+  hospitalOrderMedications   HospitalOrderMedication[]
+  hospitalOrderSolutions     HospitalOrderIntravenousSolution[]
+  hospitalOrderStudies       HospitalOrderRequestedStudy[]
+  hospitalOrderConsultations HospitalOrderConsultationRequest[]
+  hospitalOrderTraces        HospitalOrderTrace[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -482,6 +488,7 @@ model User {
   signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
   signedHospitalAdmissions HospitalAdmission[] @relation("HospitalAdmissionSigner")
   signedHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionSigner")
+  signedHospitalMedicalOrders HospitalMedicalOrder[] @relation("HospitalMedicalOrderSigner")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -778,6 +785,12 @@ model Patient {
   hospitalEvolutions HospitalEvolution[]
   hospitalEvolutionResults HospitalEvolutionResult[]
   hospitalEvolutionDiagnoses HospitalEvolutionDiagnosis[]
+  hospitalMedicalOrders HospitalMedicalOrder[]
+  hospitalOrderMedications HospitalOrderMedication[]
+  hospitalOrderSolutions HospitalOrderIntravenousSolution[]
+  hospitalOrderStudies HospitalOrderRequestedStudy[]
+  hospitalOrderConsultations HospitalOrderConsultationRequest[]
+  hospitalOrderTraces HospitalOrderTrace[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1204,6 +1217,12 @@ model Encounter {
   hospitalEvolutions   HospitalEvolution[]
   hospitalEvolutionResults HospitalEvolutionResult[]
   hospitalEvolutionDiagnoses HospitalEvolutionDiagnosis[]
+  hospitalMedicalOrders HospitalMedicalOrder[]
+  hospitalOrderMedications HospitalOrderMedication[]
+  hospitalOrderSolutions HospitalOrderIntravenousSolution[]
+  hospitalOrderStudies HospitalOrderRequestedStudy[]
+  hospitalOrderConsultations HospitalOrderConsultationRequest[]
+  hospitalOrderTraces HospitalOrderTrace[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1312,6 +1331,7 @@ model EncounterSectionRecord {
   emergencyConsultation EmergencyConsultation?
   hospitalAdmission HospitalAdmission?
   hospitalEvolution HospitalEvolution?
+  hospitalMedicalOrder HospitalMedicalOrder?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1981,6 +2001,229 @@ model HospitalEvolutionDiagnosis {
   @@index([hospitalEvolutionId])
   @@index([status])
   @@index([sourceDiagnosisId])
+}
+
+/// Indicaciones médicas hospitalarias versionadas y accionables.
+/// Separa decisiones operativas de la narrativa de evolución y deja listas las
+/// integraciones con farmacia, laboratorio, imagen, enfermería e interconsultas.
+model HospitalMedicalOrder {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  diet String?
+  restActivity String?
+  position String?
+  generalCare String?
+  nursingMonitoring String?
+  oxygen String?
+  fluidControl String?
+  indicationsStartTime String?
+  nextShiftSchedule String?
+  executorUserLabel String?
+
+  professionalName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+
+  signerUserId String?
+  signedAt DateTime?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("HospitalMedicalOrderSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  medications   HospitalOrderMedication[]
+  solutions     HospitalOrderIntravenousSolution[]
+  studies       HospitalOrderRequestedStudy[]
+  consultations HospitalOrderConsultationRequest[]
+  traces        HospitalOrderTrace[]
+
+  @@unique([encounterId, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signerUserId])
+}
+
+model HospitalOrderMedication {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  orderId String
+
+  medicationName String
+  dose String
+  route String
+  priority String?
+  frequency String
+  duration String
+  indication String?
+  pharmacyStatus String @default("PENDIENTE")
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  order     HospitalMedicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([orderId])
+  @@index([medicationName])
+  @@index([pharmacyStatus])
+}
+
+model HospitalOrderIntravenousSolution {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  orderId String
+
+  solutionType String
+  volumeMl Decimal @db.Decimal(10, 2)
+  rateMlHour Decimal? @db.Decimal(10, 2)
+  duration String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  order     HospitalMedicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([orderId])
+  @@index([solutionType])
+}
+
+model HospitalOrderRequestedStudy {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  orderId String
+
+  studyType String
+  priority String?
+  indication String?
+  systemStatus String @default("PENDIENTE")
+  targetModule String?
+  linkedRequestId String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  order     HospitalMedicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([orderId])
+  @@index([studyType])
+  @@index([systemStatus])
+  @@index([targetModule])
+  @@index([linkedRequestId])
+}
+
+model HospitalOrderConsultationRequest {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  orderId String
+
+  serviceName String
+  reason String?
+  priority String?
+  systemStatus String @default("PENDIENTE")
+  linkedConsultationId String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  order     HospitalMedicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([orderId])
+  @@index([serviceName])
+  @@index([systemStatus])
+  @@index([linkedConsultationId])
+}
+
+model HospitalOrderTrace {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  orderId String
+
+  orderLabel String
+  responsibleArea String
+  status String @default("PENDIENTE")
+  executorUserLabel String?
+  executionTime DateTime?
+  sourceType String
+  sourceIndex Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  order     HospitalMedicalOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([orderId])
+  @@index([responsibleArea])
+  @@index([status])
+  @@index([sourceType])
 }
 
 /// Interconsulta formal generada desde Urgencias.

@@ -2636,36 +2636,132 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Medicamentos, cuidados, estudios e interconsultas.',
       sections: [
         {
-          key: 'indicaciones_hosp',
-          title: 'Órdenes e indicaciones',
+          key: 'medicamentos_indicaciones_hosp',
+          title: 'Medicamentos',
           fields: [
-            { key: 'medicamentosHosp', label: 'Medicamentos', type: 'textarea' },
-            { key: 'solucionesIvHosp', label: 'Soluciones IV', type: 'textarea' },
             {
-              key: 'dietaReposoCuidadosGenerales',
-              label: 'Dieta, reposo y cuidados generales',
-              type: 'textarea',
+              key: 'tipoRegistro',
+              label: 'Tipo de registro',
+              type: 'readonly',
+              inheritanceMode: 'system',
             },
             {
-              key: 'estudiosSolicitadosHosp',
+              key: 'medicamentosIndicacionesHosp',
+              label: 'Medicamentos',
+              type: 'object-array',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'dosis', label: 'Dosis', type: 'text' },
+                { key: 'via', label: 'Vía', type: 'select', options: [
+                  { value: '', label: 'Selecciona una opción' },
+                  { value: 'IV', label: 'IV' },
+                  { value: 'VO', label: 'VO' },
+                  { value: 'IM', label: 'IM' },
+                  { value: 'SC', label: 'SC' },
+                ] },
+                { key: 'prioridad', label: 'Prioridad', type: 'select', options: [
+                  { value: '', label: 'Sin especificar' },
+                  { value: 'RUTINARIO', label: 'Rutinario' },
+                  { value: 'URGENTE', label: 'Urgente' },
+                  { value: 'STAT', label: 'STAT' },
+                ] },
+                { key: 'frecuencia', label: 'Frecuencia', type: 'text' },
+                { key: 'duracion', label: 'Duración', type: 'text' },
+                { key: 'indicacion', label: 'Indicación', type: 'text' },
+              ],
+            },
+          ],
+        },
+        {
+          key: 'soluciones_iv_indicaciones_hosp',
+          title: 'Soluciones IV',
+          fields: [
+            {
+              key: 'solucionesIvIndicacionesHosp',
+              label: 'Soluciones IV',
+              type: 'object-array',
+              itemAddLabel: 'Agregar solución',
+              itemFields: [
+                { key: 'tipoSolucion', label: 'Tipo de solución', type: 'text' },
+                { key: 'volumenMl', label: 'Volumen en ml', type: 'number' },
+                { key: 'velocidadMlHora', label: 'Velocidad en ml/h', type: 'number' },
+                { key: 'duracion', label: 'Duración', type: 'text' },
+              ],
+            },
+          ],
+        },
+        {
+          key: 'cuidados_generales_indicaciones_hosp',
+          title: 'Dieta, reposo y cuidados generales',
+          fields: [
+            { key: 'dietaIndicacionesHosp', label: 'Dieta', type: 'select', options: dietOptions },
+            { key: 'reposoActividadIndicacionesHosp', label: 'Reposo / actividad', type: 'select', options: restOptions },
+            { key: 'posicionIndicacionesHosp', label: 'Posición', type: 'text' },
+            { key: 'cuidadosGeneralesIndicacionesHosp', label: 'Cuidados generales', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'estudios_indicaciones_hosp',
+          title: 'Estudios solicitados',
+          fields: [
+            {
+              key: 'estudiosSolicitadosIndicacionesHosp',
               label: 'Estudios solicitados',
-              type: 'textarea',
+              type: 'object-array',
+              itemAddLabel: 'Agregar estudio',
+              itemFields: [
+                { key: 'tipoEstudio', label: 'Tipo de estudio', type: 'text' },
+                { key: 'prioridad', label: 'Prioridad', type: 'select', options: orderPriorityOptions },
+                { key: 'indicacion', label: 'Indicación', type: 'text' },
+              ],
             },
+          ],
+        },
+        {
+          key: 'interconsultas_indicaciones_hosp',
+          title: 'Interconsultas solicitadas',
+          fields: [
             {
-              key: 'interconsultasSolicitadasHosp',
+              key: 'interconsultasSolicitadasIndicacionesHosp',
               label: 'Interconsultas solicitadas',
-              type: 'textarea',
+              type: 'object-array',
+              itemAddLabel: 'Agregar interconsulta',
+              itemFields: [
+                { key: 'servicio', label: 'Servicio', type: 'text' },
+                { key: 'motivo', label: 'Motivo', type: 'text' },
+                { key: 'prioridad', label: 'Prioridad', type: 'select', options: consultationPriorityOptions },
+              ],
             },
-            {
-              key: 'cuidadosEnfermeriaHosp',
-              label: 'Cuidados de enfermería',
-              type: 'textarea',
-            },
-            {
-              key: 'trazabilidadOrdenesHosp',
-              label: 'Trazabilidad de órdenes',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'enfermeria_indicaciones_hosp',
+          title: 'Cuidados de enfermería',
+          fields: [
+            { key: 'monitoreoEnfermeriaIndicacionesHosp', label: 'Monitoreo', type: 'textarea' },
+            { key: 'oxigenoIndicacionesHosp', label: 'Oxígeno', type: 'select', options: oxygenTypeOptions },
+            { key: 'controlLiquidosIndicacionesHosp', label: 'Control de líquidos', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'trazabilidad_indicaciones_hosp',
+          title: 'Trazabilidad de órdenes',
+          fields: [
+            { key: 'horaInicioIndicacionesHosp', label: 'Hora inicio indicaciones', type: 'time' },
+            { key: 'programacionSiguienteTurnoHosp', label: 'Programación siguiente turno', type: 'readonly' },
+            { key: 'usuarioEjecutorHosp', label: 'Usuario ejecutor', type: 'readonly' },
+          ],
+        },
+        {
+          key: 'legales_firma_indicaciones_hosp',
+          title: 'Datos legales y firma',
+          fields: [
+            { key: 'medicoIndicacionesLegal', label: 'Nombre del médico', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'cedulaIndicacionesLegal', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'especialidadIndicacionesLegal', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'lugarAtencionIndicacionesLegal', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmaIndicacionesHosp', label: 'Firma electrónica', type: 'action', inheritanceMode: 'system', actionLabel: 'Firmar electrónicamente' },
           ],
         },
       ],
