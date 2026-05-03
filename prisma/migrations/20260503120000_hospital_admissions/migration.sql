@@ -1,0 +1,107 @@
+CREATE TABLE "HospitalAdmission" (
+  "id" TEXT NOT NULL,
+  "tenantId" TEXT NOT NULL,
+  "encounterId" TEXT NOT NULL,
+  "patientId" TEXT NOT NULL,
+  "sectionRecordId" TEXT NOT NULL,
+  "versionNumber" INTEGER NOT NULL,
+  "title" TEXT NOT NULL,
+  "status" "EncounterRecordStatus" NOT NULL DEFAULT 'DRAFT',
+  "recordedAt" TIMESTAMP(3) NOT NULL,
+  "admissionType" TEXT,
+  "admissionOrigin" TEXT,
+  "initialClinicalStatus" TEXT,
+  "serviceName" TEXT,
+  "floor" TEXT,
+  "room" TEXT,
+  "bed" TEXT,
+  "admittedAt" TIMESTAMP(3),
+  "initialAssessmentTime" TEXT,
+  "administrativeReason" TEXT,
+  "hospitalizationType" TEXT,
+  "admissionPriority" TEXT,
+  "stayRegimen" TEXT,
+  "attendingPhysician" TEXT,
+  "admissionShift" TEXT,
+  "assignedNursing" TEXT,
+  "admissionResponsible" TEXT,
+  "originEpisodeReference" TEXT,
+  "administrativeNotes" TEXT,
+  "coverageType" TEXT,
+  "insurerAgreement" TEXT,
+  "authorizationNumber" TEXT,
+  "accountResponsible" TEXT,
+  "requiresEstimate" TEXT,
+  "requiresAuthorization" TEXT,
+  "admissionReasonClinical" TEXT,
+  "presentIllnessHistory" TEXT,
+  "interviewSummary" TEXT,
+  "systolicBp" DECIMAL(10,2),
+  "diastolicBp" DECIMAL(10,2),
+  "heartRate" DECIMAL(10,2),
+  "respiratoryRate" DECIMAL(10,2),
+  "temperature" DECIMAL(10,2),
+  "oxygenSaturation" DECIMAL(10,2),
+  "painEva" DECIMAL(10,2),
+  "weight" DECIMAL(10,2),
+  "height" DECIMAL(10,2),
+  "glucose" DECIMAL(10,2),
+  "physicalExam" TEXT,
+  "mentalStatus" TEXT,
+  "studyResults" TEXT,
+  "clinicalInterpretation" TEXT,
+  "primaryDiagnosis" TEXT,
+  "primaryCie10" TEXT,
+  "secondaryDiagnosesJson" JSONB,
+  "admissionPrognosis" TEXT,
+  "comorbiditiesJson" JSONB,
+  "initialDiet" TEXT,
+  "restMobility" TEXT,
+  "admissionDevices" TEXT,
+  "isolationRequired" TEXT,
+  "bloodTypeRh" TEXT,
+  "medicationsJson" JSONB,
+  "studiesPlan" TEXT,
+  "proceduresPlan" TEXT,
+  "consultationsPlan" TEXT,
+  "additionalPlan" TEXT,
+  "surgicalRisk" TEXT,
+  "thromboticRisk" TEXT,
+  "infectiousRisk" TEXT,
+  "fallRiskMorse" TEXT,
+  "nutritionalRisk" TEXT,
+  "initialClinicalRisk" TEXT,
+  "hospitalizationConsent" TEXT,
+  "procedureConsent" TEXT,
+  "identifiedRisks" TEXT,
+  "professionalName" TEXT NOT NULL,
+  "professionalLicense" TEXT,
+  "professionalSpecialty" TEXT,
+  "careLocation" TEXT,
+  "signerUserId" TEXT,
+  "signedAt" TIMESTAMP(3),
+  "pdfDownloadCount" INTEGER NOT NULL DEFAULT 0,
+  "pdfLastDownloadedAt" TIMESTAMP(3),
+  "sourceEmergencyRecordId" TEXT,
+  "contentJson" JSONB,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "HospitalAdmission_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "HospitalAdmission_sectionRecordId_key" ON "HospitalAdmission"("sectionRecordId");
+CREATE UNIQUE INDEX "HospitalAdmission_encounterId_versionNumber_key" ON "HospitalAdmission"("encounterId", "versionNumber");
+CREATE INDEX "HospitalAdmission_tenantId_idx" ON "HospitalAdmission"("tenantId");
+CREATE INDEX "HospitalAdmission_encounterId_idx" ON "HospitalAdmission"("encounterId");
+CREATE INDEX "HospitalAdmission_patientId_idx" ON "HospitalAdmission"("patientId");
+CREATE INDEX "HospitalAdmission_status_idx" ON "HospitalAdmission"("status");
+CREATE INDEX "HospitalAdmission_recordedAt_idx" ON "HospitalAdmission"("recordedAt");
+CREATE INDEX "HospitalAdmission_signerUserId_idx" ON "HospitalAdmission"("signerUserId");
+CREATE INDEX "HospitalAdmission_sourceEmergencyRecordId_idx" ON "HospitalAdmission"("sourceEmergencyRecordId");
+
+ALTER TABLE "HospitalAdmission" ADD CONSTRAINT "HospitalAdmission_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HospitalAdmission" ADD CONSTRAINT "HospitalAdmission_encounterId_fkey" FOREIGN KEY ("encounterId") REFERENCES "Encounter"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HospitalAdmission" ADD CONSTRAINT "HospitalAdmission_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HospitalAdmission" ADD CONSTRAINT "HospitalAdmission_sectionRecordId_fkey" FOREIGN KEY ("sectionRecordId") REFERENCES "EncounterSectionRecord"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "HospitalAdmission" ADD CONSTRAINT "HospitalAdmission_signerUserId_fkey" FOREIGN KEY ("signerUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

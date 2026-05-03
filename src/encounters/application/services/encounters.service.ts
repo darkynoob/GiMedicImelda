@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
   AdmissionSource,
+  AuditAction,
   EncounterRecordStatus,
   EncounterStatus,
   EncounterType,
@@ -802,6 +803,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const hospitalAdmissionVersionContext =
+      await this.resolveHospitalAdmissionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -826,6 +833,7 @@ export class EncountersService {
       emergencyOrdersVersionContext,
       emergencyConsultationVersionContext,
       emergencyDischargeVersionContext,
+      hospitalAdmissionVersionContext,
       responsibleUser,
     });
 
@@ -904,6 +912,18 @@ export class EncountersService {
       sectionRecordId: createdRecord.id,
       tabKey: normalizedRecordPayload.tabKey,
       noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalAdmissionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
       recordedAt,
       title: normalizedRecordPayload.title,
       status: normalizedRecordPayload.status,
@@ -1026,6 +1046,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const hospitalAdmissionVersionContext =
+      await this.resolveHospitalAdmissionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1050,6 +1077,7 @@ export class EncountersService {
       emergencyOrdersVersionContext,
       emergencyConsultationVersionContext,
       emergencyDischargeVersionContext,
+      hospitalAdmissionVersionContext,
       responsibleUser,
     });
 
@@ -1125,6 +1153,18 @@ export class EncountersService {
       sectionRecordId: recordId,
       tabKey: normalizedRecordPayload.tabKey,
       noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalAdmissionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
       recordedAt,
       title: normalizedRecordPayload.title,
       status: normalizedRecordPayload.status,
@@ -1306,6 +1346,63 @@ export class EncountersService {
           });
         }
       }
+
+      if (
+        this.isHospitalAdmissionRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const hospitalFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        const admittedAt =
+          this.parseOptionalDate(
+            `${this.readStringValue(hospitalFormData.fechaIngresoHosp)}T${this.readStringValue(hospitalFormData.horaIngresoHosp)}`,
+          ) ?? signedAt;
+        await transaction.$executeRaw`
+          UPDATE "HospitalAdmission"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.vitalSign.create({
+          data: {
+            tenantId,
+            encounterId: encounter.id,
+            patientId: encounter.patientId,
+            takenAt: admittedAt,
+            weightKg: this.readNumericValue(hospitalFormData.pesoHosp),
+            heightCm: this.readNumericValue(hospitalFormData.tallaHosp),
+            temperatureC: this.readNumericValue(hospitalFormData.temperaturaHosp),
+            heartRate: this.readRoundedNumericValue(hospitalFormData.fcHosp),
+            respiratoryRate: this.readRoundedNumericValue(hospitalFormData.frHosp),
+            systolicBp: this.readRoundedNumericValue(hospitalFormData.taSistolicaHosp),
+            diastolicBp: this.readRoundedNumericValue(hospitalFormData.taDiastolicaHosp),
+            oxygenSaturation: this.readNumericValue(hospitalFormData.spo2Hosp),
+            painScale: this.readRoundedNumericValue(hospitalFormData.dolorEvaHosp),
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalAdmission',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              signedAt: signedAt.toISOString(),
+            },
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1358,7 +1455,8 @@ export class EncountersService {
       !this.isEmergencyOrdersRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyConsultationRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyDischargeRecord(record.encounterType, record.tabKey) &&
-      !this.isEmergencyDocumentRecord(record.encounterType, record.tabKey)
+      !this.isEmergencyDocumentRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -1408,6 +1506,14 @@ export class EncountersService {
     if (this.isEmergencyDocumentRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "EmergencyDocument"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalAdmissionRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalAdmission"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -2452,6 +2558,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveHospitalAdmissionVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isHospitalAdmissionRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Ingreso',
+        noteType: 'Ingreso hospitalario',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -2496,6 +2633,9 @@ export class EncountersService {
     emergencyDischargeVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyDischargeVersionContext']>
     >;
+    hospitalAdmissionVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHospitalAdmissionVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -2504,6 +2644,62 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isHospitalAdmissionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.hospitalAdmissionVersionContext?.nextVersionNumber ??
+        1;
+      const latestEmergencyDischargeRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Egreso',
+      );
+      const formData = this.buildHospitalAdmissionFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        emergencyDischargeFormDataJson:
+          latestEmergencyDischargeRecord?.formDataJson ?? null,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Ingreso',
+        noteType: 'Ingreso hospitalario',
+        title: `Ingreso hospitalario V${versionNumber}`,
+        status:
+          input.currentRecord?.status === EncounterRecordStatus.SIGNED
+            ? EncounterRecordStatus.SIGNED
+            : input.input.status ??
+              input.currentRecord?.status ??
+              EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Ingreso hospitalario',
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            latestEmergencyDischargeRecord?.id ??
+            null,
+          sourceEmergencyRecordId:
+            this.readStringValue(
+              this.normalizeRecordMetadata(input.currentRecord?.metadataJson)
+                ?.sourceEmergencyRecordId,
+            ) || latestEmergencyDischargeRecord?.id || null,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isEmergencyTriageRecord(
         input.encounter.encounterType,
@@ -2819,6 +3015,10 @@ export class EncountersService {
         input.input.tabKey,
       ) &&
       !this.isConsultationPrescriptionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      ) &&
+      !this.isHospitalAdmissionRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       )
@@ -3232,6 +3432,10 @@ export class EncountersService {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Documentos';
   }
 
+  private isHospitalAdmissionRecord(encounterType: EncounterType, tabKey: string) {
+    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Ingreso';
+  }
+
   private isAllowedEmergencyDocumentType(noteType: string) {
     return [
       'Solicitud de laboratorio',
@@ -3241,6 +3445,67 @@ export class EncountersService {
       'Certificado / constancia',
       'Egreso voluntario',
     ].includes(noteType);
+  }
+
+  private buildHospitalAdmissionFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    emergencyDischargeFormDataJson: Prisma.JsonValue | null;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const admissionDate =
+      this.readStringValue(input.incomingFormData.fechaIngresoHosp) ||
+      input.recordedAt.toISOString().slice(0, 10);
+    const admissionTime =
+      this.readStringValue(input.incomingFormData.horaIngresoHosp) ||
+      input.recordedAt.toISOString().slice(11, 16);
+    const emergencyOrigin =
+      input.encounter.admissionSource === AdmissionSource.EMERGENCY;
+    const sourceEmergencySummary = this.readStringValueFromJson(
+      input.emergencyDischargeFormDataJson,
+      'resumenTrasladoUrg',
+    );
+    const originEpisodeReference =
+      this.readStringValue(input.incomingFormData.episodioOrigenHosp) ||
+      (emergencyOrigin ? input.encounter.encounterNumber : '');
+    const bloodType =
+      this.readStringValue(input.incomingFormData.grupoSanguineoRhHosp) ||
+      input.encounter.patient.bloodType ||
+      '';
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistro: 'Ingreso hospitalario',
+      origenIngresoHosp:
+        this.readStringValue(input.incomingFormData.origenIngresoHosp) ||
+        (emergencyOrigin ? 'URGENCIAS' : 'MANUAL'),
+      fechaIngresoHosp: admissionDate,
+      horaIngresoHosp: admissionTime,
+      tiempoValoracionInicialHosp:
+        this.readStringValue(input.incomingFormData.tiempoValoracionInicialHosp) ||
+        this.calculateAdmissionAssessmentTime(input.encounter.openedAt, input.recordedAt),
+      episodioOrigenHosp: originEpisodeReference,
+      referenciaUrgenciasHosp:
+        this.readStringValue(input.incomingFormData.referenciaUrgenciasHosp) ||
+        sourceEmergencySummary,
+      grupoSanguineoRhHosp: bloodType,
+      medicoIngresoLegal:
+        input.responsibleUser?.fullName ??
+        'Sin profesional responsable',
+      cedulaIngresoLegal:
+        input.responsibleUser?.professionalLicense ??
+        'Sin cédula',
+      especialidadIngresoLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionIngresoLegal:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+    };
   }
 
   private buildEmergencyTriageFormData(input: {
@@ -3289,6 +3554,14 @@ export class EncountersService {
       banderaRojaAutomatica: alertasAutomaticas.length > 0 ? 'SI' : 'NO',
       alertasAutomaticas: alertasAutomaticas.join('\n'),
     };
+  }
+
+  private calculateAdmissionAssessmentTime(openedAt: Date, recordedAt: Date) {
+    if (recordedAt < openedAt) {
+      return '';
+    }
+
+    return `${Math.round((recordedAt.getTime() - openedAt.getTime()) / 60000)} min`;
   }
 
   private buildEmergencyInitialNoteFormData(input: {
@@ -4434,6 +4707,161 @@ export class EncountersService {
     `;
   }
 
+  private async syncHospitalAdmissionRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isHospitalAdmissionRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const admittedAt = this.parseOptionalDate(
+      `${this.readStringValue(input.formData.fechaIngresoHosp)}T${this.readStringValue(input.formData.horaIngresoHosp)}`,
+    );
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalAdmission" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt",
+        "admissionType", "admissionOrigin", "initialClinicalStatus", "serviceName",
+        "floor", "room", "bed", "admittedAt", "initialAssessmentTime",
+        "administrativeReason", "hospitalizationType", "admissionPriority", "stayRegimen",
+        "attendingPhysician", "admissionShift", "assignedNursing", "admissionResponsible",
+        "originEpisodeReference", "administrativeNotes", "coverageType", "insurerAgreement",
+        "authorizationNumber", "accountResponsible", "requiresEstimate", "requiresAuthorization",
+        "admissionReasonClinical", "presentIllnessHistory", "interviewSummary",
+        "systolicBp", "diastolicBp", "heartRate", "respiratoryRate", "temperature",
+        "oxygenSaturation", "painEva", "weight", "height", "glucose",
+        "physicalExam", "mentalStatus", "studyResults", "clinicalInterpretation",
+        "primaryDiagnosis", "primaryCie10", "secondaryDiagnosesJson", "admissionPrognosis",
+        "comorbiditiesJson", "initialDiet", "restMobility", "admissionDevices",
+        "isolationRequired", "bloodTypeRh", "medicationsJson", "studiesPlan", "proceduresPlan",
+        "consultationsPlan", "additionalPlan", "surgicalRisk", "thromboticRisk",
+        "infectiousRisk", "fallRiskMorse", "nutritionalRisk", "initialClinicalRisk",
+        "hospitalizationConsent", "procedureConsent", "identifiedRisks", "professionalName",
+        "professionalLicense", "professionalSpecialty", "careLocation", "signerUserId",
+        "signedAt", "pdfDownloadCount", "pdfLastDownloadedAt", "sourceEmergencyRecordId",
+        "contentJson", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt},
+        ${this.readStringValue(input.formData.tipoIngresoHosp)}, ${this.readStringValue(input.formData.origenIngresoHosp)}, ${this.readStringValue(input.formData.estadoClinicoIngresoHosp)}, ${this.readStringValue(input.formData.servicioIngresoHosp)},
+        ${this.readStringValue(input.formData.pisoIngresoHosp)}, ${this.readStringValue(input.formData.habitacionIngresoHosp)}, ${this.readStringValue(input.formData.camaIngresoHosp)}, ${admittedAt}, ${this.readStringValue(input.formData.tiempoValoracionInicialHosp)},
+        ${this.readStringValue(input.formData.motivoAdministrativoHosp)}, ${this.readStringValue(input.formData.tipoHospitalizacionHosp)}, ${this.readStringValue(input.formData.prioridadIngresoHosp)}, ${this.readStringValue(input.formData.regimenEstanciaHosp)},
+        ${this.readStringValue(input.formData.medicoAdscritoHosp)}, ${this.readStringValue(input.formData.turnoIngresoHosp)}, ${this.readStringValue(input.formData.enfermeriaAsignadaHosp)}, ${this.readStringValue(input.formData.responsableAdmisionHosp)},
+        ${this.readStringValue(input.formData.episodioOrigenHosp)}, ${this.readStringValue(input.formData.observacionesAdministrativasHosp)}, ${this.readStringValue(input.formData.tipoCoberturaHosp)}, ${this.readStringValue(input.formData.aseguradoraConvenioHosp)},
+        ${this.readStringValue(input.formData.numeroAutorizacionHosp)}, ${this.readStringValue(input.formData.responsableCuentaHosp)}, ${this.readStringValue(input.formData.requiereEstimadoHosp)}, ${this.readStringValue(input.formData.requiereAutorizacionHosp)},
+        ${this.readStringValue(input.formData.motivoIngresoClinicoHosp)}, ${this.readStringValue(input.formData.historiaPadecimientoActualHosp)}, ${this.readStringValue(input.formData.resumenInterrogatorioHosp)},
+        ${this.readNumericValue(input.formData.taSistolicaHosp)}, ${this.readNumericValue(input.formData.taDiastolicaHosp)}, ${this.readNumericValue(input.formData.fcHosp)}, ${this.readNumericValue(input.formData.frHosp)}, ${this.readNumericValue(input.formData.temperaturaHosp)},
+        ${this.readNumericValue(input.formData.spo2Hosp)}, ${this.readNumericValue(input.formData.dolorEvaHosp)}, ${this.readNumericValue(input.formData.pesoHosp)}, ${this.readNumericValue(input.formData.tallaHosp)}, ${this.readNumericValue(input.formData.glucosaHosp)},
+        ${this.readStringValue(input.formData.exploracionFisicaHosp)}, ${this.readStringValue(input.formData.estadoMentalHosp)}, ${this.readStringValue(input.formData.resultadosEstudiosHosp)}, ${this.readStringValue(input.formData.interpretacionClinicaHosp)},
+        ${this.readStringValue(input.formData.diagnosticoPrincipalHosp)}, ${this.readStringValue(input.formData.cie10Hosp)}, ${this.jsonbParameter(input.formData.diagnosticosSecundariosHosp)}, ${this.readStringValue(input.formData.pronosticoIngresoHosp)},
+        ${this.jsonbParameter(input.formData.comorbilidadesHosp)}, ${this.readStringValue(input.formData.dietaInicialHosp)}, ${this.readStringValue(input.formData.reposoMovilidadHosp)}, ${this.readStringValue(input.formData.dispositivosIngresoHosp)},
+        ${this.readStringValue(input.formData.aislamientoRequeridoHosp)}, ${this.readStringValue(input.formData.grupoSanguineoRhHosp)}, ${this.jsonbParameter(input.formData.medicamentosHosp)}, ${this.readStringValue(input.formData.estudiosPlanHosp)}, ${this.readStringValue(input.formData.procedimientosPlanHosp)},
+        ${this.readStringValue(input.formData.interconsultasPlanHosp)}, ${this.readStringValue(input.formData.planAdicionalHosp)}, ${this.readStringValue(input.formData.riesgoQuirurgicoHosp)}, ${this.readStringValue(input.formData.riesgoTromboticoHosp)},
+        ${this.readStringValue(input.formData.riesgoInfecciosoHosp)}, ${this.readStringValue(input.formData.riesgoCaidasMorseHosp)}, ${this.readStringValue(input.formData.riesgoNutricionalHosp)}, ${this.readStringValue(input.formData.riesgoClinicoInicialHosp)},
+        ${this.readStringValue(input.formData.consentimientoHospitalizacionHosp)}, ${this.readStringValue(input.formData.consentimientoProcedimientosHosp)}, ${this.readStringValue(input.formData.riesgosIdentificadosHosp)}, ${this.readStringValue(input.formData.medicoIngresoLegal) || 'Sin profesional responsable'},
+        ${this.readStringValue(input.formData.cedulaIngresoLegal)}, ${this.readStringValue(input.formData.especialidadIngresoLegal)}, ${this.readStringValue(input.formData.lugarAtencionIngresoLegal)}, ${signedAt ? input.userId : null},
+        ${signedAt}, ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.readStringValue(input.metadata.sourceEmergencyRecordId)},
+        ${this.jsonbParameter(input.formData)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "admissionType" = EXCLUDED."admissionType",
+        "admissionOrigin" = EXCLUDED."admissionOrigin",
+        "initialClinicalStatus" = EXCLUDED."initialClinicalStatus",
+        "serviceName" = EXCLUDED."serviceName",
+        "floor" = EXCLUDED."floor",
+        "room" = EXCLUDED."room",
+        "bed" = EXCLUDED."bed",
+        "admittedAt" = EXCLUDED."admittedAt",
+        "initialAssessmentTime" = EXCLUDED."initialAssessmentTime",
+        "administrativeReason" = EXCLUDED."administrativeReason",
+        "hospitalizationType" = EXCLUDED."hospitalizationType",
+        "admissionPriority" = EXCLUDED."admissionPriority",
+        "stayRegimen" = EXCLUDED."stayRegimen",
+        "attendingPhysician" = EXCLUDED."attendingPhysician",
+        "admissionShift" = EXCLUDED."admissionShift",
+        "assignedNursing" = EXCLUDED."assignedNursing",
+        "admissionResponsible" = EXCLUDED."admissionResponsible",
+        "originEpisodeReference" = EXCLUDED."originEpisodeReference",
+        "administrativeNotes" = EXCLUDED."administrativeNotes",
+        "coverageType" = EXCLUDED."coverageType",
+        "insurerAgreement" = EXCLUDED."insurerAgreement",
+        "authorizationNumber" = EXCLUDED."authorizationNumber",
+        "accountResponsible" = EXCLUDED."accountResponsible",
+        "requiresEstimate" = EXCLUDED."requiresEstimate",
+        "requiresAuthorization" = EXCLUDED."requiresAuthorization",
+        "admissionReasonClinical" = EXCLUDED."admissionReasonClinical",
+        "presentIllnessHistory" = EXCLUDED."presentIllnessHistory",
+        "interviewSummary" = EXCLUDED."interviewSummary",
+        "systolicBp" = EXCLUDED."systolicBp",
+        "diastolicBp" = EXCLUDED."diastolicBp",
+        "heartRate" = EXCLUDED."heartRate",
+        "respiratoryRate" = EXCLUDED."respiratoryRate",
+        "temperature" = EXCLUDED."temperature",
+        "oxygenSaturation" = EXCLUDED."oxygenSaturation",
+        "painEva" = EXCLUDED."painEva",
+        "weight" = EXCLUDED."weight",
+        "height" = EXCLUDED."height",
+        "glucose" = EXCLUDED."glucose",
+        "physicalExam" = EXCLUDED."physicalExam",
+        "mentalStatus" = EXCLUDED."mentalStatus",
+        "studyResults" = EXCLUDED."studyResults",
+        "clinicalInterpretation" = EXCLUDED."clinicalInterpretation",
+        "primaryDiagnosis" = EXCLUDED."primaryDiagnosis",
+        "primaryCie10" = EXCLUDED."primaryCie10",
+        "secondaryDiagnosesJson" = EXCLUDED."secondaryDiagnosesJson",
+        "admissionPrognosis" = EXCLUDED."admissionPrognosis",
+        "comorbiditiesJson" = EXCLUDED."comorbiditiesJson",
+        "initialDiet" = EXCLUDED."initialDiet",
+        "restMobility" = EXCLUDED."restMobility",
+        "admissionDevices" = EXCLUDED."admissionDevices",
+        "isolationRequired" = EXCLUDED."isolationRequired",
+        "bloodTypeRh" = EXCLUDED."bloodTypeRh",
+        "medicationsJson" = EXCLUDED."medicationsJson",
+        "studiesPlan" = EXCLUDED."studiesPlan",
+        "proceduresPlan" = EXCLUDED."proceduresPlan",
+        "consultationsPlan" = EXCLUDED."consultationsPlan",
+        "additionalPlan" = EXCLUDED."additionalPlan",
+        "surgicalRisk" = EXCLUDED."surgicalRisk",
+        "thromboticRisk" = EXCLUDED."thromboticRisk",
+        "infectiousRisk" = EXCLUDED."infectiousRisk",
+        "fallRiskMorse" = EXCLUDED."fallRiskMorse",
+        "nutritionalRisk" = EXCLUDED."nutritionalRisk",
+        "initialClinicalRisk" = EXCLUDED."initialClinicalRisk",
+        "hospitalizationConsent" = EXCLUDED."hospitalizationConsent",
+        "procedureConsent" = EXCLUDED."procedureConsent",
+        "identifiedRisks" = EXCLUDED."identifiedRisks",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "sourceEmergencyRecordId" = EXCLUDED."sourceEmergencyRecordId",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -4973,6 +5401,15 @@ export class EncountersService {
     return typeof value === 'string' ? value : '';
   }
 
+  private readObjectArray(value: unknown) {
+    return Array.isArray(value)
+      ? value.filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+        )
+      : [];
+  }
+
   private readStringValueFromJson(
     rawValue: Prisma.JsonValue | null,
     key: string,
@@ -4995,6 +5432,11 @@ export class EncountersService {
     }
 
     return null;
+  }
+
+  private readRoundedNumericValue(value: unknown) {
+    const numericValue = this.readNumericValue(value);
+    return numericValue === null ? null : Math.round(numericValue);
   }
 
   private readNumericValueFromJson(
@@ -5171,7 +5613,8 @@ export class EncountersService {
       record.tenantId !== tenantId ||
       record.encounterId !== encounterId ||
       (!this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey) &&
-        !this.isConsultationDocumentRecord(record.encounterType, record.tabKey))
+        !this.isConsultationDocumentRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -5941,6 +6384,30 @@ export class EncountersService {
         ? (input.record.formDataJson as Record<string, unknown>)
         : {};
     const metadata = this.extractRecordVersionMetadata(input.record.metadataJson);
+    if (
+      this.isHospitalAdmissionRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildHospitalAdmissionPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        verificationCode: metadata.verificationCode ?? '',
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -6114,6 +6581,69 @@ export class EncountersService {
       ...commonHeader,
       ...(documentSpecificLines[input.noteType] ?? []),
       ...commonLegal,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private buildHospitalAdmissionPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const medicationLines = this.readObjectArray(input.formData.medicamentosHosp).map(
+      (item, index) =>
+        `${index + 1}. ${this.readStringValue(item.medicamento)} ${this.readStringValue(item.dosis)} ${this.readStringValue(item.via)} ${this.readStringValue(item.frecuencia)}`.trim(),
+    );
+    const comorbidityLines = this.readObjectArray(input.formData.comorbilidadesHosp).map(
+      (item, index) =>
+        `${index + 1}. ${this.readStringValue(item.comorbilidad)} - ${this.readStringValue(item.estado)}`.trim(),
+    );
+    const diagnosisLines = this.readObjectArray(
+      input.formData.diagnosticosSecundariosHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.diagnostico)} ${this.readStringValue(item.cie10)}`.trim(),
+    );
+    const lines = [
+      input.recordTitle,
+      'Tipo: Ingreso hospitalario',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Código verificación: ${input.verificationCode}`,
+      `Tipo ingreso: ${this.readStringValue(input.formData.tipoIngresoHosp)}`,
+      `Origen: ${this.readStringValue(input.formData.origenIngresoHosp)}`,
+      `Estado clínico: ${this.readStringValue(input.formData.estadoClinicoIngresoHosp)}`,
+      `Servicio/piso/hab/cama: ${this.readStringValue(input.formData.servicioIngresoHosp)} / ${this.readStringValue(input.formData.pisoIngresoHosp)} / ${this.readStringValue(input.formData.habitacionIngresoHosp)} / ${this.readStringValue(input.formData.camaIngresoHosp)}`,
+      `Ingreso: ${this.readStringValue(input.formData.fechaIngresoHosp)} ${this.readStringValue(input.formData.horaIngresoHosp)}`.trim(),
+      `Cobertura: ${this.readStringValue(input.formData.tipoCoberturaHosp)} ${this.readStringValue(input.formData.aseguradoraConvenioHosp)}`.trim(),
+      `Motivo: ${this.readStringValue(input.formData.motivoIngresoClinicoHosp)}`,
+      `Historia: ${this.readStringValue(input.formData.historiaPadecimientoActualHosp)}`,
+      `TA/FC/FR/T/SpO2: ${this.readStringValue(input.formData.taSistolicaHosp)}/${this.readStringValue(input.formData.taDiastolicaHosp)} ${this.readStringValue(input.formData.fcHosp)} ${this.readStringValue(input.formData.frHosp)} ${this.readStringValue(input.formData.temperaturaHosp)} ${this.readStringValue(input.formData.spo2Hosp)}`,
+      `Exploración: ${this.readStringValue(input.formData.exploracionFisicaHosp)}`,
+      `Estado mental: ${this.readStringValue(input.formData.estadoMentalHosp)}`,
+      `Diagnóstico principal: ${this.readStringValue(input.formData.diagnosticoPrincipalHosp)}`,
+      `CIE-10: ${this.readStringValue(input.formData.cie10Hosp)}`,
+      'Diagnósticos secundarios:',
+      ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos secundarios']),
+      'Comorbilidades:',
+      ...(comorbidityLines.length > 0 ? comorbidityLines : ['Sin comorbilidades agregadas']),
+      `Dieta inicial: ${this.readStringValue(input.formData.dietaInicialHosp)}`,
+      `Aislamiento: ${this.readStringValue(input.formData.aislamientoRequeridoHosp)}`,
+      'Medicamentos:',
+      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      `Estudios: ${this.readStringValue(input.formData.estudiosPlanHosp)}`,
+      `Procedimientos: ${this.readStringValue(input.formData.procedimientosPlanHosp)}`,
+      `Interconsultas: ${this.readStringValue(input.formData.interconsultasPlanHosp)}`,
+      `Riesgos identificados: ${this.readStringValue(input.formData.riesgosIdentificadosHosp)}`,
+      `Médico: ${this.readStringValue(input.formData.medicoIngresoLegal)}`,
+      `Cédula: ${this.readStringValue(input.formData.cedulaIngresoLegal)}`,
+      `Especialidad: ${this.readStringValue(input.formData.especialidadIngresoLegal)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionIngresoLegal)}`,
       `Descargas registradas: ${input.downloadCount}`,
     ];
 
@@ -6334,6 +6864,35 @@ export class EncountersService {
           'comprensionPacienteEgresoUrg',
         ]
       : [];
+    const hospitalAdmissionRequiredFields = this.isHospitalAdmissionRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? [
+          'tipoIngresoHosp',
+          'origenIngresoHosp',
+          'estadoClinicoIngresoHosp',
+          'servicioIngresoHosp',
+          'pisoIngresoHosp',
+          'habitacionIngresoHosp',
+          'camaIngresoHosp',
+          'fechaIngresoHosp',
+          'horaIngresoHosp',
+          'motivoIngresoClinicoHosp',
+          'historiaPadecimientoActualHosp',
+          'taSistolicaHosp',
+          'taDiastolicaHosp',
+          'fcHosp',
+          'frHosp',
+          'temperaturaHosp',
+          'spo2Hosp',
+          'exploracionFisicaHosp',
+          'estadoMentalHosp',
+          'dietaInicialHosp',
+          'consentimientoHospitalizacionHosp',
+          'riesgosIdentificadosHosp',
+        ]
+      : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
@@ -6343,6 +6902,7 @@ export class EncountersService {
       ...emergencyOrdersRequiredFields,
       ...emergencyConsultationRequiredFields,
       ...emergencyDischargeRequiredFields,
+      ...hospitalAdmissionRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -6362,6 +6922,8 @@ export class EncountersService {
                   ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
                   : this.isEmergencyDischargeRecord(input.encounterType, input.tabKey)
                     ? 'Completa los campos obligatorios del egreso de urgencias antes de firmarlo'
+                    : this.isHospitalAdmissionRecord(input.encounterType, input.tabKey)
+                      ? 'Completa los campos obligatorios del ingreso hospitalario antes de firmarlo'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
     }

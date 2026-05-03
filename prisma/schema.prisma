@@ -232,6 +232,7 @@ model Tenant {
   emergencyDischarges        EmergencyDischarge[]
   emergencyDocuments         EmergencyDocument[]
   emergencyConsultations     EmergencyConsultation[]
+  hospitalAdmissions         HospitalAdmission[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -476,6 +477,7 @@ model User {
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
   signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
+  signedHospitalAdmissions HospitalAdmission[] @relation("HospitalAdmissionSigner")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -768,6 +770,7 @@ model Patient {
   emergencyDischarges EmergencyDischarge[]
   emergencyDocuments EmergencyDocument[]
   emergencyConsultations EmergencyConsultation[]
+  hospitalAdmissions HospitalAdmission[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1190,6 +1193,7 @@ model Encounter {
   emergencyDischarge   EmergencyDischarge?
   emergencyDocuments   EmergencyDocument[]
   emergencyConsultations EmergencyConsultation[]
+  hospitalAdmissions   HospitalAdmission[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1296,6 +1300,7 @@ model EncounterSectionRecord {
   emergencyDischarge EmergencyDischarge?
   emergencyDocument EmergencyDocument?
   emergencyConsultation EmergencyConsultation?
+  hospitalAdmission HospitalAdmission?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1702,6 +1707,131 @@ model EmergencyDocument {
   @@index([status])
   @@index([recordedAt])
   @@index([signerUserId])
+}
+
+/// Ingreso hospitalario versionado dentro de un episodio de Hospitalización.
+/// Conserva el snapshot clínico-administrativo NOM-004 sin sobrescribir fuentes
+/// previas como Urgencias, Historia clínica, perfil del paciente o laboratorio.
+model HospitalAdmission {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  admissionType String?
+  admissionOrigin String?
+  initialClinicalStatus String?
+  serviceName String?
+  floor String?
+  room String?
+  bed String?
+  admittedAt DateTime?
+  initialAssessmentTime String?
+
+  administrativeReason String?
+  hospitalizationType String?
+  admissionPriority String?
+  stayRegimen String?
+  attendingPhysician String?
+  admissionShift String?
+  assignedNursing String?
+  admissionResponsible String?
+  originEpisodeReference String?
+  administrativeNotes String?
+
+  coverageType String?
+  insurerAgreement String?
+  authorizationNumber String?
+  accountResponsible String?
+  requiresEstimate String?
+  requiresAuthorization String?
+
+  admissionReasonClinical String?
+  presentIllnessHistory String?
+  interviewSummary String?
+
+  systolicBp Decimal? @db.Decimal(10, 2)
+  diastolicBp Decimal? @db.Decimal(10, 2)
+  heartRate Decimal? @db.Decimal(10, 2)
+  respiratoryRate Decimal? @db.Decimal(10, 2)
+  temperature Decimal? @db.Decimal(10, 2)
+  oxygenSaturation Decimal? @db.Decimal(10, 2)
+  painEva Decimal? @db.Decimal(10, 2)
+  weight Decimal? @db.Decimal(10, 2)
+  height Decimal? @db.Decimal(10, 2)
+  glucose Decimal? @db.Decimal(10, 2)
+
+  physicalExam String?
+  mentalStatus String?
+  studyResults String?
+
+  clinicalInterpretation String?
+  primaryDiagnosis String?
+  primaryCie10 String?
+  secondaryDiagnosesJson Json?
+  admissionPrognosis String?
+
+  comorbiditiesJson Json?
+
+  initialDiet String?
+  restMobility String?
+  admissionDevices String?
+  isolationRequired String?
+  bloodTypeRh String?
+
+  medicationsJson Json?
+  studiesPlan String?
+  proceduresPlan String?
+  consultationsPlan String?
+  additionalPlan String?
+
+  surgicalRisk String?
+  thromboticRisk String?
+  infectiousRisk String?
+  fallRiskMorse String?
+  nutritionalRisk String?
+  initialClinicalRisk String?
+
+  hospitalizationConsent String?
+  procedureConsent String?
+  identifiedRisks String?
+
+  professionalName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+
+  signerUserId String?
+  signedAt DateTime?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  sourceEmergencyRecordId String?
+  contentJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("HospitalAdmissionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@unique([encounterId, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signerUserId])
+  @@index([sourceEmergencyRecordId])
 }
 
 /// Interconsulta formal generada desde Urgencias.

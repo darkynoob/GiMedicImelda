@@ -89,8 +89,12 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
 
 const hospitalizationConfig: Record<string, EpisodeRecordPanelConfig> = {
   Ingreso: {
-    contextLabel: 'Notas de ingreso',
-    defaultActionLabel: 'Nueva nota de ingreso',
+    contextLabel: 'Ingreso hospitalario',
+    defaultActionLabel: 'Nuevo ingreso hospitalario',
+  },
+  'Ingreso hospitalario': {
+    contextLabel: 'Ingreso hospitalario',
+    defaultActionLabel: 'Nuevo ingreso hospitalario',
   },
   Evolución: {
     contextLabel: 'Notas de evolución',
