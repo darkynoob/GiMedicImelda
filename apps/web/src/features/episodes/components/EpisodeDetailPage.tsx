@@ -223,6 +223,14 @@ function buildHospitalMedicalOrdersTitle(versionNumber: number) {
   return `Indicaciones médicas V${versionNumber}`;
 }
 
+function isHospitalConsultationTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'HOSPITALIZATION' && tabTitle === 'Interconsultas';
+}
+
+function buildHospitalConsultationTitle(versionNumber: number) {
+  return `Interconsultas V${versionNumber}`;
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
@@ -1249,6 +1257,81 @@ function buildHospitalMedicalOrdersSnapshot(args: {
     especialidadIndicacionesLegal:
       args.detail.specialty?.name ?? 'Sin especialidad',
     lugarAtencionIndicacionesLegal:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
+  };
+}
+
+function buildHospitalConsultationSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const current = args.currentFormData ?? {};
+  const keep = (fieldKey: string, suggestion: RecordFieldValue): RecordFieldValue => {
+    const currentValue = current[fieldKey];
+
+    if (typeof currentValue === 'string') {
+      return currentValue.trim().length > 0 ? currentValue : suggestion;
+    }
+
+    return currentValue ?? suggestion;
+  };
+  const priority =
+    typeof current.prioridadInterHosp === 'string' ? current.prioridadInterHosp : '';
+  const targetByPriority: Record<string, string> = {
+    URGENTE: '60',
+    PREFERENTE: '240',
+    RUTINARIO: '1440',
+  };
+
+  return {
+    tipoRegistro: 'Interconsultas',
+    fechaSolicitudInterHosp: keep(
+      'fechaSolicitudInterHosp',
+      args.recordedAt.slice(0, 10),
+    ),
+    horaSolicitudInterHosp: keep(
+      'horaSolicitudInterHosp',
+      args.recordedAt.slice(11, 16),
+    ),
+    medicoSolicitanteInterHosp:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaSolicitanteInterHosp:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    especialidadSolicitanteInterHosp:
+      args.detail.specialty?.name ?? 'Sin especialidad',
+    servicioSolicitanteInterHosp: keep(
+      'servicioSolicitanteInterHosp',
+      args.detail.serviceArea?.name ?? args.detail.specialty?.name ?? '',
+    ),
+    tiempoObjetivoRespuestaInterHosp: keep(
+      'tiempoObjetivoRespuestaInterHosp',
+      targetByPriority[priority] ?? '1440',
+    ),
+    estatusInterconsultaHosp: keep(
+      'estatusInterconsultaHosp',
+      current.responseSignedAtInterHosp
+        ? 'RESPONDIDA'
+        : current.requestSignedAtInterHosp
+          ? 'SOLICITADA'
+          : 'BORRADOR',
+    ),
+    diagnosticoRelacionadoInterHosp: keep(
+      'diagnosticoRelacionadoInterHosp',
+      args.detail.diagnoses[0]?.description ?? '',
+    ),
+    cie10RelacionadoInterHosp: keep(
+      'cie10RelacionadoInterHosp',
+      args.detail.diagnoses[0]?.code ?? '',
+    ),
+    medicoInterLegal:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaInterLegal:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    especialidadInterLegal: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionInterLegal:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
         .filter(Boolean)
         .join(' · ') || 'Lugar no configurado',
@@ -3092,6 +3175,8 @@ export function EpisodeDetailPage() {
           ? 'Evolución'
           : isHospitalMedicalOrdersTab(detail.encounterType, activeTab)
             ? 'Indicaciones médicas'
+            : isHospitalConsultationTab(detail.encounterType, activeTab)
+              ? 'Interconsultas'
             : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeRecordTabKey,
@@ -3149,6 +3234,10 @@ export function EpisodeDetailPage() {
     activeTab,
   );
   const isHospitalMedicalOrdersSection = isHospitalMedicalOrdersTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isHospitalConsultationSection = isHospitalConsultationTab(
     detail.encounterType,
     activeTab,
   );
@@ -3278,6 +3367,11 @@ export function EpisodeDetailPage() {
     : getLatestRecordByTab(detail.sectionRecords, 'Indicaciones médicas');
   const nextHospitalMedicalOrdersVersionNumber =
     (latestHospitalMedicalOrdersRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestHospitalConsultationRecord = isHospitalConsultationSection
+    ? getLatestRecordByTab(activeTabRecords, 'Interconsultas')
+    : getLatestRecordByTab(detail.sectionRecords, 'Interconsultas');
+  const nextHospitalConsultationVersionNumber =
+    (latestHospitalConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -3720,6 +3814,33 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isHospitalConsultationSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Interconsultas',
+          title: buildHospitalConsultationTitle(nextHospitalConsultationVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType).Interconsultas,
+            ...buildHospitalConsultationSnapshot({
+              detail,
+              recordedAt: nextRecordedAt,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -3943,9 +4064,25 @@ export function EpisodeDetailPage() {
                                             record.formData as Record<
                                               string,
                                               RecordFieldValue
-                                            >,
+                                          >,
                                         }),
                                       }
+                                    : isHospitalConsultationSection
+                                      ? {
+                                          ...(record.formData as Record<
+                                            string,
+                                            RecordFieldValue
+                                          >),
+                                          ...buildHospitalConsultationSnapshot({
+                                            detail,
+                                            recordedAt: record.recordedAt.slice(0, 16),
+                                            currentFormData:
+                                              record.formData as Record<
+                                                string,
+                                                RecordFieldValue
+                                              >,
+                                          }),
+                                        }
                     : record.formData,
       }),
     );
@@ -4176,6 +4313,15 @@ export function EpisodeDetailPage() {
                                         currentFormData: recordForm.formData,
                                       }),
                                     }
+                                  : isHospitalConsultationSection
+                                    ? {
+                                        ...recordForm.formData,
+                                        ...buildHospitalConsultationSnapshot({
+                                          detail,
+                                          recordedAt: recordForm.recordedAt,
+                                          currentFormData: recordForm.formData,
+                                        }),
+                                      }
                   : recordForm.formData,
     };
 
@@ -5267,6 +5413,46 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isHospitalConsultationSection ? (
+                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildHospitalConsultationTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildHospitalConsultationTitle(
+                                          nextHospitalConsultationVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Ticket clínico formal con solicitud, respuesta,
+                                    estado, SLA y trazabilidad de tiempos.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">Interconsultas</Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                  <Badge variant="warning">
+                                    {typeof recordForm.formData.estatusInterconsultaHosp ===
+                                    'string'
+                                      ? recordForm.formData.estatusInterconsultaHosp
+                                      : 'BORRADOR'}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -5368,7 +5554,8 @@ export function EpisodeDetailPage() {
                           isEmergencyDischargeSection ||
                           isHospitalAdmissionSection ||
                           isHospitalEvolutionSection ||
-                          isHospitalMedicalOrdersSection ? null : (
+                          isHospitalMedicalOrdersSection ||
+                          isHospitalConsultationSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -5537,7 +5724,8 @@ export function EpisodeDetailPage() {
                         isEmergencyDischargeSection ||
                         isHospitalAdmissionSection ||
                         isHospitalEvolutionSection ||
-                        isHospitalMedicalOrdersSection ? (
+                        isHospitalMedicalOrdersSection ||
+                        isHospitalConsultationSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -5562,6 +5750,8 @@ export function EpisodeDetailPage() {
                                                 ? 'Documento de Evolución hospitalaria'
                                                 : isHospitalMedicalOrdersSection
                                                   ? 'Documento de Indicaciones médicas'
+                                                  : isHospitalConsultationSection
+                                                    ? 'Documento de Interconsulta'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -5585,6 +5775,8 @@ export function EpisodeDetailPage() {
                                                     ? 'La vista previa y el PDF usan el SOAP, signos, diagnósticos, resultados y plan de esta evolución.'
                                                     : isHospitalMedicalOrdersSection
                                                       ? 'La vista previa y el PDF usan medicamentos, soluciones, estudios, interconsultas, cuidados y trazabilidad.'
+                                                      : isHospitalConsultationSection
+                                                        ? 'La vista previa y el PDF usan solicitud, respuesta, estado y tiempos de auditoría.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -5619,7 +5811,8 @@ export function EpisodeDetailPage() {
                                       !isEmergencyDischargeSection &&
                                       !isHospitalAdmissionSection &&
                                       !isHospitalEvolutionSection &&
-                                      !isHospitalMedicalOrdersSection) ||
+                                      !isHospitalMedicalOrdersSection &&
+                                      !isHospitalConsultationSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending

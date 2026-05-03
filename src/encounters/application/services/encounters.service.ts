@@ -821,6 +821,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const hospitalConsultationVersionContext =
+      await this.resolveHospitalConsultationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -848,6 +854,7 @@ export class EncountersService {
       hospitalAdmissionVersionContext,
       hospitalEvolutionVersionContext,
       hospitalMedicalOrdersVersionContext,
+      hospitalConsultationVersionContext,
       responsibleUser,
     });
 
@@ -957,6 +964,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncHospitalMedicalOrdersRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalConsultationRecord({
       tenantId,
       userId,
       encounter,
@@ -1105,6 +1124,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const hospitalConsultationVersionContext =
+      await this.resolveHospitalConsultationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1132,6 +1158,7 @@ export class EncountersService {
       hospitalAdmissionVersionContext,
       hospitalEvolutionVersionContext,
       hospitalMedicalOrdersVersionContext,
+      hospitalConsultationVersionContext,
       responsibleUser,
     });
 
@@ -1249,6 +1276,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncHospitalConsultationRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1317,18 +1356,74 @@ export class EncountersService {
     }
 
     const signedAt = new Date();
+    const isHospitalConsultation = this.isHospitalConsultationRecord(
+      currentRecord.encounterType,
+      currentRecord.tabKey,
+    );
+    const hospitalConsultationFormData =
+      currentRecord.formDataJson &&
+      typeof currentRecord.formDataJson === 'object' &&
+      !Array.isArray(currentRecord.formDataJson)
+        ? (currentRecord.formDataJson as Record<string, unknown>)
+        : {};
+    const isHospitalConsultationResponseSignature =
+      isHospitalConsultation &&
+      this.hasCapturedValue(hospitalConsultationFormData.requestSignedAtInterHosp) &&
+      (this.hasCapturedValue(hospitalConsultationFormData.impresionDiagnosticaInterHosp) ||
+        this.hasCapturedValue(hospitalConsultationFormData.sugerenciasTerapeuticasInterHosp) ||
+        this.hasCapturedValue(hospitalConsultationFormData.resultadoInterconsultaHosp));
+    const nextRecordStatus =
+      isHospitalConsultation && !isHospitalConsultationResponseSignature
+        ? EncounterRecordStatus.OPEN
+        : EncounterRecordStatus.SIGNED;
+    const nextRecordSignedAt =
+      isHospitalConsultation && !isHospitalConsultationResponseSignature
+        ? null
+        : signedAt;
+    const nextHospitalConsultationFormData: Record<string, unknown> | null = isHospitalConsultation
+      ? {
+          ...hospitalConsultationFormData,
+          ...(isHospitalConsultationResponseSignature
+            ? {
+                responseSignedAtInterHosp: signedAt.toISOString(),
+                estatusInterconsultaHosp: 'RESPONDIDA',
+              }
+            : {
+                requestSignedAtInterHosp: signedAt.toISOString(),
+                estatusInterconsultaHosp: 'SOLICITADA',
+              }),
+        }
+      : null;
 
     await this.prisma.$transaction(async (transaction) => {
       await transaction.encounterSectionRecord.update({
         where: { id: recordId },
         data: {
-          status: EncounterRecordStatus.SIGNED,
-          signedAt,
+          status: nextRecordStatus,
+          signedAt: nextRecordSignedAt,
+          ...(nextHospitalConsultationFormData
+            ? {
+                formDataJson:
+                  nextHospitalConsultationFormData as Prisma.InputJsonValue,
+              }
+            : {}),
           metadataJson: {
             ...currentMetadata,
             signedByUserId: currentUser.id,
             signedByUserName: currentUser.fullName,
             signedWithPasswordValidation: true,
+            ...(isHospitalConsultation && !isHospitalConsultationResponseSignature
+              ? {
+                  requestSignedAt: signedAt.toISOString(),
+                  systemStatus: 'SOLICITADA',
+                }
+              : {}),
+            ...(isHospitalConsultation && isHospitalConsultationResponseSignature
+              ? {
+                  responseSignedAt: signedAt.toISOString(),
+                  systemStatus: 'RESPONDIDA',
+                }
+              : {}),
           } as Prisma.InputJsonValue,
         },
       });
@@ -1580,6 +1675,55 @@ export class EncountersService {
           },
         });
       }
+
+      if (isHospitalConsultation && nextHospitalConsultationFormData) {
+        const requestSignedAt = this.parseOptionalDate(
+          nextHospitalConsultationFormData.requestSignedAtInterHosp,
+        );
+        const responseSignedAt = this.parseOptionalDate(
+          nextHospitalConsultationFormData.responseSignedAtInterHosp,
+        );
+        const requestedAt = this.parseOptionalDate(
+          `${this.readStringValue(nextHospitalConsultationFormData.fechaSolicitudInterHosp)}T${this.readStringValue(nextHospitalConsultationFormData.horaSolicitudInterHosp)}`,
+        );
+        const responseTimeMinutes =
+          requestedAt && responseSignedAt && responseSignedAt >= requestedAt
+            ? Math.round((responseSignedAt.getTime() - requestedAt.getTime()) / 60000)
+            : null;
+
+        await transaction.$executeRaw`
+          UPDATE "HospitalConsultation"
+          SET "status" = ${this.readStringValue(nextHospitalConsultationFormData.estatusInterconsultaHosp)},
+              "requestSignedAt" = ${requestSignedAt},
+              "responseSignedAt" = ${responseSignedAt},
+              "responseTimeMinutes" = ${responseTimeMinutes},
+              "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalConsultation',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              signedAt: signedAt.toISOString(),
+              phase: isHospitalConsultationResponseSignature
+                ? 'RESPUESTA'
+                : 'SOLICITUD',
+              status: this.readStringValue(
+                nextHospitalConsultationFormData.estatusInterconsultaHosp,
+              ),
+            },
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1635,7 +1779,8 @@ export class EncountersService {
       !this.isEmergencyDocumentRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey)
+      !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalConsultationRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -1709,6 +1854,14 @@ export class EncountersService {
     if (this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalMedicalOrder"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalConsultationRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalConsultation"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -2846,6 +2999,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveHospitalConsultationVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isHospitalConsultationRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Interconsultas',
+        noteType: 'Interconsultas',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -2899,6 +3083,9 @@ export class EncountersService {
     hospitalMedicalOrdersVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalMedicalOrdersVersionContext']>
     >;
+    hospitalConsultationVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHospitalConsultationVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -2907,6 +3094,53 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isHospitalConsultationRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.hospitalConsultationVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildHospitalConsultationFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+      });
+      const systemStatus = this.resolveHospitalConsultationStatus(formData);
+
+      return {
+        tabKey: 'Interconsultas',
+        noteType: 'Interconsultas',
+        title: `Interconsultas V${versionNumber}`,
+        status:
+          systemStatus === 'RESPONDIDA' || systemStatus === 'CERRADA'
+            ? EncounterRecordStatus.SIGNED
+            : input.input.status ??
+              input.currentRecord?.status ??
+              EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Interconsultas',
+          systemStatus,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            input.hospitalConsultationVersionContext?.latestRecord?.id ??
+            null,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isHospitalMedicalOrdersRecord(
         input.encounter.encounterType,
@@ -3396,6 +3630,10 @@ export class EncountersService {
       !this.isHospitalMedicalOrdersRecord(
         input.encounter.encounterType,
         input.input.tabKey,
+      ) &&
+      !this.isHospitalConsultationRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
       )
     ) {
       return {
@@ -3825,6 +4063,13 @@ export class EncountersService {
     );
   }
 
+  private isHospitalConsultationRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Interconsultas';
+  }
+
   private isAllowedEmergencyDocumentType(noteType: string) {
     return [
       'Solicitud de laboratorio',
@@ -3998,6 +4243,128 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
     };
+  }
+
+  private buildHospitalConsultationFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const requestDate =
+      this.readStringValue(input.incomingFormData.fechaSolicitudInterHosp) ||
+      input.recordedAt.toISOString().slice(0, 10);
+    const requestTime =
+      this.readStringValue(input.incomingFormData.horaSolicitudInterHosp) ||
+      input.recordedAt.toISOString().slice(11, 16);
+    const priority = this.readStringValue(input.incomingFormData.prioridadInterHosp);
+    const targetResponseMinutes =
+      this.readNumericValue(input.incomingFormData.tiempoObjetivoRespuestaInterHosp) ??
+      this.calculateHospitalConsultationSlaMinutes(priority);
+    const responseDate = this.readStringValue(
+      input.incomingFormData.fechaRespuestaInterHosp,
+    );
+    const responseTime = this.readStringValue(
+      input.incomingFormData.horaRespuestaInterHosp,
+    );
+    const responseTimeMinutes = this.calculateHospitalConsultationElapsedMinutes(
+      requestDate,
+      requestTime,
+      responseDate,
+      responseTime,
+    );
+    const closedAt = this.parseOptionalDate(input.incomingFormData.fechaCierreInterHosp);
+    const requestedAt = this.parseOptionalDate(`${requestDate}T${requestTime}`);
+    const closureTimeMinutes =
+      requestedAt && closedAt && closedAt >= requestedAt
+        ? Math.round((closedAt.getTime() - requestedAt.getTime()) / 60000)
+        : null;
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistro: 'Interconsultas',
+      fechaSolicitudInterHosp: requestDate,
+      horaSolicitudInterHosp: requestTime,
+      medicoSolicitanteInterHosp:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaSolicitanteInterHosp:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadSolicitanteInterHosp:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      servicioSolicitanteInterHosp:
+        input.encounter.serviceArea?.name ??
+        input.encounter.specialty?.name ??
+        'Servicio no configurado',
+      tiempoObjetivoRespuestaInterHosp: String(targetResponseMinutes),
+      estatusInterconsultaHosp: this.resolveHospitalConsultationStatus({
+        ...input.incomingFormData,
+      }),
+      tiempoRespuestaRealInterHosp:
+        responseTimeMinutes === null ? '' : `${responseTimeMinutes} min`,
+      tiempoCierreInterHosp:
+        closureTimeMinutes === null ? '' : `${closureTimeMinutes} min`,
+      medicoInterLegal:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaInterLegal:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadInterLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionInterLegal:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+    };
+  }
+
+  private calculateHospitalConsultationSlaMinutes(priority: string) {
+    if (priority === 'URGENTE') {
+      return 60;
+    }
+
+    if (priority === 'PREFERENTE') {
+      return 240;
+    }
+
+    return 1440;
+  }
+
+  private calculateHospitalConsultationElapsedMinutes(
+    requestDate: string,
+    requestTime: string,
+    responseDate: string,
+    responseTime: string,
+  ) {
+    const requestedAt = this.parseOptionalDate(`${requestDate}T${requestTime}`);
+    const respondedAt = this.parseOptionalDate(`${responseDate}T${responseTime}`);
+
+    if (!requestedAt || !respondedAt || respondedAt < requestedAt) {
+      return null;
+    }
+
+    return Math.round((respondedAt.getTime() - requestedAt.getTime()) / 60000);
+  }
+
+  private resolveHospitalConsultationStatus(formData: Record<string, unknown>) {
+    if (this.hasCapturedValue(formData.fechaCierreInterHosp)) {
+      return 'CERRADA';
+    }
+
+    if (
+      this.hasCapturedValue(formData.impresionDiagnosticaInterHosp) ||
+      this.hasCapturedValue(formData.sugerenciasTerapeuticasInterHosp) ||
+      this.hasCapturedValue(formData.resultadoInterconsultaHosp)
+    ) {
+      return 'RESPONDIDA';
+    }
+
+    if (this.hasCapturedValue(formData.requestSignedAtInterHosp)) {
+      return 'SOLICITADA';
+    }
+
+    return 'BORRADOR';
   }
 
   private inferStudyTargetModule(studyType: string) {
@@ -5801,6 +6168,110 @@ export class EncountersService {
     }
   }
 
+  private async syncHospitalConsultationRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isHospitalConsultationRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const requestDate = this.parseOptionalDate(input.formData.fechaSolicitudInterHosp);
+    const responseDate = this.parseOptionalDate(input.formData.fechaRespuestaInterHosp);
+    const closedAt = this.parseOptionalDate(input.formData.fechaCierreInterHosp);
+    const responseTimeMinutes = this.readNumericValueFromTimeLabel(
+      input.formData.tiempoRespuestaRealInterHosp,
+    );
+    const closureTimeMinutes = this.readNumericValueFromTimeLabel(
+      input.formData.tiempoCierreInterHosp,
+    );
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalConsultation" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "requestedDate",
+        "requestedTime", "notificationMedium", "requestingService", "requestedService",
+        "priority", "targetResponseMinutes", "reason", "diagnosticCriteria",
+        "relatedDiagnosis", "relatedCie10", "relatedStudies", "requesterUserId",
+        "requesterName", "requesterLicense", "requesterSpecialty", "requestSignedAt",
+        "responseDate", "responseTime", "consultantUserId", "consultantName",
+        "consultantLicense", "diagnosticImpression", "diagnosticSuggestions",
+        "therapeuticSuggestions", "requiresFollowUp", "consultationResult",
+        "responseSignedAt", "responseTimeMinutes", "closureTimeMinutes", "closedAt",
+        "legalProfessionalName", "legalProfessionalLicense", "legalProfessionalSpecialty",
+        "careLocation", "pdfDownloadCount", "pdfLastDownloadedAt", "contentJson",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${this.readStringValue(input.formData.estatusInterconsultaHosp) || 'BORRADOR'}, ${input.recordedAt}, ${requestDate},
+        ${this.readStringValue(input.formData.horaSolicitudInterHosp)}, ${this.readStringValue(input.formData.medioNotificacionInterHosp)}, ${this.readStringValue(input.formData.servicioSolicitanteInterHosp)}, ${this.readStringValue(input.formData.servicioInterconsultadoHosp)},
+        ${this.readStringValue(input.formData.prioridadInterHosp)}, ${this.readRoundedNumericValue(input.formData.tiempoObjetivoRespuestaInterHosp)}, ${this.readStringValue(input.formData.motivoInterconsultaHosp)}, ${this.readStringValue(input.formData.criterioDiagnosticoInterHosp)},
+        ${this.readStringValue(input.formData.diagnosticoRelacionadoInterHosp)}, ${this.readStringValue(input.formData.cie10RelacionadoInterHosp)}, ${this.readStringValue(input.formData.estudiosRelacionadosInterHosp)}, ${input.userId},
+        ${this.readStringValue(input.formData.medicoSolicitanteInterHosp) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaSolicitanteInterHosp)}, ${this.readStringValue(input.formData.especialidadSolicitanteInterHosp)}, ${this.parseOptionalDate(input.formData.requestSignedAtInterHosp)},
+        ${responseDate}, ${this.readStringValue(input.formData.horaRespuestaInterHosp)}, ${null}, ${this.readStringValue(input.formData.medicoInterconsultanteHosp)},
+        ${this.readStringValue(input.formData.cedulaInterconsultanteHosp)}, ${this.readStringValue(input.formData.impresionDiagnosticaInterHosp)}, ${this.readStringValue(input.formData.sugerenciasDiagnosticasInterHosp)},
+        ${this.readStringValue(input.formData.sugerenciasTerapeuticasInterHosp)}, ${this.readStringValue(input.formData.requiereSeguimientoInterHosp)}, ${this.readStringValue(input.formData.resultadoInterconsultaHosp)},
+        ${this.parseOptionalDate(input.formData.responseSignedAtInterHosp)}, ${responseTimeMinutes}, ${closureTimeMinutes}, ${closedAt},
+        ${this.readStringValue(input.formData.medicoInterLegal) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaInterLegal)}, ${this.readStringValue(input.formData.especialidadInterLegal)},
+        ${this.readStringValue(input.formData.lugarAtencionInterLegal)}, ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.jsonbParameter(input.formData)},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "requestedDate" = EXCLUDED."requestedDate",
+        "requestedTime" = EXCLUDED."requestedTime",
+        "notificationMedium" = EXCLUDED."notificationMedium",
+        "requestingService" = EXCLUDED."requestingService",
+        "requestedService" = EXCLUDED."requestedService",
+        "priority" = EXCLUDED."priority",
+        "targetResponseMinutes" = EXCLUDED."targetResponseMinutes",
+        "reason" = EXCLUDED."reason",
+        "diagnosticCriteria" = EXCLUDED."diagnosticCriteria",
+        "relatedDiagnosis" = EXCLUDED."relatedDiagnosis",
+        "relatedCie10" = EXCLUDED."relatedCie10",
+        "relatedStudies" = EXCLUDED."relatedStudies",
+        "requesterUserId" = EXCLUDED."requesterUserId",
+        "requesterName" = EXCLUDED."requesterName",
+        "requesterLicense" = EXCLUDED."requesterLicense",
+        "requesterSpecialty" = EXCLUDED."requesterSpecialty",
+        "requestSignedAt" = EXCLUDED."requestSignedAt",
+        "responseDate" = EXCLUDED."responseDate",
+        "responseTime" = EXCLUDED."responseTime",
+        "consultantName" = EXCLUDED."consultantName",
+        "consultantLicense" = EXCLUDED."consultantLicense",
+        "diagnosticImpression" = EXCLUDED."diagnosticImpression",
+        "diagnosticSuggestions" = EXCLUDED."diagnosticSuggestions",
+        "therapeuticSuggestions" = EXCLUDED."therapeuticSuggestions",
+        "requiresFollowUp" = EXCLUDED."requiresFollowUp",
+        "consultationResult" = EXCLUDED."consultationResult",
+        "responseSignedAt" = EXCLUDED."responseSignedAt",
+        "responseTimeMinutes" = EXCLUDED."responseTimeMinutes",
+        "closureTimeMinutes" = EXCLUDED."closureTimeMinutes",
+        "closedAt" = EXCLUDED."closedAt",
+        "legalProfessionalName" = EXCLUDED."legalProfessionalName",
+        "legalProfessionalLicense" = EXCLUDED."legalProfessionalLicense",
+        "legalProfessionalSpecialty" = EXCLUDED."legalProfessionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -6378,6 +6849,17 @@ export class EncountersService {
     return numericValue === null ? null : Math.round(numericValue);
   }
 
+  private readNumericValueFromTimeLabel(value: unknown) {
+    const rawValue = this.readStringValue(value);
+
+    if (!rawValue) {
+      return null;
+    }
+
+    const match = rawValue.match(/\d+/);
+    return match ? Number(match[0]) : null;
+  }
+
   private readNumericValueFromJson(
     rawValue: Prisma.JsonValue | null,
     key: string,
@@ -6555,7 +7037,8 @@ export class EncountersService {
         !this.isConsultationDocumentRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey))
+        !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalConsultationRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -7397,6 +7880,30 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isHospitalConsultationRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildHospitalConsultationPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        verificationCode: metadata.verificationCode ?? '',
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -7763,6 +8270,52 @@ export class EncountersService {
     return this.renderSimplePdf(lines);
   }
 
+  private buildHospitalConsultationPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const lines = [
+      input.recordTitle,
+      'Tipo: Interconsultas',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Código verificación: ${input.verificationCode}`,
+      `Estado: ${this.readStringValue(input.formData.estatusInterconsultaHosp)}`,
+      `Solicitud: ${this.readStringValue(input.formData.fechaSolicitudInterHosp)} ${this.readStringValue(input.formData.horaSolicitudInterHosp)}`,
+      `Solicitante: ${this.readStringValue(input.formData.medicoSolicitanteInterHosp)}`,
+      `Servicio solicitante: ${this.readStringValue(input.formData.servicioSolicitanteInterHosp)}`,
+      `Servicio interconsultado: ${this.readStringValue(input.formData.servicioInterconsultadoHosp)}`,
+      `Prioridad: ${this.readStringValue(input.formData.prioridadInterHosp)}`,
+      `SLA objetivo: ${this.readStringValue(input.formData.tiempoObjetivoRespuestaInterHosp)} min`,
+      `Motivo: ${this.readStringValue(input.formData.motivoInterconsultaHosp)}`,
+      `Criterio diagnóstico: ${this.readStringValue(input.formData.criterioDiagnosticoInterHosp)}`,
+      `Diagnóstico relacionado: ${this.readStringValue(input.formData.diagnosticoRelacionadoInterHosp)}`,
+      `CIE-10 relacionado: ${this.readStringValue(input.formData.cie10RelacionadoInterHosp)}`,
+      `Estudios relacionados: ${this.readStringValue(input.formData.estudiosRelacionadosInterHosp)}`,
+      `Respuesta: ${this.readStringValue(input.formData.fechaRespuestaInterHosp)} ${this.readStringValue(input.formData.horaRespuestaInterHosp)}`,
+      `Interconsultante: ${this.readStringValue(input.formData.medicoInterconsultanteHosp)}`,
+      `Impresión diagnóstica: ${this.readStringValue(input.formData.impresionDiagnosticaInterHosp)}`,
+      `Sugerencias diagnósticas: ${this.readStringValue(input.formData.sugerenciasDiagnosticasInterHosp)}`,
+      `Sugerencias terapéuticas: ${this.readStringValue(input.formData.sugerenciasTerapeuticasInterHosp)}`,
+      `Requiere seguimiento: ${this.readStringValue(input.formData.requiereSeguimientoInterHosp)}`,
+      `Resultado: ${this.readStringValue(input.formData.resultadoInterconsultaHosp)}`,
+      `Tiempo respuesta real: ${this.readStringValue(input.formData.tiempoRespuestaRealInterHosp)}`,
+      `Tiempo cierre: ${this.readStringValue(input.formData.tiempoCierreInterHosp)}`,
+      `Profesional legal: ${this.readStringValue(input.formData.medicoInterLegal)}`,
+      `Cédula: ${this.readStringValue(input.formData.cedulaInterLegal)}`,
+      `Especialidad: ${this.readStringValue(input.formData.especialidadInterLegal)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionInterLegal)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
   private renderSimplePdf(lines: string[]) {
     const sanitizedLines = lines
       .map((line) => this.escapePdfText(line))
@@ -8035,6 +8588,16 @@ export class EncountersService {
             'horaInicioIndicacionesHosp',
           ]
         : [];
+    const hospitalConsultationRequiredFields =
+      this.isHospitalConsultationRecord(input.encounterType, input.tabKey)
+        ? [
+            'fechaSolicitudInterHosp',
+            'horaSolicitudInterHosp',
+            'servicioSolicitanteInterHosp',
+            'servicioInterconsultadoHosp',
+            'motivoInterconsultaHosp',
+          ]
+        : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
@@ -8047,6 +8610,7 @@ export class EncountersService {
       ...hospitalAdmissionRequiredFields,
       ...hospitalEvolutionRequiredFields,
       ...hospitalMedicalOrdersRequiredFields,
+      ...hospitalConsultationRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -8072,8 +8636,14 @@ export class EncountersService {
                         ? 'Completa los campos obligatorios de la evolución hospitalaria antes de firmarla'
                         : this.isHospitalMedicalOrdersRecord(input.encounterType, input.tabKey)
                           ? 'Completa los campos obligatorios de indicaciones médicas antes de firmarlas'
+                          : this.isHospitalConsultationRecord(input.encounterType, input.tabKey)
+                            ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isHospitalConsultationRecord(input.encounterType, input.tabKey)) {
+      this.assertHospitalConsultationReadyForSignature(formData);
     }
 
     if (this.isHospitalMedicalOrdersRecord(input.encounterType, input.tabKey)) {
@@ -8186,6 +8756,34 @@ export class EncountersService {
     if (invalidConsultation) {
       throw new BadRequestException(
         'Cada interconsulta solicitada debe tener servicio',
+      );
+    }
+  }
+
+  private assertHospitalConsultationReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const isResponsePhase =
+      this.hasCapturedValue(formData.requestSignedAtInterHosp) &&
+      (this.hasCapturedValue(formData.impresionDiagnosticaInterHosp) ||
+        this.hasCapturedValue(formData.sugerenciasTerapeuticasInterHosp) ||
+        this.hasCapturedValue(formData.resultadoInterconsultaHosp));
+
+    if (!isResponsePhase) {
+      return;
+    }
+
+    const missingResponseFields = [
+      'fechaRespuestaInterHosp',
+      'horaRespuestaInterHosp',
+      'medicoInterconsultanteHosp',
+      'impresionDiagnosticaInterHosp',
+      'resultadoInterconsultaHosp',
+    ].filter((fieldKey) => !this.hasCapturedValue(formData[fieldKey]));
+
+    if (missingResponseFields.length > 0) {
+      throw new BadRequestException(
+        'Completa los campos obligatorios de la respuesta antes de firmarla',
       );
     }
   }

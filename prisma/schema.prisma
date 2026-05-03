@@ -242,6 +242,7 @@ model Tenant {
   hospitalOrderStudies       HospitalOrderRequestedStudy[]
   hospitalOrderConsultations HospitalOrderConsultationRequest[]
   hospitalOrderTraces        HospitalOrderTrace[]
+  hospitalConsultations      HospitalConsultation[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -489,6 +490,8 @@ model User {
   signedHospitalAdmissions HospitalAdmission[] @relation("HospitalAdmissionSigner")
   signedHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionSigner")
   signedHospitalMedicalOrders HospitalMedicalOrder[] @relation("HospitalMedicalOrderSigner")
+  requestedHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationRequester")
+  respondingHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationResponder")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -791,6 +794,7 @@ model Patient {
   hospitalOrderStudies HospitalOrderRequestedStudy[]
   hospitalOrderConsultations HospitalOrderConsultationRequest[]
   hospitalOrderTraces HospitalOrderTrace[]
+  hospitalConsultations HospitalConsultation[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1223,6 +1227,7 @@ model Encounter {
   hospitalOrderStudies HospitalOrderRequestedStudy[]
   hospitalOrderConsultations HospitalOrderConsultationRequest[]
   hospitalOrderTraces HospitalOrderTrace[]
+  hospitalConsultations HospitalConsultation[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1332,6 +1337,7 @@ model EncounterSectionRecord {
   hospitalAdmission HospitalAdmission?
   hospitalEvolution HospitalEvolution?
   hospitalMedicalOrder HospitalMedicalOrder?
+  hospitalConsultation HospitalConsultation?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -2224,6 +2230,89 @@ model HospitalOrderTrace {
   @@index([responsibleArea])
   @@index([status])
   @@index([sourceType])
+}
+
+/// Interconsulta hospitalaria formal como ticket clínico.
+/// Separa solicitud, respuesta, estado, SLA, tiempos y firmas por fase.
+model HospitalConsultation {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status String @default("BORRADOR")
+  recordedAt DateTime
+
+  requestedDate DateTime?
+  requestedTime String?
+  notificationMedium String?
+  requestingService String?
+  requestedService String
+  priority String?
+  targetResponseMinutes Int?
+  reason String
+  diagnosticCriteria String?
+  relatedDiagnosis String?
+  relatedCie10 String?
+  relatedStudies String?
+
+  requesterUserId String?
+  requesterName String
+  requesterLicense String?
+  requesterSpecialty String?
+  requestSignedAt DateTime?
+
+  responseDate DateTime?
+  responseTime String?
+  consultantUserId String?
+  consultantName String?
+  consultantLicense String?
+  diagnosticImpression String?
+  diagnosticSuggestions String?
+  therapeuticSuggestions String?
+  requiresFollowUp String?
+  consultationResult String?
+  responseSignedAt DateTime?
+
+  responseTimeMinutes Int?
+  closureTimeMinutes Int?
+  closedAt DateTime?
+
+  legalProfessionalName String
+  legalProfessionalLicense String?
+  legalProfessionalSpecialty String?
+  careLocation String?
+
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  requester     User?                  @relation("HospitalConsultationRequester", fields: [requesterUserId], references: [id], onDelete: SetNull)
+  consultant    User?                  @relation("HospitalConsultationResponder", fields: [consultantUserId], references: [id], onDelete: SetNull)
+
+  @@unique([encounterId, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([requestedService])
+  @@index([priority])
+  @@index([requestSignedAt])
+  @@index([responseSignedAt])
+  @@index([closedAt])
+  @@index([requesterUserId])
+  @@index([consultantUserId])
 }
 
 /// Interconsulta formal generada desde Urgencias.
