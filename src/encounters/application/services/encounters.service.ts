@@ -809,6 +809,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const hospitalEvolutionVersionContext =
+      await this.resolveHospitalEvolutionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -834,6 +840,7 @@ export class EncountersService {
       emergencyConsultationVersionContext,
       emergencyDischargeVersionContext,
       hospitalAdmissionVersionContext,
+      hospitalEvolutionVersionContext,
       responsibleUser,
     });
 
@@ -919,6 +926,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncHospitalAdmissionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalEvolutionRecord({
       tenantId,
       userId,
       encounter,
@@ -1053,6 +1072,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const hospitalEvolutionVersionContext =
+      await this.resolveHospitalEvolutionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1078,6 +1104,7 @@ export class EncountersService {
       emergencyConsultationVersionContext,
       emergencyDischargeVersionContext,
       hospitalAdmissionVersionContext,
+      hospitalEvolutionVersionContext,
       responsibleUser,
     });
 
@@ -1160,6 +1187,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncHospitalAdmissionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalEvolutionRecord({
       tenantId,
       userId,
       encounter,
@@ -1403,6 +1442,71 @@ export class EncountersService {
           },
         });
       }
+
+      if (
+        this.isHospitalEvolutionRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const hospitalFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        await transaction.$executeRaw`
+          UPDATE "HospitalEvolution"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.vitalSign.create({
+          data: {
+            tenantId,
+            encounterId: encounter.id,
+            patientId: encounter.patientId,
+            takenAt: currentRecord.recordedAt,
+            temperatureC: this.readNumericValue(
+              hospitalFormData.temperaturaEvolHosp,
+            ),
+            heartRate: this.readRoundedNumericValue(hospitalFormData.fcEvolHosp),
+            respiratoryRate: this.readRoundedNumericValue(
+              hospitalFormData.frEvolHosp,
+            ),
+            systolicBp: this.readRoundedNumericValue(
+              hospitalFormData.taSistolicaEvolHosp,
+            ),
+            diastolicBp: this.readRoundedNumericValue(
+              hospitalFormData.taDiastolicaEvolHosp,
+            ),
+            oxygenSaturation: this.readNumericValue(hospitalFormData.spo2EvolHosp),
+            painScale: this.readRoundedNumericValue(
+              hospitalFormData.dolorEvaEvolHosp,
+            ),
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalEvolution',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              signedAt: signedAt.toISOString(),
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              status: EncounterRecordStatus.SIGNED,
+            },
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1456,7 +1560,8 @@ export class EncountersService {
       !this.isEmergencyConsultationRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyDischargeRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyDocumentRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey)
+      !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -1514,6 +1619,14 @@ export class EncountersService {
     if (this.isHospitalAdmissionRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalAdmission"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalEvolutionRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalEvolution"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -2589,6 +2702,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveHospitalEvolutionVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isHospitalEvolutionRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Evolución',
+        noteType: 'Evolución hospitalaria',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -2636,6 +2780,9 @@ export class EncountersService {
     hospitalAdmissionVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalAdmissionVersionContext']>
     >;
+    hospitalEvolutionVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHospitalEvolutionVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -2644,6 +2791,65 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isHospitalEvolutionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const latestHospitalEvolutionRecord =
+        input.hospitalEvolutionVersionContext?.latestRecord ?? null;
+      const latestHospitalAdmissionRecord = this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Ingreso',
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.hospitalEvolutionVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildHospitalEvolutionFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        admissionFormDataJson: latestHospitalAdmissionRecord?.formDataJson ?? null,
+        previousEvolutionFormDataJson:
+          latestHospitalEvolutionRecord?.formDataJson ?? null,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Evolución',
+        noteType: 'Evolución hospitalaria',
+        title: `Evolución hospitalaria V${versionNumber}`,
+        status:
+          input.currentRecord?.status === EncounterRecordStatus.SIGNED
+            ? EncounterRecordStatus.SIGNED
+            : input.input.status ??
+              input.currentRecord?.status ??
+              EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Evolución hospitalaria',
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            latestHospitalEvolutionRecord?.id ??
+            latestHospitalAdmissionRecord?.id ??
+            null,
+          previousEvolutionRecordId:
+            this.readStringValue(
+              this.normalizeRecordMetadata(input.currentRecord?.metadataJson)
+                ?.previousEvolutionRecordId,
+            ) || latestHospitalEvolutionRecord?.id || null,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isHospitalAdmissionRecord(
         input.encounter.encounterType,
@@ -3019,6 +3225,10 @@ export class EncountersService {
         input.input.tabKey,
       ) &&
       !this.isHospitalAdmissionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      ) &&
+      !this.isHospitalEvolutionRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       )
@@ -3436,6 +3646,10 @@ export class EncountersService {
     return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Ingreso';
   }
 
+  private isHospitalEvolutionRecord(encounterType: EncounterType, tabKey: string) {
+    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Evolución';
+  }
+
   private isAllowedEmergencyDocumentType(noteType: string) {
     return [
       'Solicitud de laboratorio',
@@ -3506,6 +3720,71 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
     };
+  }
+
+  private buildHospitalEvolutionFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    admissionFormDataJson: Prisma.JsonValue | null;
+    previousEvolutionFormDataJson: Prisma.JsonValue | null;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const previousDiagnoses = this.readObjectArray(
+      input.incomingFormData.diagnosticosActivosEvolHosp,
+    );
+    const activeDiagnoses =
+      previousDiagnoses.length > 0
+        ? previousDiagnoses
+        : input.encounter.diagnoses.map((diagnosis) => ({
+            diagnostico: diagnosis.description,
+            cie10: diagnosis.code ?? '',
+            estado: diagnosis.isPrimary ? 'ACTIVO' : 'ACTIVO',
+            sourceDiagnosisId: diagnosis.id,
+          }));
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistro: 'Evolución hospitalaria',
+      diagnosticosActivosEvolHosp: activeDiagnoses,
+      cambiosClinicosEvolHosp:
+        this.readStringValue(input.incomingFormData.cambiosClinicosEvolHosp) ||
+        this.buildHospitalEvolutionChangeReference(input.previousEvolutionFormDataJson),
+      medicoEvolHospLegal:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaEvolHospLegal:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadEvolHospLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionEvolHospLegal:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      referenciaIngresoHosp:
+        this.readStringValueFromJson(input.admissionFormDataJson, 'diagnosticoPrincipalHosp') ||
+        this.readStringValueFromJson(input.admissionFormDataJson, 'motivoIngresoClinicoHosp'),
+    };
+  }
+
+  private buildHospitalEvolutionChangeReference(rawValue: Prisma.JsonValue | null) {
+    const previousInterpretation = this.readStringValueFromJson(
+      rawValue,
+      'interpretacionClinicaEvolHosp',
+    );
+    const previousPlan = this.readStringValueFromJson(rawValue, 'tratamientoEvolHosp');
+
+    if (!previousInterpretation && !previousPlan) {
+      return '';
+    }
+
+    return [
+      previousInterpretation ? `Evolución previa: ${previousInterpretation}` : '',
+      previousPlan ? `Plan previo: ${previousPlan}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private buildEmergencyTriageFormData(input: {
@@ -4862,6 +5141,161 @@ export class EncountersService {
     `;
   }
 
+  private async syncHospitalEvolutionRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isHospitalEvolutionRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const previousEvolutionRecordId = this.readStringValue(
+      input.metadata.previousEvolutionRecordId,
+    );
+    const hospitalEvolutionId = randomUUID();
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalEvolution" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "subjective",
+        "systolicBp", "diastolicBp", "heartRate", "respiratoryRate", "temperature",
+        "oxygenSaturation", "painEva", "capillaryGlucose", "physicalExam",
+        "clinicalInterpretation", "clinicalChanges", "nom004Justification",
+        "adverseEvents", "complications", "treatmentPlan", "studiesPlan",
+        "consultationsPlan", "followUpPlan", "prognosis", "currentConsent",
+        "patientFamilyInformation", "professionalName", "professionalLicense",
+        "professionalSpecialty", "careLocation", "signerUserId", "signedAt",
+        "pdfDownloadCount", "pdfLastDownloadedAt", "previousEvolutionRecordId",
+        "contentJson", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${hospitalEvolutionId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.subjetivoEvolHosp)},
+        ${this.readNumericValue(input.formData.taSistolicaEvolHosp)}, ${this.readNumericValue(input.formData.taDiastolicaEvolHosp)}, ${this.readNumericValue(input.formData.fcEvolHosp)}, ${this.readNumericValue(input.formData.frEvolHosp)}, ${this.readNumericValue(input.formData.temperaturaEvolHosp)},
+        ${this.readNumericValue(input.formData.spo2EvolHosp)}, ${this.readNumericValue(input.formData.dolorEvaEvolHosp)}, ${this.readNumericValue(input.formData.glucosaCapilarEvolHosp)}, ${this.readStringValue(input.formData.exploracionFisicaEvolHosp)},
+        ${this.readStringValue(input.formData.interpretacionClinicaEvolHosp)}, ${this.readStringValue(input.formData.cambiosClinicosEvolHosp)}, ${this.readStringValue(input.formData.justificacionNom004EvolHosp)},
+        ${this.readStringValue(input.formData.eventosAdversosEvolHosp)}, ${this.readStringValue(input.formData.complicacionesEvolHosp)}, ${this.readStringValue(input.formData.tratamientoEvolHosp)}, ${this.readStringValue(input.formData.estudiosEvolHosp)},
+        ${this.readStringValue(input.formData.interconsultasEvolHosp)}, ${this.readStringValue(input.formData.seguimientoEvolHosp)}, ${this.readStringValue(input.formData.pronosticoEvolHosp)}, ${this.readStringValue(input.formData.consentimientoVigenteEvolHosp)},
+        ${this.readStringValue(input.formData.informacionPacienteFamiliarEvolHosp)}, ${this.readStringValue(input.formData.medicoEvolHospLegal) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaEvolHospLegal)},
+        ${this.readStringValue(input.formData.especialidadEvolHospLegal)}, ${this.readStringValue(input.formData.lugarAtencionEvolHospLegal)}, ${signedAt ? input.userId : null}, ${signedAt},
+        ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${previousEvolutionRecordId || null},
+        ${this.jsonbParameter(input.formData)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "subjective" = EXCLUDED."subjective",
+        "systolicBp" = EXCLUDED."systolicBp",
+        "diastolicBp" = EXCLUDED."diastolicBp",
+        "heartRate" = EXCLUDED."heartRate",
+        "respiratoryRate" = EXCLUDED."respiratoryRate",
+        "temperature" = EXCLUDED."temperature",
+        "oxygenSaturation" = EXCLUDED."oxygenSaturation",
+        "painEva" = EXCLUDED."painEva",
+        "capillaryGlucose" = EXCLUDED."capillaryGlucose",
+        "physicalExam" = EXCLUDED."physicalExam",
+        "clinicalInterpretation" = EXCLUDED."clinicalInterpretation",
+        "clinicalChanges" = EXCLUDED."clinicalChanges",
+        "nom004Justification" = EXCLUDED."nom004Justification",
+        "adverseEvents" = EXCLUDED."adverseEvents",
+        "complications" = EXCLUDED."complications",
+        "treatmentPlan" = EXCLUDED."treatmentPlan",
+        "studiesPlan" = EXCLUDED."studiesPlan",
+        "consultationsPlan" = EXCLUDED."consultationsPlan",
+        "followUpPlan" = EXCLUDED."followUpPlan",
+        "prognosis" = EXCLUDED."prognosis",
+        "currentConsent" = EXCLUDED."currentConsent",
+        "patientFamilyInformation" = EXCLUDED."patientFamilyInformation",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "previousEvolutionRecordId" = EXCLUDED."previousEvolutionRecordId",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+
+    const storedRows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "HospitalEvolution" WHERE "sectionRecordId" = ${input.sectionRecordId} LIMIT 1
+    `;
+    const storedEvolutionId = storedRows[0]?.id;
+
+    if (!storedEvolutionId) {
+      return;
+    }
+
+    await this.prisma.$executeRaw`
+      DELETE FROM "HospitalEvolutionResult" WHERE "hospitalEvolutionId" = ${storedEvolutionId}
+    `;
+    await this.prisma.$executeRaw`
+      DELETE FROM "HospitalEvolutionDiagnosis" WHERE "hospitalEvolutionId" = ${storedEvolutionId}
+    `;
+
+    for (const [index, result] of this
+      .readObjectArray(input.formData.resultadosEstudiosEvolHosp)
+      .entries()) {
+      const studyName = this.readStringValue(result.estudio);
+      const resultDate = this.parseOptionalDate(result.fecha);
+
+      if (!studyName || !resultDate) {
+        continue;
+      }
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalEvolutionResult" (
+          "id", "tenantId", "encounterId", "patientId", "hospitalEvolutionId",
+          "studyName", "resultText", "resultDate", "sourceType", "sourceRecordId",
+          "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${storedEvolutionId},
+          ${studyName}, ${this.readStringValue(result.resultado)}, ${resultDate}, ${this.readStringValue(result.sourceType) || null}, ${this.readStringValue(result.sourceRecordId) || null},
+          ${index}, NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const [index, diagnosis] of this
+      .readObjectArray(input.formData.diagnosticosActivosEvolHosp)
+      .entries()) {
+      const diagnosisText = this.readStringValue(diagnosis.diagnostico);
+
+      if (!diagnosisText) {
+        continue;
+      }
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalEvolutionDiagnosis" (
+          "id", "tenantId", "encounterId", "patientId", "hospitalEvolutionId",
+          "diagnosis", "cie10", "status", "sourceDiagnosisId", "sortOrder",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${storedEvolutionId},
+          ${diagnosisText}, ${this.readStringValue(diagnosis.cie10)}, ${this.readStringValue(diagnosis.estado) || 'ACTIVO'}, ${this.readStringValue(diagnosis.sourceDiagnosisId) || null}, ${index},
+          NOW(), NOW()
+        )
+      `;
+    }
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -5614,7 +6048,8 @@ export class EncountersService {
       record.encounterId !== encounterId ||
       (!this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey) &&
         !this.isConsultationDocumentRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey))
+        !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -6408,6 +6843,30 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isHospitalEvolutionRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildHospitalEvolutionPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        verificationCode: metadata.verificationCode ?? '',
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -6644,6 +7103,61 @@ export class EncountersService {
       `Cédula: ${this.readStringValue(input.formData.cedulaIngresoLegal)}`,
       `Especialidad: ${this.readStringValue(input.formData.especialidadIngresoLegal)}`,
       `Lugar: ${this.readStringValue(input.formData.lugarAtencionIngresoLegal)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private buildHospitalEvolutionPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const resultLines = this.readObjectArray(
+      input.formData.resultadosEstudiosEvolHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.estudio)} (${this.readStringValue(item.fecha)}): ${this.readStringValue(item.resultado)}`.trim(),
+    );
+    const diagnosisLines = this.readObjectArray(
+      input.formData.diagnosticosActivosEvolHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.diagnostico)} ${this.readStringValue(item.cie10)} - ${this.readStringValue(item.estado)}`.trim(),
+    );
+    const lines = [
+      input.recordTitle,
+      'Tipo: Evolución hospitalaria',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Código verificación: ${input.verificationCode}`,
+      `Subjetivo: ${this.readStringValue(input.formData.subjetivoEvolHosp)}`,
+      `TA/FC/FR/T/SpO2/EVA: ${this.readStringValue(input.formData.taSistolicaEvolHosp)}/${this.readStringValue(input.formData.taDiastolicaEvolHosp)} ${this.readStringValue(input.formData.fcEvolHosp)} ${this.readStringValue(input.formData.frEvolHosp)} ${this.readStringValue(input.formData.temperaturaEvolHosp)} ${this.readStringValue(input.formData.spo2EvolHosp)} ${this.readStringValue(input.formData.dolorEvaEvolHosp)}`,
+      `Glucosa capilar: ${this.readStringValue(input.formData.glucosaCapilarEvolHosp)}`,
+      `Exploración: ${this.readStringValue(input.formData.exploracionFisicaEvolHosp)}`,
+      'Resultados:',
+      ...(resultLines.length > 0 ? resultLines : ['Sin resultados capturados']),
+      `Interpretación: ${this.readStringValue(input.formData.interpretacionClinicaEvolHosp)}`,
+      `Cambios clínicos: ${this.readStringValue(input.formData.cambiosClinicosEvolHosp)}`,
+      `Justificación NOM-004: ${this.readStringValue(input.formData.justificacionNom004EvolHosp)}`,
+      'Diagnósticos activos:',
+      ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos activos']),
+      `Eventos adversos: ${this.readStringValue(input.formData.eventosAdversosEvolHosp)}`,
+      `Complicaciones: ${this.readStringValue(input.formData.complicacionesEvolHosp)}`,
+      `Tratamiento: ${this.readStringValue(input.formData.tratamientoEvolHosp)}`,
+      `Estudios: ${this.readStringValue(input.formData.estudiosEvolHosp)}`,
+      `Interconsultas: ${this.readStringValue(input.formData.interconsultasEvolHosp)}`,
+      `Seguimiento: ${this.readStringValue(input.formData.seguimientoEvolHosp)}`,
+      `Pronóstico: ${this.readStringValue(input.formData.pronosticoEvolHosp)}`,
+      `Consentimiento vigente: ${this.readStringValue(input.formData.consentimientoVigenteEvolHosp)}`,
+      `Información brindada: ${this.readStringValue(input.formData.informacionPacienteFamiliarEvolHosp)}`,
+      `Profesional: ${this.readStringValue(input.formData.medicoEvolHospLegal)}`,
+      `Cédula: ${this.readStringValue(input.formData.cedulaEvolHospLegal)}`,
+      `Especialidad: ${this.readStringValue(input.formData.especialidadEvolHospLegal)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionEvolHospLegal)}`,
       `Descargas registradas: ${input.downloadCount}`,
     ];
 
@@ -6893,6 +7407,26 @@ export class EncountersService {
           'riesgosIdentificadosHosp',
         ]
       : [];
+    const hospitalEvolutionRequiredFields = this.isHospitalEvolutionRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? [
+          'subjetivoEvolHosp',
+          'taSistolicaEvolHosp',
+          'taDiastolicaEvolHosp',
+          'fcEvolHosp',
+          'frEvolHosp',
+          'temperaturaEvolHosp',
+          'spo2EvolHosp',
+          'dolorEvaEvolHosp',
+          'exploracionFisicaEvolHosp',
+          'interpretacionClinicaEvolHosp',
+          'justificacionNom004EvolHosp',
+          'diagnosticosActivosEvolHosp',
+          'tratamientoEvolHosp',
+        ]
+      : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
@@ -6903,6 +7437,7 @@ export class EncountersService {
       ...emergencyConsultationRequiredFields,
       ...emergencyDischargeRequiredFields,
       ...hospitalAdmissionRequiredFields,
+      ...hospitalEvolutionRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -6924,8 +7459,14 @@ export class EncountersService {
                     ? 'Completa los campos obligatorios del egreso de urgencias antes de firmarlo'
                     : this.isHospitalAdmissionRecord(input.encounterType, input.tabKey)
                       ? 'Completa los campos obligatorios del ingreso hospitalario antes de firmarlo'
+                      : this.isHospitalEvolutionRecord(input.encounterType, input.tabKey)
+                        ? 'Completa los campos obligatorios de la evolución hospitalaria antes de firmarla'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isHospitalEvolutionRecord(input.encounterType, input.tabKey)) {
+      this.assertHospitalEvolutionReadyForSignature(formData);
     }
 
     if (this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)) {
@@ -6937,6 +7478,37 @@ export class EncountersService {
     if (encounter.status === EncounterStatus.CLOSED) {
       throw new BadRequestException(
         'El episodio ya está cerrado y no permite nuevas capturas o modificaciones',
+      );
+    }
+  }
+
+  private assertHospitalEvolutionReadyForSignature(formData: Record<string, unknown>) {
+    const resultsMissingDate = this
+      .readObjectArray(formData.resultadosEstudiosEvolHosp)
+      .some((result) => {
+        const hasAnyResultValue =
+          this.hasCapturedValue(result.estudio) ||
+          this.hasCapturedValue(result.resultado);
+
+        return hasAnyResultValue && !this.hasCapturedValue(result.fecha);
+      });
+
+    if (resultsMissingDate) {
+      throw new BadRequestException(
+        'Cada resultado capturado en la evolución hospitalaria debe tener fecha',
+      );
+    }
+
+    const diagnoses = this.readObjectArray(formData.diagnosticosActivosEvolHosp);
+    const hasIncompleteDiagnosis = diagnoses.some(
+      (diagnosis) =>
+        !this.hasCapturedValue(diagnosis.diagnostico) ||
+        !this.hasCapturedValue(diagnosis.estado),
+    );
+
+    if (diagnoses.length === 0 || hasIncompleteDiagnosis) {
+      throw new BadRequestException(
+        'Captura diagnóstico y estado para cada diagnóstico activo de la evolución hospitalaria',
       );
     }
   }

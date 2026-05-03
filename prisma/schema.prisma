@@ -233,6 +233,9 @@ model Tenant {
   emergencyDocuments         EmergencyDocument[]
   emergencyConsultations     EmergencyConsultation[]
   hospitalAdmissions         HospitalAdmission[]
+  hospitalEvolutions         HospitalEvolution[]
+  hospitalEvolutionResults   HospitalEvolutionResult[]
+  hospitalEvolutionDiagnoses HospitalEvolutionDiagnosis[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -478,6 +481,7 @@ model User {
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
   signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
   signedHospitalAdmissions HospitalAdmission[] @relation("HospitalAdmissionSigner")
+  signedHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionSigner")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
 
@@ -771,6 +775,9 @@ model Patient {
   emergencyDocuments EmergencyDocument[]
   emergencyConsultations EmergencyConsultation[]
   hospitalAdmissions HospitalAdmission[]
+  hospitalEvolutions HospitalEvolution[]
+  hospitalEvolutionResults HospitalEvolutionResult[]
+  hospitalEvolutionDiagnoses HospitalEvolutionDiagnosis[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1194,6 +1201,9 @@ model Encounter {
   emergencyDocuments   EmergencyDocument[]
   emergencyConsultations EmergencyConsultation[]
   hospitalAdmissions   HospitalAdmission[]
+  hospitalEvolutions   HospitalEvolution[]
+  hospitalEvolutionResults HospitalEvolutionResult[]
+  hospitalEvolutionDiagnoses HospitalEvolutionDiagnosis[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1301,6 +1311,7 @@ model EncounterSectionRecord {
   emergencyDocument EmergencyDocument?
   emergencyConsultation EmergencyConsultation?
   hospitalAdmission HospitalAdmission?
+  hospitalEvolution HospitalEvolution?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1832,6 +1843,144 @@ model HospitalAdmission {
   @@index([recordedAt])
   @@index([signerUserId])
   @@index([sourceEmergencyRecordId])
+}
+
+/// Evolución hospitalaria versionada dentro de un episodio de Hospitalización.
+/// Mantiene SOAP, signos vitales por evolución, diagnóstico longitudinal,
+/// resultados referenciables, plan estructurado, firma y auditoría NOM-004.
+model HospitalEvolution {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  subjective String?
+  systolicBp Decimal? @db.Decimal(10, 2)
+  diastolicBp Decimal? @db.Decimal(10, 2)
+  heartRate Decimal? @db.Decimal(10, 2)
+  respiratoryRate Decimal? @db.Decimal(10, 2)
+  temperature Decimal? @db.Decimal(10, 2)
+  oxygenSaturation Decimal? @db.Decimal(10, 2)
+  painEva Decimal? @db.Decimal(10, 2)
+  capillaryGlucose Decimal? @db.Decimal(10, 2)
+  physicalExam String?
+
+  clinicalInterpretation String?
+  clinicalChanges String?
+  nom004Justification String?
+
+  adverseEvents String?
+  complications String?
+
+  treatmentPlan String?
+  studiesPlan String?
+  consultationsPlan String?
+  followUpPlan String?
+  prognosis String?
+
+  currentConsent String?
+  patientFamilyInformation String?
+
+  professionalName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+
+  signerUserId String?
+  signedAt DateTime?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  previousEvolutionRecordId String?
+  contentJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("HospitalEvolutionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  results       HospitalEvolutionResult[]
+  diagnoses     HospitalEvolutionDiagnosis[]
+
+  @@unique([encounterId, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signerUserId])
+  @@index([previousEvolutionRecordId])
+}
+
+model HospitalEvolutionResult {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  hospitalEvolutionId String
+
+  studyName String
+  resultText String?
+  resultDate DateTime
+  sourceType String?
+  sourceRecordId String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter         @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  evolution HospitalEvolution @relation(fields: [hospitalEvolutionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([hospitalEvolutionId])
+  @@index([resultDate])
+  @@index([sourceType])
+  @@index([sourceRecordId])
+}
+
+model HospitalEvolutionDiagnosis {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  hospitalEvolutionId String
+
+  diagnosis String
+  cie10 String?
+  status String
+  sourceDiagnosisId String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter         @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  evolution HospitalEvolution @relation(fields: [hospitalEvolutionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([hospitalEvolutionId])
+  @@index([status])
+  @@index([sourceDiagnosisId])
 }
 
 /// Interconsulta formal generada desde Urgencias.

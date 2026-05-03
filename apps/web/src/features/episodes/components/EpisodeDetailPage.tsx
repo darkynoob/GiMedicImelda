@@ -204,6 +204,17 @@ function buildHospitalAdmissionTitle(versionNumber: number) {
   return `Ingreso hospitalario V${versionNumber}`;
 }
 
+function isHospitalEvolutionTab(encounterType: string, tabTitle: string) {
+  return (
+    encounterType === 'HOSPITALIZATION' &&
+    (tabTitle === 'Evolución' || tabTitle === 'Evolución hospitalaria')
+  );
+}
+
+function buildHospitalEvolutionTitle(versionNumber: number) {
+  return `Evolución hospitalaria V${versionNumber}`;
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
@@ -1098,6 +1109,91 @@ function buildHospitalAdmissionSnapshot(args: {
       args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     especialidadIngresoLegal: args.detail.specialty?.name ?? 'Sin especialidad',
     lugarAtencionIngresoLegal:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
+  };
+}
+
+function buildHospitalEvolutionSnapshot(args: {
+  detail: EncounterDetailResponse;
+  admissionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  previousEvolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const current = args.currentFormData ?? {};
+  const previous = args.previousEvolutionRecord?.formData ?? {};
+  const admission = args.admissionRecord?.formData ?? {};
+  const read = (value: unknown) => (typeof value === 'string' ? value : '');
+  const keep = (fieldKey: string, suggestion: RecordFieldValue): RecordFieldValue => {
+    const currentValue = current[fieldKey];
+
+    if (Array.isArray(currentValue)) {
+      return currentValue.length > 0 ? currentValue : suggestion;
+    }
+
+    if (typeof currentValue === 'string') {
+      return currentValue.trim().length > 0 ? currentValue : suggestion;
+    }
+
+    return currentValue ?? suggestion;
+  };
+  const previousDiagnoses = normalizeObjectArrayField(
+    previous.diagnosticosActivosEvolHosp,
+  );
+  const admissionDiagnoses: Array<Record<string, string>> = [];
+
+  if (read(admission.diagnosticoPrincipalHosp)) {
+    admissionDiagnoses.push({
+      diagnostico: read(admission.diagnosticoPrincipalHosp),
+      cie10: read(admission.cie10Hosp),
+      estado: 'ACTIVO',
+    });
+  }
+
+  admissionDiagnoses.push(
+    ...normalizeObjectArrayField(admission.diagnosticosSecundariosHosp)
+      .map((item) => ({
+        diagnostico: read(item.diagnostico),
+        cie10: read(item.cie10),
+        estado: read(item.estado) || 'ACTIVO',
+      }))
+      .filter((item) => item.diagnostico.trim().length > 0),
+  );
+  const encounterDiagnoses = args.detail.diagnoses.map((diagnosis) => ({
+    diagnostico: diagnosis.description,
+    cie10: diagnosis.code ?? '',
+    estado: 'ACTIVO',
+    sourceDiagnosisId: diagnosis.id,
+  }));
+
+  return {
+    tipoRegistro: 'Evolución hospitalaria',
+    diagnosticosActivosEvolHosp: keep(
+      'diagnosticosActivosEvolHosp',
+      previousDiagnoses.length > 0
+        ? previousDiagnoses
+        : admissionDiagnoses.length > 0
+          ? admissionDiagnoses
+          : encounterDiagnoses,
+    ),
+    cambiosClinicosEvolHosp: keep(
+      'cambiosClinicosEvolHosp',
+      read(previous.interpretacionClinicaEvolHosp)
+        ? `Evolución previa: ${read(previous.interpretacionClinicaEvolHosp)}`
+        : '',
+    ),
+    referenciaIngresoHosp: keep(
+      'referenciaIngresoHosp',
+      read(admission.motivoIngresoClinicoHosp) ||
+        read(admission.diagnosticoPrincipalHosp),
+    ),
+    medicoEvolHospLegal:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaEvolHospLegal:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    especialidadEvolHospLegal: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionEvolHospLegal:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
         .filter(Boolean)
         .join(' · ') || 'Lugar no configurado',
@@ -2937,7 +3033,9 @@ export function EpisodeDetailPage() {
         ? 'Egreso'
         : isHospitalAdmissionTab(detail.encounterType, activeTab)
           ? 'Ingreso'
-          : activeTab;
+          : isHospitalEvolutionTab(detail.encounterType, activeTab)
+            ? 'Evolución'
+            : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeRecordTabKey,
   );
@@ -2986,6 +3084,10 @@ export function EpisodeDetailPage() {
     activeTab,
   );
   const isHospitalAdmissionSection = isHospitalAdmissionTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isHospitalEvolutionSection = isHospitalEvolutionTab(
     detail.encounterType,
     activeTab,
   );
@@ -3049,6 +3151,9 @@ export function EpisodeDetailPage() {
   const latestHospitalAdmissionRecord = isHospitalAdmissionSection
     ? getLatestRecordByTab(activeTabRecords, 'Ingreso')
     : getLatestRecordByTab(detail.sectionRecords, 'Ingreso');
+  const latestHospitalEvolutionRecord = isHospitalEvolutionSection
+    ? getLatestRecordByTab(activeTabRecords, 'Evolución')
+    : getLatestRecordByTab(detail.sectionRecords, 'Evolución');
   const selectedRecord =
     activeRecordId === null
       ? null
@@ -3105,6 +3210,8 @@ export function EpisodeDetailPage() {
     (latestEmergencyConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextHospitalAdmissionVersionNumber =
     (latestHospitalAdmissionRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextHospitalEvolutionVersionNumber =
+    (latestHospitalEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -3486,6 +3593,36 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isHospitalEvolutionSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Evolución hospitalaria',
+          title: buildHospitalEvolutionTitle(nextHospitalEvolutionVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildInitialStructuredSections(detail.encounterType)[
+              'Evolución hospitalaria'
+            ],
+            ...buildHospitalEvolutionSnapshot({
+              detail,
+              admissionRecord: latestHospitalAdmissionRecord,
+              previousEvolutionRecord: latestHospitalEvolutionRecord,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -3671,6 +3808,31 @@ export function EpisodeDetailPage() {
                                         record.formData as Record<string, RecordFieldValue>,
                                     }),
                                   }
+                                : isHospitalEvolutionSection
+                                  ? {
+                                      ...(record.formData as Record<string, RecordFieldValue>),
+                                      ...buildHospitalEvolutionSnapshot({
+                                        detail,
+                                        admissionRecord: latestHospitalAdmissionRecord,
+                                        previousEvolutionRecord:
+                                          detail.sectionRecords
+                                            .filter(
+                                              (item) =>
+                                                item.tabKey === 'Evolución' &&
+                                                item.id !== record.id,
+                                            )
+                                            .sort((left, right) =>
+                                              right.recordedAt.localeCompare(
+                                                left.recordedAt,
+                                              ),
+                                            )[0] ?? null,
+                                        currentFormData:
+                                          record.formData as Record<
+                                            string,
+                                            RecordFieldValue
+                                          >,
+                                      }),
+                                    }
                     : record.formData,
       }),
     );
@@ -3881,6 +4043,17 @@ export function EpisodeDetailPage() {
                                     currentFormData: recordForm.formData,
                                   }),
                                 }
+                              : isHospitalEvolutionSection
+                                ? {
+                                    ...recordForm.formData,
+                                    ...buildHospitalEvolutionSnapshot({
+                                      detail,
+                                      admissionRecord: latestHospitalAdmissionRecord,
+                                      previousEvolutionRecord:
+                                        latestHospitalEvolutionRecord,
+                                      currentFormData: recordForm.formData,
+                                    }),
+                                  }
                   : recordForm.formData,
     };
 
@@ -4899,6 +5072,43 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isHospitalEvolutionSection ? (
+                            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildHospitalEvolutionTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildHospitalEvolutionTitle(
+                                          nextHospitalEvolutionVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Seguimiento SOAP independiente. Cada firma crea una
+                                    nueva toma de signos vitales y conserva diagnósticos
+                                    longitudinales.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Evolución hospitalaria
+                                  </Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -4998,7 +5208,8 @@ export function EpisodeDetailPage() {
                           isEmergencyOrdersSection ||
                           isEmergencyConsultationSection ||
                           isEmergencyDischargeSection ||
-                          isHospitalAdmissionSection ? null : (
+                          isHospitalAdmissionSection ||
+                          isHospitalEvolutionSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -5165,7 +5376,8 @@ export function EpisodeDetailPage() {
                         isEmergencyOrdersSection ||
                         isEmergencyConsultationSection ||
                         isEmergencyDischargeSection ||
-                        isHospitalAdmissionSection ? (
+                        isHospitalAdmissionSection ||
+                        isHospitalEvolutionSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -5186,6 +5398,8 @@ export function EpisodeDetailPage() {
                                             ? 'Documento de Egreso'
                                             : isHospitalAdmissionSection
                                               ? 'Documento de Ingreso hospitalario'
+                                              : isHospitalEvolutionSection
+                                                ? 'Documento de Evolución hospitalaria'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -5205,6 +5419,8 @@ export function EpisodeDetailPage() {
                                                 ? 'La vista previa y el PDF usan el documento final de egreso y su estado de cierre.'
                                                 : isHospitalAdmissionSection
                                                   ? 'La vista previa y el PDF usan el registro de admisión hospitalaria firmado o en borrador.'
+                                                  : isHospitalEvolutionSection
+                                                    ? 'La vista previa y el PDF usan el SOAP, signos, diagnósticos, resultados y plan de esta evolución.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -5237,7 +5453,8 @@ export function EpisodeDetailPage() {
                                       !isEmergencyOrdersSection &&
                                       !isEmergencyConsultationSection &&
                                       !isEmergencyDischargeSection &&
-                                      !isHospitalAdmissionSection) ||
+                                      !isHospitalAdmissionSection &&
+                                      !isHospitalEvolutionSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending

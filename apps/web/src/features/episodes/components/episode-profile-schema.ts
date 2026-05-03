@@ -2485,46 +2485,147 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Seguimiento clínico intrahospitalario.',
       sections: [
         {
-          key: 'evolucion_hosp',
-          title: 'Nota de evolución',
+          key: 'subjetivo_evol_hosp',
+          title: 'Subjetivo',
           fields: [
-            { key: 'datosGeneralesEvolucion', label: 'Datos generales', type: 'textarea' },
-            { key: 'subjetivoHosp', label: 'Subjetivo', type: 'textarea' },
             {
-              key: 'objetivoHosp',
-              label: 'Objetivo / signos y exploración',
+              key: 'tipoRegistro',
+              label: 'Tipo de registro',
+              type: 'readonly',
+              inheritanceMode: 'system',
+            },
+            {
+              key: 'referenciaIngresoHosp',
+              label: 'Referencia de ingreso',
+              type: 'readonly',
+            },
+            {
+              key: 'subjetivoEvolHosp',
+              label: 'Síntomas actuales / percepción del paciente',
+              type: 'textarea',
+            },
+          ],
+        },
+        {
+          key: 'objetivo_evol_hosp',
+          title: 'Objetivo: signos vitales y exploración',
+          fields: [
+            { key: 'taSistolicaEvolHosp', label: 'TA sistólica', type: 'number' },
+            { key: 'taDiastolicaEvolHosp', label: 'TA diastólica', type: 'number' },
+            { key: 'fcEvolHosp', label: 'FC', type: 'number' },
+            { key: 'frEvolHosp', label: 'FR', type: 'number' },
+            { key: 'temperaturaEvolHosp', label: 'Temperatura', type: 'number' },
+            { key: 'spo2EvolHosp', label: 'SpO₂', type: 'number' },
+            { key: 'dolorEvaEvolHosp', label: 'Dolor EVA', type: 'number' },
+            { key: 'glucosaCapilarEvolHosp', label: 'Glucosa capilar', type: 'number' },
+            { key: 'exploracionFisicaEvolHosp', label: 'Exploración física', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'resultados_evol_hosp',
+          title: 'Resultados de estudios',
+          fields: [
+            {
+              key: 'resultadosEstudiosEvolHosp',
+              label: 'Lista de resultados',
+              type: 'object-array',
+              itemAddLabel: 'Agregar resultado',
+              itemFields: [
+                { key: 'estudio', label: 'Estudio', type: 'text' },
+                { key: 'resultado', label: 'Resultado', type: 'text' },
+                { key: 'fecha', label: 'Fecha', type: 'date' },
+              ],
+            },
+          ],
+        },
+        {
+          key: 'analisis_evol_hosp',
+          title: 'Análisis: interpretación clínica',
+          fields: [
+            { key: 'interpretacionClinicaEvolHosp', label: 'Interpretación clínica', type: 'textarea' },
+            {
+              key: 'cambiosClinicosEvolHosp',
+              label: 'Cambios clínicos respecto a evolución previa',
               type: 'textarea',
             },
             {
-              key: 'resultadosEstudiosHosp',
-              label: 'Resultados de estudios',
+              key: 'justificacionNom004EvolHosp',
+              label: 'Justificación clínica NOM-004',
               type: 'textarea',
             },
+          ],
+        },
+        {
+          key: 'diagnosticos_evol_hosp',
+          title: 'Diagnósticos activos',
+          fields: [
             {
-              key: 'analisisClinicoHosp',
-              label: 'Análisis e interpretación',
-              type: 'textarea',
-            },
-            {
-              key: 'diagnosticosActivosHosp',
+              key: 'diagnosticosActivosEvolHosp',
               label: 'Diagnósticos activos',
-              type: 'textarea',
+              type: 'object-array',
+              itemAddLabel: 'Agregar diagnóstico',
+              itemFields: [
+                { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
+                { key: 'cie10', label: 'CIE-10', type: 'text' },
+                { key: 'estado', label: 'Estado', type: 'select', options: [
+                  { value: 'ACTIVO', label: 'Activo' },
+                  { value: 'INACTIVO', label: 'Inactivo' },
+                  { value: 'RESUELTO', label: 'Resuelto' },
+                ] },
+              ],
             },
+          ],
+        },
+        {
+          key: 'eventos_evol_hosp',
+          title: 'Eventos adversos y complicaciones',
+          fields: [
+            { key: 'eventosAdversosEvolHosp', label: 'Eventos adversos', type: 'textarea' },
+            { key: 'complicacionesEvolHosp', label: 'Complicaciones', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'plan_evol_hosp',
+          title: 'Plan estructurado',
+          fields: [
+            { key: 'tratamientoEvolHosp', label: 'Tratamiento', type: 'textarea' },
+            { key: 'estudiosEvolHosp', label: 'Estudios', type: 'textarea' },
+            { key: 'interconsultasEvolHosp', label: 'Interconsultas', type: 'textarea' },
+            { key: 'seguimientoEvolHosp', label: 'Seguimiento', type: 'textarea' },
+            { key: 'pronosticoEvolHosp', label: 'Pronóstico', type: 'select', options: [
+              { value: '', label: 'Selecciona una opción' },
+              { value: 'BUENO', label: 'Bueno' },
+              { value: 'RESERVADO', label: 'Reservado' },
+              { value: 'MALO', label: 'Malo' },
+            ] },
+          ],
+        },
+        {
+          key: 'medico_legal_evol_hosp',
+          title: 'Campos médico-legales',
+          fields: [
+            { key: 'consentimientoVigenteEvolHosp', label: 'Consentimiento vigente', type: 'select', options: [
+              { value: '', label: 'Sin especificar' },
+              { value: 'SI_VIGENTE', label: 'Sí vigente' },
+              { value: 'NO', label: 'No' },
+              { value: 'NO_APLICA', label: 'No aplica' },
+            ] },
             {
-              key: 'eventosAdversosHosp',
-              label: 'Eventos adversos y complicaciones',
+              key: 'informacionPacienteFamiliarEvolHosp',
+              label: 'Información brindada al paciente / familiar',
               type: 'textarea',
             },
-            {
-              key: 'planEstructuradoHosp',
-              label: 'Plan estructurado',
-              type: 'textarea',
-            },
-            {
-              key: 'camposMedicoLegalesHosp',
-              label: 'Campos médico-legales',
-              type: 'textarea',
-            },
+          ],
+        },
+        {
+          key: 'legales_firma_evol_hosp',
+          title: 'Datos legales y firma NOM-004',
+          fields: [
+            { key: 'medicoEvolHospLegal', label: 'Nombre completo del profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'cedulaEvolHospLegal', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'especialidadEvolHospLegal', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'lugarAtencionEvolHospLegal', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmaEvolHosp', label: 'Firma electrónica', type: 'action', inheritanceMode: 'system', actionLabel: 'Firmar electrónicamente' },
           ],
         },
       ],
