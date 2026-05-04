@@ -839,12 +839,26 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const hospitalDischargeVersionContext =
+      await this.resolveHospitalDischargeVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
     ) {
       throw new BadRequestException(
         'Este episodio ya tiene un egreso de urgencias. Solo se permite uno por episodio.',
+      );
+    }
+    if (
+      hospitalDischargeVersionContext?.latestRecord &&
+      this.isHospitalDischargeRecord(encounter.encounterType, input.tabKey)
+    ) {
+      throw new BadRequestException(
+        'Este episodio ya tiene un egreso hospitalario. Solo se permite uno por episodio.',
       );
     }
     const normalizedRecordPayload = this.normalizeSectionRecordPayload({
@@ -869,6 +883,7 @@ export class EncountersService {
       hospitalConsultationVersionContext,
       hospitalSurgicalDocumentVersionContext,
       hospitalNursingShiftVersionContext,
+      hospitalDischargeVersionContext,
       responsibleUser,
     });
 
@@ -1015,6 +1030,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncHospitalNursingShiftRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalDischargeRecord({
       tenantId,
       userId,
       encounter,
@@ -1184,6 +1211,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const hospitalDischargeVersionContext =
+      await this.resolveHospitalDischargeVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1214,6 +1248,7 @@ export class EncountersService {
       hospitalConsultationVersionContext,
       hospitalSurgicalDocumentVersionContext,
       hospitalNursingShiftVersionContext,
+      hospitalDischargeVersionContext,
       responsibleUser,
     });
 
@@ -1357,6 +1392,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncHospitalNursingShiftRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalDischargeRecord({
       tenantId,
       userId,
       encounter,
@@ -1904,6 +1951,62 @@ export class EncountersService {
           },
         });
       }
+
+      if (
+        this.isHospitalDischargeRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const dischargeFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        const nextDischargeFormData = {
+          ...dischargeFormData,
+          fechaHoraFirmaEgresoHosp: signedAt.toISOString(),
+          estadoDocumentoEgresoHosp: 'FIRMADO',
+        };
+        await transaction.encounterSectionRecord.update({
+          where: { id: currentRecord.id },
+          data: {
+            formDataJson: nextDischargeFormData as Prisma.InputJsonValue,
+          },
+        });
+        await transaction.$executeRaw`
+          UPDATE "HospitalDischarge"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "closedEncounterAt" = ${signedAt}, "contentJson" = ${this.jsonbParameter(nextDischargeFormData)}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.encounter.update({
+          where: { id: encounter.id },
+          data: {
+            status: EncounterStatus.CLOSED,
+            closedAt: signedAt,
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalDischarge',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              signedAt: signedAt.toISOString(),
+              closedEncounter: true,
+              status: EncounterRecordStatus.SIGNED,
+            },
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1962,7 +2065,8 @@ export class EncountersService {
       !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey)
+      !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalDischargeRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -2060,6 +2164,14 @@ export class EncountersService {
     if (this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalNursingShift"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalDischargeRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalDischarge"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -3288,6 +3400,33 @@ export class EncountersService {
     };
   }
 
+  private async resolveHospitalDischargeVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isHospitalDischargeRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Egreso',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+
+    return {
+      latestRecord,
+      latestVersionNumber: latestRecord ? 1 : 0,
+      nextVersionNumber: 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -3350,6 +3489,9 @@ export class EncountersService {
     hospitalNursingShiftVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalNursingShiftVersionContext']>
     >;
+    hospitalDischargeVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHospitalDischargeVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -3358,6 +3500,42 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isHospitalDischargeRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const formData = this.buildHospitalDischargeFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Egreso',
+        noteType: 'Egreso',
+        title: 'Egreso V1',
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber: 1,
+          recordType: 'Egreso',
+          pdfDownloadCount:
+            this.extractRecordVersionMetadata(input.currentRecord?.metadataJson)
+              .pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt:
+            this.extractRecordVersionMetadata(input.currentRecord?.metadataJson)
+              .pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isHospitalNursingShiftRecord(
         input.encounter.encounterType,
@@ -3994,6 +4172,10 @@ export class EncountersService {
       !this.isHospitalNursingShiftRecord(
         input.encounter.encounterType,
         input.input.tabKey,
+      ) &&
+      !this.isHospitalDischargeRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
       )
     ) {
       return {
@@ -4447,6 +4629,10 @@ export class EncountersService {
     return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Enfermería';
   }
 
+  private isHospitalDischargeRecord(encounterType: EncounterType, tabKey: string) {
+    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Egreso';
+  }
+
   private isAllowedEmergencyDocumentType(noteType: string) {
     return [
       'Solicitud de laboratorio',
@@ -4832,6 +5018,160 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
     };
+  }
+
+  private buildHospitalDischargeFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const admission = this.normalizeJsonObject(
+      this.findLatestHospitalRecordFormData(input.encounter, 'Ingreso'),
+    );
+    const evolution = this.normalizeJsonObject(
+      this.findLatestHospitalRecordFormData(input.encounter, 'Evolución'),
+    );
+    const orders = this.normalizeJsonObject(
+      this.findLatestHospitalRecordFormData(input.encounter, 'Indicaciones médicas'),
+    );
+    const procedure = this.normalizeJsonObject(
+      this.findLatestHospitalRecordFormData(input.encounter, 'Procedimientos / Cirugía'),
+    );
+    const consultation = this.normalizeJsonObject(
+      this.findLatestHospitalRecordFormData(input.encounter, 'Interconsultas'),
+    );
+    const dischargeAt =
+      this.readStringValue(input.incomingFormData.fechaHoraEgresoHosp) ||
+      input.recordedAt.toISOString().slice(0, 16);
+    const admittedAtValue =
+      this.readStringValue(input.incomingFormData.fechaIngresoReadonlyHosp) ||
+      [
+        this.readStringValue(admission.fechaIngresoHosp),
+        this.readStringValue(admission.horaIngresoHosp),
+      ]
+        .filter(Boolean)
+        .join('T');
+    const admittedAt = this.parseOptionalDate(admittedAtValue);
+    const dischargedAt = this.parseOptionalDate(dischargeAt);
+    const stayDays =
+      admittedAt && dischargedAt && dischargedAt >= admittedAt
+        ? Math.max(
+            1,
+            Math.ceil(
+              (dischargedAt.getTime() - admittedAt.getTime()) / 86_400_000,
+            ),
+          )
+        : null;
+    const baseFormData: Record<string, unknown> = {
+      ...input.incomingFormData,
+      tipoRegistro: 'Egreso',
+      fechaHoraEgresoHosp: dischargeAt,
+      fechaIngresoReadonlyHosp: admittedAtValue,
+      diasEstanciaHosp: stayDays === null ? '' : String(stayDays),
+      alertaCierreEgresoHosp:
+        'Al firmar esta nota de egreso, el episodio se cerrará y el expediente quedará en modo solo lectura.',
+      medicoResponsableEgresoHosp:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaResponsableEgresoHosp:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      medicoLegalEgresoHosp:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaLegalEgresoHosp:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadLegalEgresoHosp:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionEgresoHosp:
+        [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+          .filter(Boolean)
+          .join(' · ') || 'Lugar no configurado',
+    };
+
+    const suggestions: Record<string, unknown> = {
+      motivoIngresoEgresoHosp:
+        this.readStringValue(admission.motivoIngresoClinicoHosp) ||
+        input.encounter.reasonForVisit,
+      diagnosticoIngresoEgresoHosp:
+        this.readStringValue(admission.diagnosticoPrincipalHosp),
+      diagnosticoFinalEgresoHosp:
+        this.readStringValue(evolution.diagnosticosActivosEvolHosp) ||
+        this.readStringValue(admission.diagnosticoPrincipalHosp),
+      cie10EgresoHosp:
+        this.readStringValue(evolution.cie10EvolucionHosp) ||
+        this.readStringValue(admission.cie10Hosp),
+      procedimientosRealizadosEstanciaHosp:
+        this.readStringValue(procedure.procedimientoRealizadoPostopHosp) ||
+        this.readStringValue(admission.procedimientosPlanHosp),
+      manejoRealizadoEgresoHosp:
+        this.readStringValue(orders.medicamentosIndicacionesHosp) ||
+        this.readStringValue(admission.medicamentosPlanHosp),
+      evolucionEstanciaEgresoHosp:
+        this.readStringValue(evolution.interpretacionClinicaEvolHosp) ||
+        this.readStringValue(evolution.justificacionNom004EvolHosp),
+      problemasPendientesEgresoHosp:
+        this.readStringValue(evolution.cambiosClinicosEvolHosp),
+      resumenNarrativoEgresoHosp:
+        this.readStringValue(consultation.impresionDiagnosticaInterHosp),
+      medicamentosEgresoHosp:
+        this.summarizeHospitalOrderMedications(orders.medicamentosIndicacionesHosp),
+      dietaEgresoHosp:
+        this.readStringValue(orders.dietaIndicacionesHosp) ||
+        this.readStringValue(admission.dietaInicialHosp),
+      actividadRestriccionesEgresoHosp:
+        this.readStringValue(orders.reposoActividadIndicacionesHosp),
+      seguimientoEgresoHosp:
+        this.readStringValue(evolution.seguimientoEvolHosp) ||
+        this.readStringValue(consultation.sugerenciasTerapeuticasInterHosp),
+      signosAlarmaEgresoHosp:
+        'Acudir a urgencias ante fiebre persistente, dolor intenso, dificultad respiratoria, sangrado, deterioro neurológico o empeoramiento del estado general.',
+      educacionOtorgadaEgresoHosp:
+        'Se explica diagnóstico, tratamiento, medicamentos, cuidados, restricciones, signos de alarma y seguimiento.',
+      comprensionPacienteEgresoHosp: 'ADECUADA',
+    };
+
+    for (const [fieldKey, value] of Object.entries(suggestions)) {
+      if (!this.hasCapturedValue(baseFormData[fieldKey]) && this.hasCapturedValue(value)) {
+        baseFormData[fieldKey] = value;
+      }
+    }
+
+    if (this.readStringValue(baseFormData.tipoEgresoHosp) === 'ALTA_MEDICA') {
+      baseFormData.destinoPacienteEgresoHosp =
+        this.readStringValue(baseFormData.destinoPacienteEgresoHosp) || 'DOMICILIO';
+    }
+
+    return baseFormData;
+  }
+
+  private findLatestHospitalRecordFormData(
+    encounter: TenantEncounterRecord,
+    tabKey: string,
+  ) {
+    return [...encounter.sectionRecords]
+      .filter((record) => record.tabKey === tabKey)
+      .sort((left, right) => right.recordedAt.getTime() - left.recordedAt.getTime())[0]
+      ?.formDataJson ?? null;
+  }
+
+  private summarizeHospitalOrderMedications(rawValue: unknown) {
+    return this.readObjectArray(rawValue)
+      .map((item) =>
+        [
+          this.readStringValue(item.medicamento),
+          this.readStringValue(item.dosis),
+          this.readStringValue(item.via),
+          this.readStringValue(item.frecuencia),
+          this.readStringValue(item.duracion),
+        ]
+          .filter(Boolean)
+          .join(' '),
+      )
+      .filter(Boolean)
+      .join('\n');
   }
 
   private resolveHospitalNursingShiftType(noteType: string) {
@@ -7174,6 +7514,115 @@ export class EncountersService {
     }
   }
 
+  private async syncHospitalDischargeRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isHospitalDischargeRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const dischargedAt =
+      this.parseOptionalDate(input.formData.fechaHoraEgresoHosp) ?? input.recordedAt;
+    const admittedAt = this.parseOptionalDate(input.formData.fechaIngresoReadonlyHosp);
+    const stayDays = this.readRoundedNumericValue(input.formData.diasEstanciaHosp);
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalDischarge" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "dischargeType",
+        "patientDestination", "receivingUnit", "dischargedAt", "admittedAt",
+        "stayDays", "dischargeCondition", "admissionReason", "admissionDiagnosis",
+        "finalDiagnosis", "cie10", "performedProcedures", "managementPerformed",
+        "stayEvolution", "pendingClinicalProblems", "additionalNarrativeSummary",
+        "dischargeMedications", "linkedPrescriptionId", "prescriptionGenerated",
+        "prescriptionJustification", "homeCare", "diet", "activityRestrictions",
+        "followUp", "nextAppointmentDate", "alarmSigns", "patientEducation",
+        "patientComprehension", "incapacityDays", "incapacityType", "prognosis",
+        "responsiblePhysicianName", "responsiblePhysicianLicense",
+        "professionalName", "professionalLicense", "professionalSpecialty",
+        "careLocation", "signerUserId", "signedAt", "closedEncounterAt",
+        "pdfDownloadCount", "pdfLastDownloadedAt", "contentJson", "createdAt",
+        "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        1, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.tipoEgresoHosp)},
+        ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}, ${this.readStringValue(input.formData.unidadReceptoraEgresoHosp)}, ${dischargedAt}, ${admittedAt},
+        ${stayDays}, ${this.readStringValue(input.formData.estadoAlEgresoHosp)}, ${this.readStringValue(input.formData.motivoIngresoEgresoHosp)}, ${this.readStringValue(input.formData.diagnosticoIngresoEgresoHosp)},
+        ${this.readStringValue(input.formData.diagnosticoFinalEgresoHosp)}, ${this.readStringValue(input.formData.cie10EgresoHosp)}, ${this.readStringValue(input.formData.procedimientosRealizadosEstanciaHosp)}, ${this.readStringValue(input.formData.manejoRealizadoEgresoHosp)},
+        ${this.readStringValue(input.formData.evolucionEstanciaEgresoHosp)}, ${this.readStringValue(input.formData.problemasPendientesEgresoHosp)}, ${this.readStringValue(input.formData.resumenNarrativoEgresoHosp)},
+        ${this.readStringValue(input.formData.medicamentosEgresoHosp)}, ${this.readStringValue(input.formData.idRecetaRelacionadaEgresoHosp)}, ${this.readStringValue(input.formData.recetaGeneradaEgresoHosp)},
+        ${this.readStringValue(input.formData.justificacionSinRecetaEgresoHosp)}, ${this.readStringValue(input.formData.cuidadosDomicilioEgresoHosp)}, ${this.readStringValue(input.formData.dietaEgresoHosp)}, ${this.readStringValue(input.formData.actividadRestriccionesEgresoHosp)},
+        ${this.readStringValue(input.formData.seguimientoEgresoHosp)}, ${this.parseOptionalDate(input.formData.fechaProximaCitaEgresoHosp)}, ${this.readStringValue(input.formData.signosAlarmaEgresoHosp)}, ${this.readStringValue(input.formData.educacionOtorgadaEgresoHosp)},
+        ${this.readStringValue(input.formData.comprensionPacienteEgresoHosp)}, ${this.readRoundedNumericValue(input.formData.diasIncapacidadEgresoHosp)}, ${this.readStringValue(input.formData.tipoIncapacidadEgresoHosp)}, ${this.readStringValue(input.formData.pronosticoEgresoHosp)},
+        ${this.readStringValue(input.formData.medicoResponsableEgresoHosp) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaResponsableEgresoHosp) || 'Sin cédula'},
+        ${this.readStringValue(input.formData.medicoLegalEgresoHosp) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaLegalEgresoHosp)}, ${this.readStringValue(input.formData.especialidadLegalEgresoHosp)},
+        ${this.readStringValue(input.formData.lugarAtencionEgresoHosp)}, ${signedAt ? input.userId : null}, ${signedAt}, ${signedAt},
+        ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.jsonbParameter(input.formData)}, NOW(),
+        NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "dischargeType" = EXCLUDED."dischargeType",
+        "patientDestination" = EXCLUDED."patientDestination",
+        "receivingUnit" = EXCLUDED."receivingUnit",
+        "dischargedAt" = EXCLUDED."dischargedAt",
+        "admittedAt" = EXCLUDED."admittedAt",
+        "stayDays" = EXCLUDED."stayDays",
+        "dischargeCondition" = EXCLUDED."dischargeCondition",
+        "admissionReason" = EXCLUDED."admissionReason",
+        "admissionDiagnosis" = EXCLUDED."admissionDiagnosis",
+        "finalDiagnosis" = EXCLUDED."finalDiagnosis",
+        "cie10" = EXCLUDED."cie10",
+        "performedProcedures" = EXCLUDED."performedProcedures",
+        "managementPerformed" = EXCLUDED."managementPerformed",
+        "stayEvolution" = EXCLUDED."stayEvolution",
+        "pendingClinicalProblems" = EXCLUDED."pendingClinicalProblems",
+        "additionalNarrativeSummary" = EXCLUDED."additionalNarrativeSummary",
+        "dischargeMedications" = EXCLUDED."dischargeMedications",
+        "linkedPrescriptionId" = EXCLUDED."linkedPrescriptionId",
+        "prescriptionGenerated" = EXCLUDED."prescriptionGenerated",
+        "prescriptionJustification" = EXCLUDED."prescriptionJustification",
+        "homeCare" = EXCLUDED."homeCare",
+        "diet" = EXCLUDED."diet",
+        "activityRestrictions" = EXCLUDED."activityRestrictions",
+        "followUp" = EXCLUDED."followUp",
+        "nextAppointmentDate" = EXCLUDED."nextAppointmentDate",
+        "alarmSigns" = EXCLUDED."alarmSigns",
+        "patientEducation" = EXCLUDED."patientEducation",
+        "patientComprehension" = EXCLUDED."patientComprehension",
+        "incapacityDays" = EXCLUDED."incapacityDays",
+        "incapacityType" = EXCLUDED."incapacityType",
+        "prognosis" = EXCLUDED."prognosis",
+        "responsiblePhysicianName" = EXCLUDED."responsiblePhysicianName",
+        "responsiblePhysicianLicense" = EXCLUDED."responsiblePhysicianLicense",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "closedEncounterAt" = EXCLUDED."closedEncounterAt",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -7942,7 +8391,8 @@ export class EncountersService {
         !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey))
+        !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalDischargeRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -8854,6 +9304,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isHospitalDischargeRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildHospitalDischargePdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -9410,6 +9883,50 @@ export class EncountersService {
     ]);
   }
 
+  private buildHospitalDischargePdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    return this.renderSimplePdf([
+      input.recordTitle,
+      'Tipo: Egreso',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Tipo/destino: ${this.readStringValue(input.formData.tipoEgresoHosp)} / ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}`,
+      `Egreso: ${this.readStringValue(input.formData.fechaHoraEgresoHosp)}`,
+      `Ingreso: ${this.readStringValue(input.formData.fechaIngresoReadonlyHosp)}`,
+      `Días estancia: ${this.readStringValue(input.formData.diasEstanciaHosp)}`,
+      `Estado al egreso: ${this.readStringValue(input.formData.estadoAlEgresoHosp)}`,
+      `Motivo ingreso: ${this.readStringValue(input.formData.motivoIngresoEgresoHosp)}`,
+      `Diagnóstico ingreso: ${this.readStringValue(input.formData.diagnosticoIngresoEgresoHosp)}`,
+      `Diagnóstico final: ${this.readStringValue(input.formData.diagnosticoFinalEgresoHosp)}`,
+      `CIE-10: ${this.readStringValue(input.formData.cie10EgresoHosp)}`,
+      `Procedimientos: ${this.readStringValue(input.formData.procedimientosRealizadosEstanciaHosp)}`,
+      `Manejo: ${this.readStringValue(input.formData.manejoRealizadoEgresoHosp)}`,
+      `Evolución: ${this.readStringValue(input.formData.evolucionEstanciaEgresoHosp)}`,
+      `Problemas pendientes: ${this.readStringValue(input.formData.problemasPendientesEgresoHosp)}`,
+      `Medicamentos al egreso: ${this.readStringValue(input.formData.medicamentosEgresoHosp)}`,
+      `Receta: ${this.readStringValue(input.formData.recetaGeneradaEgresoHosp)} ${this.readStringValue(input.formData.idRecetaRelacionadaEgresoHosp)}`,
+      `Cuidados domicilio: ${this.readStringValue(input.formData.cuidadosDomicilioEgresoHosp)}`,
+      `Dieta: ${this.readStringValue(input.formData.dietaEgresoHosp)}`,
+      `Actividad/restricciones: ${this.readStringValue(input.formData.actividadRestriccionesEgresoHosp)}`,
+      `Seguimiento: ${this.readStringValue(input.formData.seguimientoEgresoHosp)}`,
+      `Próxima cita: ${this.readStringValue(input.formData.fechaProximaCitaEgresoHosp)}`,
+      `Signos alarma: ${this.readStringValue(input.formData.signosAlarmaEgresoHosp)}`,
+      `Educación: ${this.readStringValue(input.formData.educacionOtorgadaEgresoHosp)}`,
+      `Comprensión: ${this.readStringValue(input.formData.comprensionPacienteEgresoHosp)}`,
+      `Pronóstico: ${this.readStringValue(input.formData.pronosticoEgresoHosp)}`,
+      `Médico responsable: ${this.readStringValue(input.formData.medicoResponsableEgresoHosp)}`,
+      `Cédula: ${this.readStringValue(input.formData.cedulaResponsableEgresoHosp)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionEgresoHosp)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ]);
+  }
+
   private renderSimplePdf(lines: string[]) {
     const sanitizedLines = lines
       .map((line) => this.escapePdfText(line))
@@ -9702,6 +10219,22 @@ export class EncountersService {
             'turnoEnfermeriaHosp',
             'signosVitalesSeriadosEnfHosp',
             'medicamentosMinistradosEnfHosp',
+        ]
+        : [];
+    const hospitalDischargeRequiredFields =
+      this.isHospitalDischargeRecord(input.encounterType, input.tabKey)
+        ? [
+            'tipoEgresoHosp',
+            'fechaHoraEgresoHosp',
+            'estadoAlEgresoHosp',
+            'diagnosticoFinalEgresoHosp',
+            'cie10EgresoHosp',
+            'cuidadosDomicilioEgresoHosp',
+            'seguimientoEgresoHosp',
+            'signosAlarmaEgresoHosp',
+            'pronosticoEgresoHosp',
+            'medicoResponsableEgresoHosp',
+            'cedulaResponsableEgresoHosp',
           ]
         : [];
 
@@ -9719,6 +10252,7 @@ export class EncountersService {
       ...hospitalConsultationRequiredFields,
       ...hospitalSurgicalRequiredFields,
       ...hospitalNursingRequiredFields,
+      ...hospitalDischargeRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -9750,8 +10284,14 @@ export class EncountersService {
                               ? 'Completa los campos obligatorios del subdocumento quirúrgico antes de firmarlo'
                               : this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)
                                 ? 'Completa los signos vitales y medicamentos del turno antes de firmarlo'
+                                : this.isHospitalDischargeRecord(input.encounterType, input.tabKey)
+                                  ? 'Completa los campos obligatorios del egreso antes de firmarlo'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isHospitalDischargeRecord(input.encounterType, input.tabKey)) {
+      this.assertHospitalDischargeReadyForSignature(formData);
     }
 
     if (this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)) {
@@ -9931,6 +10471,45 @@ export class EncountersService {
     ) {
       throw new BadRequestException(
         'Documenta tipo, descripción y acción del evento adverso antes de firmar el turno',
+      );
+    }
+  }
+
+  private assertHospitalDischargeReadyForSignature(formData: Record<string, unknown>) {
+    const admittedAt = this.parseOptionalDate(formData.fechaIngresoReadonlyHosp);
+    const dischargedAt = this.parseOptionalDate(formData.fechaHoraEgresoHosp);
+
+    if (admittedAt && dischargedAt && dischargedAt < admittedAt) {
+      throw new BadRequestException(
+        'La fecha de egreso no puede ser menor a la fecha de ingreso',
+      );
+    }
+
+    if (
+      this.readStringValue(formData.tipoEgresoHosp) === 'TRASLADO' &&
+      !this.hasCapturedValue(formData.unidadReceptoraEgresoHosp)
+    ) {
+      throw new BadRequestException(
+        'Captura la unidad receptora para el egreso por traslado',
+      );
+    }
+
+    if (
+      this.hasCapturedValue(formData.medicamentosEgresoHosp) &&
+      !this.hasCapturedValue(formData.idRecetaRelacionadaEgresoHosp) &&
+      !this.hasCapturedValue(formData.justificacionSinRecetaEgresoHosp)
+    ) {
+      throw new BadRequestException(
+        'Vincula la receta de egreso o justifica por qué no se genera',
+      );
+    }
+
+    if (
+      this.hasCapturedValue(formData.tipoIncapacidadEgresoHosp) &&
+      !this.hasCapturedValue(formData.diasIncapacidadEgresoHosp)
+    ) {
+      throw new BadRequestException(
+        'Captura los días de incapacidad cuando exista tipo de incapacidad',
       );
     }
   }

@@ -141,6 +141,10 @@ const hospitalizationConfig: Record<string, EpisodeRecordPanelConfig> = {
     contextLabel: 'Notas de egreso',
     defaultActionLabel: 'Nueva nota de egreso',
   },
+  'Egreso hospitalario': {
+    contextLabel: 'Egreso hospitalario',
+    defaultActionLabel: 'Nuevo egreso',
+  },
   Documentos: {
     contextLabel: 'Documentos del episodio',
     defaultActionLabel: 'Nuevo documento',
