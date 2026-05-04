@@ -243,6 +243,7 @@ model Tenant {
   hospitalOrderConsultations HospitalOrderConsultationRequest[]
   hospitalOrderTraces        HospitalOrderTrace[]
   hospitalConsultations      HospitalConsultation[]
+  hospitalSurgicalDocuments  HospitalSurgicalDocument[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -490,6 +491,7 @@ model User {
   signedHospitalAdmissions HospitalAdmission[] @relation("HospitalAdmissionSigner")
   signedHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionSigner")
   signedHospitalMedicalOrders HospitalMedicalOrder[] @relation("HospitalMedicalOrderSigner")
+  signedHospitalSurgicalDocuments HospitalSurgicalDocument[] @relation("HospitalSurgicalDocumentSigner")
   requestedHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationRequester")
   respondingHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationResponder")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
@@ -795,6 +797,7 @@ model Patient {
   hospitalOrderConsultations HospitalOrderConsultationRequest[]
   hospitalOrderTraces HospitalOrderTrace[]
   hospitalConsultations HospitalConsultation[]
+  hospitalSurgicalDocuments HospitalSurgicalDocument[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1228,6 +1231,7 @@ model Encounter {
   hospitalOrderConsultations HospitalOrderConsultationRequest[]
   hospitalOrderTraces HospitalOrderTrace[]
   hospitalConsultations HospitalConsultation[]
+  hospitalSurgicalDocuments HospitalSurgicalDocument[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1338,6 +1342,7 @@ model EncounterSectionRecord {
   hospitalEvolution HospitalEvolution?
   hospitalMedicalOrder HospitalMedicalOrder?
   hospitalConsultation HospitalConsultation?
+  hospitalSurgicalDocument HospitalSurgicalDocument?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -2313,6 +2318,146 @@ model HospitalConsultation {
   @@index([closedAt])
   @@index([requesterUserId])
   @@index([consultantUserId])
+}
+
+/// Subdocumento quirúrgico hospitalario independiente.
+/// Cada registro representa una nota prequirúrgica, preanestésica,
+/// postoperatoria o postanestésica con firma y PDF propios.
+model HospitalSurgicalDocument {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  recordType String @default("Procedimientos y cirugía")
+  subdocumentType String
+  folio String @unique
+  status String @default("BORRADOR")
+  progressStatus String?
+  recordedAt DateTime
+
+  preoperativeDiagnosis String?
+  preoperativeCie10 String?
+  proposedSurgery String?
+  surgeryType String?
+  procedureCode String?
+  procedureCatalog String?
+  mainSurgeon String?
+  firstAssistant String?
+  anesthesiologist String?
+  scrubNurse String?
+  circulatingNurse String?
+  surgicalRisks String?
+  asaClassification String?
+  anesthesiaType String?
+  airwayAssessment String?
+  anestheticRisk String?
+  informedConsent String?
+  consentSignedDate DateTime?
+  consentExplainer String?
+  preoperativeStudies String?
+
+  preanesthesiaAssessmentDate DateTime?
+  preanesthesiaAssessmentTime String?
+  scheduledProcedure String?
+  mallampati String?
+  anesthesiaPlan String?
+  anestheticHistory String?
+  allergies String?
+  fastingConfirmed String?
+  lastIntake String?
+  airwayEvaluation String?
+  detailedAnesthesiaPlan String?
+  anesthesiologistLicense String?
+
+  surgeryDate DateTime?
+  surgeryStartTime String?
+  surgeryEndTime String?
+  operatingRoom String?
+  postoperativeDiagnosis String?
+  performedProcedure String?
+  durationMinutes Int?
+  surgicalTechnique String?
+  transoperativeFindings String?
+  estimatedBleeding String?
+  administeredFluids String?
+  transfusions String?
+  drains String?
+  diuresis String?
+  textileCount String?
+  incidents String?
+  materialUsed String?
+  implantsProsthesis String?
+  lotsSeries String?
+  hadComplications String?
+  complicationType String?
+  complicationManagement String?
+  hemodynamicStatus String?
+  consciousnessLevel String?
+  pain String?
+  destination String?
+  immediateStatus String?
+  prognosis String?
+  postoperativeMedications String?
+  postoperativeSurveillance String?
+  postoperativeStudies String?
+  woundCare String?
+  mobilization String?
+  postoperativeDiet String?
+  additionalIndications String?
+
+  recoveryAnesthesiaType String?
+  recoveryAdmissionTime String?
+  recoveryDischargeTime String?
+  recoveryBloodPressure String?
+  recoveryHeartRate Int?
+  recoveryRespiratoryRate Int?
+  recoverySpo2 Decimal? @db.Decimal(5, 2)
+  aldreteScore String?
+  recoveryConsciousnessLevel String?
+  recoveryPainEva Int?
+  anestheticComplications String?
+  motorBlock String?
+  recoveryObservations String?
+  recoveryAnesthesiologist String?
+  recoveryAnesthesiologistLicense String?
+
+  legalProfessionalName String
+  legalProfessionalLicense String?
+  legalProfessionalSpecialty String?
+  careLocation String?
+
+  signerUserId String?
+  signedAt DateTime?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  documentHash String?
+  digitalSeal String?
+  creatorUserId String?
+  creatorIp String?
+  contentJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("HospitalSurgicalDocumentSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+
+  @@unique([encounterId, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([status])
+  @@index([subdocumentType])
+  @@index([signedAt])
+  @@index([signerUserId])
 }
 
 /// Interconsulta formal generada desde Urgencias.

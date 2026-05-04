@@ -231,6 +231,18 @@ function buildHospitalConsultationTitle(versionNumber: number) {
   return `Interconsultas V${versionNumber}`;
 }
 
+function isHospitalSurgicalTab(encounterType: string, tabTitle: string) {
+  return (
+    encounterType === 'HOSPITALIZATION' &&
+    (tabTitle === 'Procedimientos y cirugía' ||
+      tabTitle === 'Procedimientos / Cirugía')
+  );
+}
+
+function buildHospitalSurgicalTitle(versionNumber: number) {
+  return `Procedimientos y cirugía V${versionNumber}`;
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
@@ -1332,6 +1344,74 @@ function buildHospitalConsultationSnapshot(args: {
       args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     especialidadInterLegal: args.detail.specialty?.name ?? 'Sin especialidad',
     lugarAtencionInterLegal:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
+  };
+}
+
+function buildHospitalSurgicalSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  noteType: string;
+  nextVersion: number;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const current = args.currentFormData ?? {};
+  const keep = (fieldKey: string, suggestion: RecordFieldValue): RecordFieldValue => {
+    const currentValue = current[fieldKey];
+
+    if (typeof currentValue === 'string') {
+      return currentValue.trim().length > 0 ? currentValue : suggestion;
+    }
+
+    return currentValue ?? suggestion;
+  };
+  const folio = keep(
+    'folioDocumentoQuirurgico',
+    `${args.detail.encounterNumber}-QX-${String(args.nextVersion).padStart(3, '0')}`,
+  );
+  const hashSeed = `${args.detail.encounterNumber}-${args.noteType}-${args.nextVersion}`;
+
+  return {
+    tipoRegistro: 'Procedimientos y cirugía',
+    tipoSubdocumentoQuirurgico: args.noteType,
+    folioDocumentoQuirurgico: folio,
+    versionDocumentoQuirurgico: String(args.nextVersion),
+    estadoDocumentoQuirurgico: keep('estadoDocumentoQuirurgico', 'BORRADOR'),
+    progresoQuirurgicoGlobal: keep(
+      'progresoQuirurgicoGlobal',
+      'Procedimiento incompleto',
+    ),
+    hashDocumentoQuirurgico: keep(
+      'hashDocumentoQuirurgico',
+      hashSeed.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 32),
+    ),
+    selloDigitalQuirurgico: keep(
+      'selloDigitalQuirurgico',
+      `SELLO-${String(args.nextVersion).padStart(3, '0')}`,
+    ),
+    pacienteDocumentoQuirurgico: args.detail.patient.fullName,
+    curpDocumentoQuirurgico: args.detail.patient.curp ?? 'CURP no registrada',
+    expedienteDocumentoQuirurgico:
+      args.detail.medicalRecord?.recordNumber ?? 'Expediente no configurado',
+    folioEpisodioDocumentoQuirurgico: args.detail.encounterNumber,
+    tipoEpisodioDocumentoQuirurgico: 'Hospitalización',
+    servicioDocumentoQuirurgico:
+      args.detail.serviceArea?.name ?? args.detail.specialty?.name ?? 'Servicio no configurado',
+    medicoResponsableDocumentoQuirurgico:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    fechaHoraDocumentoQuirurgico: args.recordedAt,
+    idDocumentoQuirurgico: folio,
+    usuarioCreadorDocumentoQuirurgico:
+      args.detail.attendingClinician?.fullName ?? 'Usuario no identificado',
+    ipDocumentoQuirurgico: keep('ipDocumentoQuirurgico', 'IP no capturada'),
+    medicoQuirLegal:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaQuirLegal:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    especialidadQuirLegal: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionQuirLegal:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
         .filter(Boolean)
         .join(' · ') || 'Lugar no configurado',
@@ -3177,6 +3257,8 @@ export function EpisodeDetailPage() {
             ? 'Indicaciones médicas'
             : isHospitalConsultationTab(detail.encounterType, activeTab)
               ? 'Interconsultas'
+              : isHospitalSurgicalTab(detail.encounterType, activeTab)
+                ? 'Procedimientos / Cirugía'
             : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeRecordTabKey,
@@ -3238,6 +3320,10 @@ export function EpisodeDetailPage() {
     activeTab,
   );
   const isHospitalConsultationSection = isHospitalConsultationTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isHospitalSurgicalSection = isHospitalSurgicalTab(
     detail.encounterType,
     activeTab,
   );
@@ -3372,6 +3458,11 @@ export function EpisodeDetailPage() {
     : getLatestRecordByTab(detail.sectionRecords, 'Interconsultas');
   const nextHospitalConsultationVersionNumber =
     (latestHospitalConsultationRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestHospitalSurgicalRecord = isHospitalSurgicalSection
+    ? getLatestRecordByTab(activeTabRecords, 'Procedimientos / Cirugía')
+    : getLatestRecordByTab(detail.sectionRecords, 'Procedimientos / Cirugía');
+  const nextHospitalSurgicalVersionNumber =
+    (latestHospitalSurgicalRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -3841,6 +3932,35 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isHospitalSurgicalSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      const nextNoteType = noteType ?? 'Nota preoperatoria';
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: nextNoteType,
+          title: buildHospitalSurgicalTitle(nextHospitalSurgicalVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildHospitalSurgicalSnapshot({
+              detail,
+              recordedAt: nextRecordedAt,
+              noteType: nextNoteType,
+              nextVersion: nextHospitalSurgicalVersionNumber,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -4083,6 +4203,26 @@ export function EpisodeDetailPage() {
                                               >,
                                           }),
                                         }
+                                      : isHospitalSurgicalSection
+                                        ? {
+                                            ...(record.formData as Record<
+                                              string,
+                                              RecordFieldValue
+                                            >),
+                                            ...buildHospitalSurgicalSnapshot({
+                                              detail,
+                                              recordedAt: record.recordedAt.slice(0, 16),
+                                              noteType: record.noteType,
+                                              nextVersion:
+                                                record.metadata.versionNumber ??
+                                                nextHospitalSurgicalVersionNumber,
+                                              currentFormData:
+                                                record.formData as Record<
+                                                  string,
+                                                  RecordFieldValue
+                                                >,
+                                            }),
+                                          }
                     : record.formData,
       }),
     );
@@ -4322,6 +4462,19 @@ export function EpisodeDetailPage() {
                                           currentFormData: recordForm.formData,
                                         }),
                                       }
+                                    : isHospitalSurgicalSection
+                                      ? {
+                                          ...recordForm.formData,
+                                          ...buildHospitalSurgicalSnapshot({
+                                            detail,
+                                            recordedAt: recordForm.recordedAt,
+                                            noteType: recordForm.noteType,
+                                            nextVersion:
+                                              selectedRecord?.metadata.versionNumber ??
+                                              nextHospitalSurgicalVersionNumber,
+                                            currentFormData: recordForm.formData,
+                                          }),
+                                        }
                   : recordForm.formData,
     };
 
@@ -5453,6 +5606,45 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isHospitalSurgicalSection ? (
+                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildHospitalSurgicalTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildHospitalSurgicalTitle(
+                                          nextHospitalSurgicalVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Subdocumento quirúrgico independiente con folio,
+                                    firma, PDF, hash y sello digital propios.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Procedimientos y cirugía
+                                  </Badge>
+                                  <Badge variant="secondary">
+                                    {recordForm.noteType}
+                                  </Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -5555,7 +5747,8 @@ export function EpisodeDetailPage() {
                           isHospitalAdmissionSection ||
                           isHospitalEvolutionSection ||
                           isHospitalMedicalOrdersSection ||
-                          isHospitalConsultationSection ? null : (
+                          isHospitalConsultationSection ||
+                          isHospitalSurgicalSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -5725,7 +5918,8 @@ export function EpisodeDetailPage() {
                         isHospitalAdmissionSection ||
                         isHospitalEvolutionSection ||
                         isHospitalMedicalOrdersSection ||
-                        isHospitalConsultationSection ? (
+                        isHospitalConsultationSection ||
+                        isHospitalSurgicalSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -5752,6 +5946,8 @@ export function EpisodeDetailPage() {
                                                   ? 'Documento de Indicaciones médicas'
                                                   : isHospitalConsultationSection
                                                     ? 'Documento de Interconsulta'
+                                                    : isHospitalSurgicalSection
+                                                      ? 'Subdocumento quirúrgico'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -5777,6 +5973,8 @@ export function EpisodeDetailPage() {
                                                       ? 'La vista previa y el PDF usan medicamentos, soluciones, estudios, interconsultas, cuidados y trazabilidad.'
                                                       : isHospitalConsultationSection
                                                         ? 'La vista previa y el PDF usan solicitud, respuesta, estado y tiempos de auditoría.'
+                                                        : isHospitalSurgicalSection
+                                                          ? 'La vista previa y el PDF pertenecen solo a este subdocumento quirúrgico.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -5812,7 +6010,8 @@ export function EpisodeDetailPage() {
                                       !isHospitalAdmissionSection &&
                                       !isHospitalEvolutionSection &&
                                       !isHospitalMedicalOrdersSection &&
-                                      !isHospitalConsultationSection) ||
+                                      !isHospitalConsultationSection &&
+                                      !isHospitalSurgicalSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending
@@ -5888,6 +6087,31 @@ export function EpisodeDetailPage() {
                               if (section.key === 'egreso_urg_legales_condicionales') {
                                 return dischargeType === 'DEFUNCION';
                               }
+                            }
+
+                            if (isHospitalSurgicalSection) {
+                              const surgicalType = recordForm.noteType;
+
+                              if (section.key.startsWith('prequir_')) {
+                                return surgicalType === 'Nota preoperatoria';
+                              }
+
+                              if (section.key.startsWith('prean_')) {
+                                return surgicalType === 'Nota preanestésica';
+                              }
+
+                              if (section.key.startsWith('postop_')) {
+                                return surgicalType === 'Nota postoperatoria';
+                              }
+
+                              if (section.key.startsWith('postanes_')) {
+                                return surgicalType === 'Nota postanestésica';
+                              }
+
+                              return (
+                                section.key === 'quir_common_header' ||
+                                section.key === 'quir_legales_firma'
+                              );
                             }
 
                             return true;

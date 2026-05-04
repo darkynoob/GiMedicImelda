@@ -827,6 +827,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const hospitalSurgicalDocumentVersionContext =
+      await this.resolveHospitalSurgicalDocumentVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -855,6 +861,7 @@ export class EncountersService {
       hospitalEvolutionVersionContext,
       hospitalMedicalOrdersVersionContext,
       hospitalConsultationVersionContext,
+      hospitalSurgicalDocumentVersionContext,
       responsibleUser,
     });
 
@@ -981,6 +988,19 @@ export class EncountersService {
       encounter,
       sectionRecordId: createdRecord.id,
       tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalSurgicalDocumentRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
       recordedAt,
       title: normalizedRecordPayload.title,
       status: normalizedRecordPayload.status,
@@ -1131,6 +1151,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const hospitalSurgicalDocumentVersionContext =
+      await this.resolveHospitalSurgicalDocumentVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1159,6 +1186,7 @@ export class EncountersService {
       hospitalEvolutionVersionContext,
       hospitalMedicalOrdersVersionContext,
       hospitalConsultationVersionContext,
+      hospitalSurgicalDocumentVersionContext,
       responsibleUser,
     });
 
@@ -1288,6 +1316,19 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncHospitalSurgicalDocumentRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1360,6 +1401,10 @@ export class EncountersService {
       currentRecord.encounterType,
       currentRecord.tabKey,
     );
+    const isHospitalSurgicalDocument = this.isHospitalSurgicalDocumentRecord(
+      currentRecord.encounterType,
+      currentRecord.tabKey,
+    );
     const hospitalConsultationFormData =
       currentRecord.formDataJson &&
       typeof currentRecord.formDataJson === 'object' &&
@@ -1391,9 +1436,19 @@ export class EncountersService {
             : {
                 requestSignedAtInterHosp: signedAt.toISOString(),
                 estatusInterconsultaHosp: 'SOLICITADA',
-              }),
+          }),
         }
       : null;
+    const nextHospitalSurgicalDocumentFormData: Record<string, unknown> | null =
+      isHospitalSurgicalDocument
+        ? {
+            ...hospitalConsultationFormData,
+            estadoDocumentoQuirurgico: 'FIRMADO',
+            signedAtDocumentoQuirurgico: signedAt.toISOString(),
+          }
+        : null;
+    const nextSignedFormData =
+      nextHospitalConsultationFormData ?? nextHospitalSurgicalDocumentFormData;
 
     await this.prisma.$transaction(async (transaction) => {
       await transaction.encounterSectionRecord.update({
@@ -1401,10 +1456,9 @@ export class EncountersService {
         data: {
           status: nextRecordStatus,
           signedAt: nextRecordSignedAt,
-          ...(nextHospitalConsultationFormData
+          ...(nextSignedFormData
             ? {
-                formDataJson:
-                  nextHospitalConsultationFormData as Prisma.InputJsonValue,
+                formDataJson: nextSignedFormData as Prisma.InputJsonValue,
               }
             : {}),
           metadataJson: {
@@ -1724,6 +1778,41 @@ export class EncountersService {
           },
         });
       }
+
+      if (
+        this.isHospitalSurgicalDocumentRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.$executeRaw`
+          UPDATE "HospitalSurgicalDocument"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "contentJson" = ${this.jsonbParameter(nextHospitalSurgicalDocumentFormData ?? {})}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalSurgicalDocument',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              subdocumentType: currentRecord.noteType,
+              signedAt: signedAt.toISOString(),
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              status: EncounterRecordStatus.SIGNED,
+            },
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1780,7 +1869,8 @@ export class EncountersService {
       !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalConsultationRecord(record.encounterType, record.tabKey)
+      !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -1862,6 +1952,14 @@ export class EncountersService {
     if (this.isHospitalConsultationRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalConsultation"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalSurgicalDocument"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -3030,6 +3128,36 @@ export class EncountersService {
     };
   }
 
+  private async resolveHospitalSurgicalDocumentVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Procedimientos / Cirugía',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -3086,6 +3214,9 @@ export class EncountersService {
     hospitalConsultationVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalConsultationVersionContext']>
     >;
+    hospitalSurgicalDocumentVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHospitalSurgicalDocumentVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -3094,6 +3225,58 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isHospitalSurgicalDocumentRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.hospitalSurgicalDocumentVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildHospitalSurgicalDocumentFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+        noteType: input.input.noteType,
+        versionNumber,
+        currentMetadata:
+          this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      });
+
+      return {
+        tabKey: 'Procedimientos / Cirugía',
+        noteType: formData.tipoSubdocumentoQuirurgico,
+        title: `Procedimientos y cirugía V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Procedimientos y cirugía',
+          subdocumentType: formData.tipoSubdocumentoQuirurgico,
+          folio: formData.folioDocumentoQuirurgico,
+          documentHash: formData.hashDocumentoQuirurgico,
+          digitalSeal: formData.selloDigitalQuirurgico,
+          progressStatus: formData.progresoQuirurgicoGlobal,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ??
+            input.hospitalSurgicalDocumentVersionContext?.latestRecord?.id ??
+            null,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isHospitalConsultationRecord(
         input.encounter.encounterType,
@@ -4070,6 +4253,16 @@ export class EncountersService {
     return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Interconsultas';
   }
 
+  private isHospitalSurgicalDocumentRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.HOSPITALIZATION &&
+      tabKey === 'Procedimientos / Cirugía'
+    );
+  }
+
   private isAllowedEmergencyDocumentType(noteType: string) {
     return [
       'Solicitud de laboratorio',
@@ -4317,6 +4510,119 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
     };
+  }
+
+  private buildHospitalSurgicalDocumentFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    noteType: string;
+    versionNumber: number;
+    currentMetadata: Record<string, unknown>;
+  }) {
+    const subdocumentType =
+      this.resolveHospitalSurgicalSubdocumentType(input.noteType) ||
+      this.resolveHospitalSurgicalSubdocumentType(
+        this.readStringValue(input.incomingFormData.tipoSubdocumentoQuirurgico),
+      ) ||
+      'Nota preoperatoria';
+    const folio =
+      this.readStringValue(input.incomingFormData.folioDocumentoQuirurgico) ||
+      this.readStringValue(input.currentMetadata.folio) ||
+      `${input.encounter.encounterNumber}-QX-${String(input.versionNumber).padStart(3, '0')}`;
+    const documentHash =
+      this.readStringValue(input.incomingFormData.hashDocumentoQuirurgico) ||
+      this.readStringValue(input.currentMetadata.documentHash) ||
+      randomUUID().replace(/-/g, '').toUpperCase();
+    const digitalSeal =
+      this.readStringValue(input.incomingFormData.selloDigitalQuirurgico) ||
+      this.readStringValue(input.currentMetadata.digitalSeal) ||
+      randomUUID().replace(/-/g, '').slice(0, 24).toUpperCase();
+    const surgeryDuration = this.calculateTimeSpanMinutes(
+      this.readStringValue(input.incomingFormData.horaInicioCirugiaPostop),
+      this.readStringValue(input.incomingFormData.horaFinCirugiaPostop),
+    );
+    const patient = input.encounter.patient;
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistro: 'Procedimientos y cirugía',
+      tipoSubdocumentoQuirurgico: subdocumentType,
+      folioDocumentoQuirurgico: folio,
+      versionDocumentoQuirurgico: String(input.versionNumber),
+      estadoDocumentoQuirurgico: 'BORRADOR',
+      progresoQuirurgicoGlobal:
+        this.readStringValue(input.incomingFormData.progresoQuirurgicoGlobal) ||
+        'Procedimiento incompleto',
+      hashDocumentoQuirurgico: documentHash,
+      selloDigitalQuirurgico: digitalSeal,
+      pacienteDocumentoQuirurgico: patient.fullName,
+      curpDocumentoQuirurgico: patient.curp ?? 'CURP no registrada',
+      expedienteDocumentoQuirurgico:
+        input.encounter.medicalRecord?.recordNumber ?? 'Expediente no configurado',
+      folioEpisodioDocumentoQuirurgico: input.encounter.encounterNumber,
+      tipoEpisodioDocumentoQuirurgico: 'Hospitalización',
+      servicioDocumentoQuirurgico:
+        input.encounter.serviceArea?.name ??
+        input.encounter.specialty?.name ??
+        'Servicio no configurado',
+      medicoResponsableDocumentoQuirurgico:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      fechaHoraDocumentoQuirurgico: input.recordedAt.toISOString(),
+      idDocumentoQuirurgico: folio,
+      usuarioCreadorDocumentoQuirurgico:
+        input.responsibleUser?.fullName ?? 'Usuario no identificado',
+      ipDocumentoQuirurgico:
+        this.readStringValue(input.incomingFormData.ipDocumentoQuirurgico) ||
+        'IP no capturada',
+      duracionCirugiaPostop:
+        surgeryDuration === null ? '' : String(surgeryDuration),
+      medicoQuirLegal:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaQuirLegal:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadQuirLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionQuirLegal:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+    };
+  }
+
+  private resolveHospitalSurgicalSubdocumentType(noteType: string) {
+    return [
+      'Nota preoperatoria',
+      'Nota preanestésica',
+      'Nota postoperatoria',
+      'Nota postanestésica',
+    ].find((allowedType) => allowedType === noteType);
+  }
+
+  private calculateTimeSpanMinutes(startTime: string, endTime: string) {
+    if (!startTime || !endTime) {
+      return null;
+    }
+
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+
+    if (
+      Number.isNaN(startHour) ||
+      Number.isNaN(startMinute) ||
+      Number.isNaN(endHour) ||
+      Number.isNaN(endMinute)
+    ) {
+      return null;
+    }
+
+    const start = startHour * 60 + startMinute;
+    const end = endHour * 60 + endMinute;
+    return end >= start ? end - start : end + 24 * 60 - start;
   }
 
   private calculateHospitalConsultationSlaMinutes(priority: string) {
@@ -6272,6 +6578,207 @@ export class EncountersService {
     `;
   }
 
+  private async syncHospitalSurgicalDocumentRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    noteType: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isHospitalSurgicalDocumentRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalSurgicalDocument" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "recordType", "subdocumentType", "folio",
+        "status", "progressStatus", "recordedAt", "preoperativeDiagnosis",
+        "preoperativeCie10", "proposedSurgery", "surgeryType", "procedureCode",
+        "procedureCatalog", "mainSurgeon", "firstAssistant", "anesthesiologist",
+        "scrubNurse", "circulatingNurse", "surgicalRisks", "asaClassification",
+        "anesthesiaType", "airwayAssessment", "anestheticRisk", "informedConsent",
+        "consentSignedDate", "consentExplainer", "preoperativeStudies",
+        "preanesthesiaAssessmentDate", "preanesthesiaAssessmentTime",
+        "scheduledProcedure", "mallampati", "anesthesiaPlan", "anestheticHistory",
+        "allergies", "fastingConfirmed", "lastIntake", "airwayEvaluation",
+        "detailedAnesthesiaPlan", "anesthesiologistLicense", "surgeryDate",
+        "surgeryStartTime", "surgeryEndTime", "operatingRoom",
+        "postoperativeDiagnosis", "performedProcedure", "durationMinutes",
+        "surgicalTechnique", "transoperativeFindings", "estimatedBleeding",
+        "administeredFluids", "transfusions", "drains", "diuresis",
+        "textileCount", "incidents", "materialUsed", "implantsProsthesis",
+        "lotsSeries", "hadComplications", "complicationType",
+        "complicationManagement", "hemodynamicStatus", "consciousnessLevel",
+        "pain", "destination", "immediateStatus", "prognosis",
+        "postoperativeMedications", "postoperativeSurveillance",
+        "postoperativeStudies", "woundCare", "mobilization", "postoperativeDiet",
+        "additionalIndications", "recoveryAnesthesiaType", "recoveryAdmissionTime",
+        "recoveryDischargeTime", "recoveryBloodPressure", "recoveryHeartRate",
+        "recoveryRespiratoryRate", "recoverySpo2", "aldreteScore",
+        "recoveryConsciousnessLevel", "recoveryPainEva", "anestheticComplications",
+        "motorBlock", "recoveryObservations", "recoveryAnesthesiologist",
+        "recoveryAnesthesiologistLicense", "legalProfessionalName",
+        "legalProfessionalLicense", "legalProfessionalSpecialty", "careLocation",
+        "signerUserId", "signedAt", "pdfDownloadCount", "pdfLastDownloadedAt",
+        "documentHash", "digitalSeal", "creatorUserId", "creatorIp", "contentJson",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, 'Procedimientos y cirugía', ${this.readStringValue(input.formData.tipoSubdocumentoQuirurgico) || input.noteType}, ${this.readStringValue(input.formData.folioDocumentoQuirurgico)},
+        ${input.status}, ${this.readStringValue(input.formData.progresoQuirurgicoGlobal)}, ${input.recordedAt}, ${this.readStringValue(input.formData.diagnosticoPreoperatorioQuirHosp)},
+        ${this.readStringValue(input.formData.cie10PreoperatorioQuirHosp)}, ${this.readStringValue(input.formData.cirugiaPropuestaQuirHosp)}, ${this.readStringValue(input.formData.tipoCirugiaQuirHosp)}, ${this.readStringValue(input.formData.codigoProcedimientoQuirHosp)},
+        ${this.readStringValue(input.formData.catalogoProcedimientoQuirHosp)}, ${this.readStringValue(input.formData.cirujanoPrincipalQuirHosp)}, ${this.readStringValue(input.formData.primerAyudanteQuirHosp)}, ${this.readStringValue(input.formData.anestesiologoQuirHosp)},
+        ${this.readStringValue(input.formData.instrumentistaQuirHosp)}, ${this.readStringValue(input.formData.enfermeriaCirculanteQuirHosp)}, ${this.readStringValue(input.formData.riesgosQuirurgicosQuirHosp)}, ${this.readStringValue(input.formData.clasificacionAsaQuirHosp)},
+        ${this.readStringValue(input.formData.tipoAnestesiaQuirHosp)}, ${this.readStringValue(input.formData.valoracionViaAereaQuirHosp)}, ${this.readStringValue(input.formData.riesgoAnestesicoQuirHosp)}, ${this.readStringValue(input.formData.consentimientoInformadoQuirHosp)},
+        ${this.parseOptionalDate(input.formData.fechaFirmaConsentimientoQuirHosp)}, ${this.readStringValue(input.formData.responsableExplicaQuirHosp)}, ${this.readStringValue(input.formData.estudiosPreoperatoriosQuirHosp)},
+        ${this.parseOptionalDate(input.formData.fechaValoracionPreanHosp)}, ${this.readStringValue(input.formData.horaValoracionPreanHosp)},
+        ${this.readStringValue(input.formData.procedimientoProgramadoPreanHosp)}, ${this.readStringValue(input.formData.mallampatiPreanHosp)}, ${this.readStringValue(input.formData.planAnestesicoPreanHosp)}, ${this.readStringValue(input.formData.antecedentesAnestesicosPreanHosp)},
+        ${this.readStringValue(input.formData.alergiasPreanHosp)}, ${this.readStringValue(input.formData.ayunoConfirmadoPreanHosp)}, ${this.readStringValue(input.formData.ultimaIngestaPreanHosp)}, ${this.readStringValue(input.formData.evaluacionViaAereaPreanHosp)},
+        ${this.readStringValue(input.formData.planAnestesicoDetalladoPreanHosp)}, ${this.readStringValue(input.formData.cedulaAnestesiologoPreanHosp)}, ${this.parseOptionalDate(input.formData.fechaCirugiaPostop)},
+        ${this.readStringValue(input.formData.horaInicioCirugiaPostop)}, ${this.readStringValue(input.formData.horaFinCirugiaPostop)}, ${this.readStringValue(input.formData.quirofanoPostop)},
+        ${this.readStringValue(input.formData.diagnosticoPostoperatorioPostop)}, ${this.readStringValue(input.formData.procedimientoRealizadoPostopHosp)}, ${this.readRoundedNumericValue(input.formData.duracionCirugiaPostop)},
+        ${this.readStringValue(input.formData.tecnicaQuirurgicaPostop)}, ${this.readStringValue(input.formData.hallazgosTransoperatoriosPostop)}, ${this.readStringValue(input.formData.sangradoEstimadoPostop)},
+        ${this.readStringValue(input.formData.liquidosAdministradosPostop)}, ${this.readStringValue(input.formData.transfusionesPostop)}, ${this.readStringValue(input.formData.drenajesPostop)}, ${this.readStringValue(input.formData.diuresisPostop)},
+        ${this.readStringValue(input.formData.conteoTextilPostop)}, ${this.readStringValue(input.formData.incidentesPostop)}, ${this.readStringValue(input.formData.materialUtilizadoPostop)}, ${this.readStringValue(input.formData.implantesProtesisPostop)},
+        ${this.readStringValue(input.formData.lotesSeriesPostop)}, ${this.readStringValue(input.formData.huboComplicacionesPostop)}, ${this.readStringValue(input.formData.tipoComplicacionPostop)},
+        ${this.readStringValue(input.formData.manejoComplicacionPostop)}, ${this.readStringValue(input.formData.estadoHemodinamicoPostop)}, ${this.readStringValue(input.formData.nivelConcienciaPostop)},
+        ${this.readStringValue(input.formData.dolorPostop)}, ${this.readStringValue(input.formData.destinoPostop)}, ${this.readStringValue(input.formData.estadoInmediatoPostop)}, ${this.readStringValue(input.formData.pronosticoPostop)},
+        ${this.readStringValue(input.formData.medicamentosPostoperatoriosPostop)}, ${this.readStringValue(input.formData.vigilanciaPostoperatoriaPostop)},
+        ${this.readStringValue(input.formData.estudiosPostoperatoriosPostop)}, ${this.readStringValue(input.formData.cuidadosHeridaPostop)}, ${this.readStringValue(input.formData.movilidadPostop)}, ${this.readStringValue(input.formData.dietaPostop)},
+        ${this.readStringValue(input.formData.indicacionesAdicionalesPostop)}, ${this.readStringValue(input.formData.tipoAnestesiaPostanesHosp)}, ${this.readStringValue(input.formData.horaIngresoPostanesHosp)},
+        ${this.readStringValue(input.formData.horaEgresoPostanesHosp)}, ${this.readStringValue(input.formData.taPostanesHosp)}, ${this.readRoundedNumericValue(input.formData.fcPostanesHosp)},
+        ${this.readRoundedNumericValue(input.formData.frPostanesHosp)}, ${this.readNumericValue(input.formData.spo2PostanesHosp)}, ${this.readStringValue(input.formData.aldretePostanesHosp)},
+        ${this.readStringValue(input.formData.nivelConcienciaPostanesHosp)}, ${this.readRoundedNumericValue(input.formData.dolorEvaPostanesHosp)}, ${this.readStringValue(input.formData.complicacionesAnestesicasPostanesHosp)},
+        ${this.readStringValue(input.formData.bloqueoMotorPostanesHosp)}, ${this.readStringValue(input.formData.observacionesPostanesHosp)}, ${this.readStringValue(input.formData.anestesiologoPostanesHosp)},
+        ${this.readStringValue(input.formData.cedulaPostanesHosp)}, ${this.readStringValue(input.formData.medicoQuirLegal) || 'Sin profesional responsable'},
+        ${this.readStringValue(input.formData.cedulaQuirLegal)}, ${this.readStringValue(input.formData.especialidadQuirLegal)}, ${this.readStringValue(input.formData.lugarAtencionQuirLegal)},
+        ${signedAt ? input.userId : null}, ${signedAt}, ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)},
+        ${this.readStringValue(input.formData.hashDocumentoQuirurgico)}, ${this.readStringValue(input.formData.selloDigitalQuirurgico)}, ${input.userId}, ${this.readStringValue(input.formData.ipDocumentoQuirurgico)}, ${this.jsonbParameter(input.formData)},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "recordType" = EXCLUDED."recordType",
+        "subdocumentType" = EXCLUDED."subdocumentType",
+        "folio" = EXCLUDED."folio",
+        "status" = EXCLUDED."status",
+        "progressStatus" = EXCLUDED."progressStatus",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "preoperativeDiagnosis" = EXCLUDED."preoperativeDiagnosis",
+        "preoperativeCie10" = EXCLUDED."preoperativeCie10",
+        "proposedSurgery" = EXCLUDED."proposedSurgery",
+        "surgeryType" = EXCLUDED."surgeryType",
+        "procedureCode" = EXCLUDED."procedureCode",
+        "procedureCatalog" = EXCLUDED."procedureCatalog",
+        "mainSurgeon" = EXCLUDED."mainSurgeon",
+        "firstAssistant" = EXCLUDED."firstAssistant",
+        "anesthesiologist" = EXCLUDED."anesthesiologist",
+        "scrubNurse" = EXCLUDED."scrubNurse",
+        "circulatingNurse" = EXCLUDED."circulatingNurse",
+        "surgicalRisks" = EXCLUDED."surgicalRisks",
+        "asaClassification" = EXCLUDED."asaClassification",
+        "anesthesiaType" = EXCLUDED."anesthesiaType",
+        "airwayAssessment" = EXCLUDED."airwayAssessment",
+        "anestheticRisk" = EXCLUDED."anestheticRisk",
+        "informedConsent" = EXCLUDED."informedConsent",
+        "consentSignedDate" = EXCLUDED."consentSignedDate",
+        "consentExplainer" = EXCLUDED."consentExplainer",
+        "preoperativeStudies" = EXCLUDED."preoperativeStudies",
+        "preanesthesiaAssessmentDate" = EXCLUDED."preanesthesiaAssessmentDate",
+        "preanesthesiaAssessmentTime" = EXCLUDED."preanesthesiaAssessmentTime",
+        "scheduledProcedure" = EXCLUDED."scheduledProcedure",
+        "mallampati" = EXCLUDED."mallampati",
+        "anesthesiaPlan" = EXCLUDED."anesthesiaPlan",
+        "anestheticHistory" = EXCLUDED."anestheticHistory",
+        "allergies" = EXCLUDED."allergies",
+        "fastingConfirmed" = EXCLUDED."fastingConfirmed",
+        "lastIntake" = EXCLUDED."lastIntake",
+        "airwayEvaluation" = EXCLUDED."airwayEvaluation",
+        "detailedAnesthesiaPlan" = EXCLUDED."detailedAnesthesiaPlan",
+        "anesthesiologistLicense" = EXCLUDED."anesthesiologistLicense",
+        "surgeryDate" = EXCLUDED."surgeryDate",
+        "surgeryStartTime" = EXCLUDED."surgeryStartTime",
+        "surgeryEndTime" = EXCLUDED."surgeryEndTime",
+        "operatingRoom" = EXCLUDED."operatingRoom",
+        "postoperativeDiagnosis" = EXCLUDED."postoperativeDiagnosis",
+        "performedProcedure" = EXCLUDED."performedProcedure",
+        "durationMinutes" = EXCLUDED."durationMinutes",
+        "surgicalTechnique" = EXCLUDED."surgicalTechnique",
+        "transoperativeFindings" = EXCLUDED."transoperativeFindings",
+        "estimatedBleeding" = EXCLUDED."estimatedBleeding",
+        "administeredFluids" = EXCLUDED."administeredFluids",
+        "transfusions" = EXCLUDED."transfusions",
+        "drains" = EXCLUDED."drains",
+        "diuresis" = EXCLUDED."diuresis",
+        "textileCount" = EXCLUDED."textileCount",
+        "incidents" = EXCLUDED."incidents",
+        "materialUsed" = EXCLUDED."materialUsed",
+        "implantsProsthesis" = EXCLUDED."implantsProsthesis",
+        "lotsSeries" = EXCLUDED."lotsSeries",
+        "hadComplications" = EXCLUDED."hadComplications",
+        "complicationType" = EXCLUDED."complicationType",
+        "complicationManagement" = EXCLUDED."complicationManagement",
+        "hemodynamicStatus" = EXCLUDED."hemodynamicStatus",
+        "consciousnessLevel" = EXCLUDED."consciousnessLevel",
+        "pain" = EXCLUDED."pain",
+        "destination" = EXCLUDED."destination",
+        "immediateStatus" = EXCLUDED."immediateStatus",
+        "prognosis" = EXCLUDED."prognosis",
+        "postoperativeMedications" = EXCLUDED."postoperativeMedications",
+        "postoperativeSurveillance" = EXCLUDED."postoperativeSurveillance",
+        "postoperativeStudies" = EXCLUDED."postoperativeStudies",
+        "woundCare" = EXCLUDED."woundCare",
+        "mobilization" = EXCLUDED."mobilization",
+        "postoperativeDiet" = EXCLUDED."postoperativeDiet",
+        "additionalIndications" = EXCLUDED."additionalIndications",
+        "recoveryAnesthesiaType" = EXCLUDED."recoveryAnesthesiaType",
+        "recoveryAdmissionTime" = EXCLUDED."recoveryAdmissionTime",
+        "recoveryDischargeTime" = EXCLUDED."recoveryDischargeTime",
+        "recoveryBloodPressure" = EXCLUDED."recoveryBloodPressure",
+        "recoveryHeartRate" = EXCLUDED."recoveryHeartRate",
+        "recoveryRespiratoryRate" = EXCLUDED."recoveryRespiratoryRate",
+        "recoverySpo2" = EXCLUDED."recoverySpo2",
+        "aldreteScore" = EXCLUDED."aldreteScore",
+        "recoveryConsciousnessLevel" = EXCLUDED."recoveryConsciousnessLevel",
+        "recoveryPainEva" = EXCLUDED."recoveryPainEva",
+        "anestheticComplications" = EXCLUDED."anestheticComplications",
+        "motorBlock" = EXCLUDED."motorBlock",
+        "recoveryObservations" = EXCLUDED."recoveryObservations",
+        "recoveryAnesthesiologist" = EXCLUDED."recoveryAnesthesiologist",
+        "recoveryAnesthesiologistLicense" = EXCLUDED."recoveryAnesthesiologistLicense",
+        "legalProfessionalName" = EXCLUDED."legalProfessionalName",
+        "legalProfessionalLicense" = EXCLUDED."legalProfessionalLicense",
+        "legalProfessionalSpecialty" = EXCLUDED."legalProfessionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "documentHash" = EXCLUDED."documentHash",
+        "digitalSeal" = EXCLUDED."digitalSeal",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -7038,7 +7545,8 @@ export class EncountersService {
         !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalConsultationRecord(record.encounterType, record.tabKey))
+        !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -7904,6 +8412,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isHospitalSurgicalDocumentRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildHospitalSurgicalDocumentPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}-${this.sanitizeFileName(input.record.noteType)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -8316,6 +8847,99 @@ export class EncountersService {
     return this.renderSimplePdf(lines);
   }
 
+  private buildHospitalSurgicalDocumentPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    const subdocumentType = this.readStringValue(
+      input.formData.tipoSubdocumentoQuirurgico,
+    );
+    const sharedLines = [
+      input.recordTitle,
+      'Tipo: Procedimientos y cirugía',
+      `Subdocumento: ${subdocumentType}`,
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `CURP: ${this.readStringValue(input.formData.curpDocumentoQuirurgico)}`,
+      `Expediente: ${this.readStringValue(input.formData.expedienteDocumentoQuirurgico)}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Folio documento: ${this.readStringValue(input.formData.folioDocumentoQuirurgico)}`,
+      `Versión: ${this.readStringValue(input.formData.versionDocumentoQuirurgico)}`,
+      `Hash: ${this.readStringValue(input.formData.hashDocumentoQuirurgico)}`,
+      `Sello digital: ${this.readStringValue(input.formData.selloDigitalQuirurgico)}`,
+    ];
+
+    const bodyLines =
+      subdocumentType === 'Nota preanestésica'
+        ? [
+            `Procedimiento programado: ${this.readStringValue(input.formData.procedimientoProgramadoPreanHosp)}`,
+            `Fecha/hora valoración: ${this.readStringValue(input.formData.fechaValoracionPreanHosp)} ${this.readStringValue(input.formData.horaValoracionPreanHosp)}`,
+            `ASA: ${this.readStringValue(input.formData.clasificacionAsaPreanHosp)}`,
+            `Mallampati: ${this.readStringValue(input.formData.mallampatiPreanHosp)}`,
+            `Plan anestésico: ${this.readStringValue(input.formData.planAnestesicoPreanHosp)}`,
+            `Antecedentes anestésicos: ${this.readStringValue(input.formData.antecedentesAnestesicosPreanHosp)}`,
+            `Alergias: ${this.readStringValue(input.formData.alergiasPreanHosp)}`,
+            `Ayuno confirmado: ${this.readStringValue(input.formData.ayunoConfirmadoPreanHosp)}`,
+            `Riesgo anestésico: ${this.readStringValue(input.formData.riesgoAnestesicoPreanHosp)}`,
+            `Plan detallado: ${this.readStringValue(input.formData.planAnestesicoDetalladoPreanHosp)}`,
+            `Anestesiólogo: ${this.readStringValue(input.formData.anestesiologoPreanHosp)}`,
+            `Cédula anestesiólogo: ${this.readStringValue(input.formData.cedulaAnestesiologoPreanHosp)}`,
+          ]
+        : subdocumentType === 'Nota postoperatoria'
+          ? [
+              `Cirugía: ${this.readStringValue(input.formData.fechaCirugiaPostop)} ${this.readStringValue(input.formData.horaInicioCirugiaPostop)}-${this.readStringValue(input.formData.horaFinCirugiaPostop)}`,
+              `Quirófano: ${this.readStringValue(input.formData.quirofanoPostop)}`,
+              `Cirujano: ${this.readStringValue(input.formData.cirujanoPrincipalPostop)}`,
+              `Anestesiólogo: ${this.readStringValue(input.formData.anestesiologoPostop)}`,
+              `Diagnóstico pre/post: ${this.readStringValue(input.formData.diagnosticoPreoperatorioPostop)} / ${this.readStringValue(input.formData.diagnosticoPostoperatorioPostop)}`,
+              `Procedimiento: ${this.readStringValue(input.formData.procedimientoRealizadoPostopHosp)}`,
+              `Duración: ${this.readStringValue(input.formData.duracionCirugiaPostop)} min`,
+              `Técnica: ${this.readStringValue(input.formData.tecnicaQuirurgicaPostop)}`,
+              `Hallazgos: ${this.readStringValue(input.formData.hallazgosTransoperatoriosPostop)}`,
+              `Conteo textil: ${this.readStringValue(input.formData.conteoTextilPostop)}`,
+              `Complicaciones: ${this.readStringValue(input.formData.huboComplicacionesPostop)} ${this.readStringValue(input.formData.tipoComplicacionPostop)}`,
+              `Estado postquirúrgico: ${this.readStringValue(input.formData.estadoInmediatoPostop)}`,
+              `Pronóstico: ${this.readStringValue(input.formData.pronosticoPostop)}`,
+            ]
+          : subdocumentType === 'Nota postanestésica'
+            ? [
+                `Tipo anestesia: ${this.readStringValue(input.formData.tipoAnestesiaPostanesHosp)}`,
+                `Ingreso/egreso: ${this.readStringValue(input.formData.horaIngresoPostanesHosp)}-${this.readStringValue(input.formData.horaEgresoPostanesHosp)}`,
+                `TA/FC/FR/SpO2: ${this.readStringValue(input.formData.taPostanesHosp)} ${this.readStringValue(input.formData.fcPostanesHosp)} ${this.readStringValue(input.formData.frPostanesHosp)} ${this.readStringValue(input.formData.spo2PostanesHosp)}`,
+                `Aldrete: ${this.readStringValue(input.formData.aldretePostanesHosp)}`,
+                `Nivel conciencia: ${this.readStringValue(input.formData.nivelConcienciaPostanesHosp)}`,
+                `Dolor EVA: ${this.readStringValue(input.formData.dolorEvaPostanesHosp)}`,
+                `Complicaciones anestésicas: ${this.readStringValue(input.formData.complicacionesAnestesicasPostanesHosp)}`,
+                `Anestesiólogo: ${this.readStringValue(input.formData.anestesiologoPostanesHosp)}`,
+                `Cédula: ${this.readStringValue(input.formData.cedulaPostanesHosp)}`,
+              ]
+            : [
+                `Diagnóstico preoperatorio: ${this.readStringValue(input.formData.diagnosticoPreoperatorioQuirHosp)}`,
+                `CIE-10: ${this.readStringValue(input.formData.cie10PreoperatorioQuirHosp)}`,
+                `Cirugía propuesta: ${this.readStringValue(input.formData.cirugiaPropuestaQuirHosp)}`,
+                `Tipo cirugía: ${this.readStringValue(input.formData.tipoCirugiaQuirHosp)}`,
+                `Cirujano principal: ${this.readStringValue(input.formData.cirujanoPrincipalQuirHosp)}`,
+                `Anestesiólogo: ${this.readStringValue(input.formData.anestesiologoQuirHosp)}`,
+                `Riesgos quirúrgicos: ${this.readStringValue(input.formData.riesgosQuirurgicosQuirHosp)}`,
+                `ASA: ${this.readStringValue(input.formData.clasificacionAsaQuirHosp)}`,
+                `Consentimiento: ${this.readStringValue(input.formData.consentimientoInformadoQuirHosp)}`,
+                `Estudios preoperatorios: ${this.readStringValue(input.formData.estudiosPreoperatoriosQuirHosp)}`,
+              ];
+
+    return this.renderSimplePdf([
+      ...sharedLines,
+      ...bodyLines,
+      `Profesional: ${this.readStringValue(input.formData.medicoQuirLegal)}`,
+      `Cédula: ${this.readStringValue(input.formData.cedulaQuirLegal)}`,
+      `Especialidad: ${this.readStringValue(input.formData.especialidadQuirLegal)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionQuirLegal)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ]);
+  }
+
   private renderSimplePdf(lines: string[]) {
     const sanitizedLines = lines
       .map((line) => this.escapePdfText(line))
@@ -8598,6 +9222,10 @@ export class EncountersService {
             'motivoInterconsultaHosp',
           ]
         : [];
+    const hospitalSurgicalRequiredFields =
+      this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
+        ? this.resolveHospitalSurgicalRequiredFields(input.noteType)
+        : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
@@ -8611,6 +9239,7 @@ export class EncountersService {
       ...hospitalEvolutionRequiredFields,
       ...hospitalMedicalOrdersRequiredFields,
       ...hospitalConsultationRequiredFields,
+      ...hospitalSurgicalRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -8638,8 +9267,14 @@ export class EncountersService {
                           ? 'Completa los campos obligatorios de indicaciones médicas antes de firmarlas'
                           : this.isHospitalConsultationRecord(input.encounterType, input.tabKey)
                             ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
+                            : this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
+                              ? 'Completa los campos obligatorios del subdocumento quirúrgico antes de firmarlo'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)) {
+      this.assertHospitalSurgicalDocumentReadyForSignature(input.noteType, formData);
     }
 
     if (this.isHospitalConsultationRecord(input.encounterType, input.tabKey)) {
@@ -8656,6 +9291,100 @@ export class EncountersService {
 
     if (this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyOrdersReadyForSignature(formData);
+    }
+  }
+
+  private resolveHospitalSurgicalRequiredFields(noteType: string) {
+    if (noteType === 'Nota preanestésica') {
+      return [
+        'fechaValoracionPreanHosp',
+        'horaValoracionPreanHosp',
+        'procedimientoProgramadoPreanHosp',
+        'clasificacionAsaPreanHosp',
+        'mallampatiPreanHosp',
+        'planAnestesicoPreanHosp',
+        'riesgoAnestesicoPreanHosp',
+        'planAnestesicoDetalladoPreanHosp',
+        'anestesiologoPreanHosp',
+        'cedulaAnestesiologoPreanHosp',
+      ];
+    }
+
+    if (noteType === 'Nota postoperatoria') {
+      return [
+        'fechaCirugiaPostop',
+        'horaInicioCirugiaPostop',
+        'horaFinCirugiaPostop',
+        'quirofanoPostop',
+        'cirujanoPrincipalPostop',
+        'anestesiologoPostop',
+        'diagnosticoPreoperatorioPostop',
+        'diagnosticoPostoperatorioPostop',
+        'procedimientoRealizadoPostopHosp',
+        'tecnicaQuirurgicaPostop',
+        'hallazgosTransoperatoriosPostop',
+        'conteoTextilPostop',
+        'estadoHemodinamicoPostop',
+        'nivelConcienciaPostop',
+        'dolorPostop',
+        'destinoPostop',
+        'estadoInmediatoPostop',
+        'pronosticoPostop',
+      ];
+    }
+
+    if (noteType === 'Nota postanestésica') {
+      return [
+        'tipoAnestesiaPostanesHosp',
+        'horaIngresoPostanesHosp',
+        'horaEgresoPostanesHosp',
+        'taPostanesHosp',
+        'fcPostanesHosp',
+        'frPostanesHosp',
+        'spo2PostanesHosp',
+        'aldretePostanesHosp',
+        'nivelConcienciaPostanesHosp',
+        'dolorEvaPostanesHosp',
+        'anestesiologoPostanesHosp',
+        'cedulaPostanesHosp',
+      ];
+    }
+
+    return [
+      'diagnosticoPreoperatorioQuirHosp',
+      'cie10PreoperatorioQuirHosp',
+      'cirugiaPropuestaQuirHosp',
+      'tipoCirugiaQuirHosp',
+      'cirujanoPrincipalQuirHosp',
+      'anestesiologoQuirHosp',
+      'riesgosQuirurgicosQuirHosp',
+      'clasificacionAsaQuirHosp',
+      'consentimientoInformadoQuirHosp',
+    ];
+  }
+
+  private assertHospitalSurgicalDocumentReadyForSignature(
+    noteType: string,
+    formData: Record<string, unknown>,
+  ) {
+    if (
+      noteType === 'Nota postoperatoria' &&
+      this.readStringValue(formData.conteoTextilPostop) !== 'COMPLETO'
+    ) {
+      throw new BadRequestException(
+        'No se puede firmar la nota postoperatoria con conteo textil incompleto',
+      );
+    }
+
+    if (
+      noteType === 'Nota postoperatoria' &&
+      this.readStringValue(formData.huboComplicacionesPostop) === 'SI' &&
+      (!this.hasCapturedValue(formData.tipoComplicacionPostop) ||
+        !this.hasCapturedValue(formData.manejoComplicacionPostop))
+    ) {
+      throw new BadRequestException(
+        'Documenta tipo y manejo de las complicaciones antes de firmar la nota postoperatoria',
+      );
     }
   }
 

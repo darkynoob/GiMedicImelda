@@ -122,6 +122,16 @@ const hospitalizationConfig: Record<string, EpisodeRecordPanelConfig> = {
       'Nota postanestésica',
     ],
   },
+  'Procedimientos y cirugía': {
+    contextLabel: 'Subdocumentos quirúrgicos',
+    defaultActionLabel: 'Nuevo subdocumento',
+    noteTypes: [
+      'Nota preoperatoria',
+      'Nota preanestésica',
+      'Nota postoperatoria',
+      'Nota postanestésica',
+    ],
+  },
   Enfermería: {
     contextLabel: 'Registros de enfermería',
     defaultActionLabel: 'Nuevo registro',
