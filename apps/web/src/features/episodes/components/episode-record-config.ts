@@ -14,8 +14,12 @@ const outpatientConfig: Record<string, EpisodeRecordPanelConfig> = {
     defaultActionLabel: 'Nueva nota de consulta',
   },
   Evolución: {
-    contextLabel: 'Notas de evolución',
-    defaultActionLabel: 'Nueva nota de evolución',
+    contextLabel: 'Evoluciones hospitalarias',
+    defaultActionLabel: 'Nueva evolución hospitalaria',
+  },
+  'Evolución hospitalaria': {
+    contextLabel: 'Evoluciones hospitalarias',
+    defaultActionLabel: 'Nueva evolución hospitalaria',
   },
   'Receta / Indicaciones': {
     contextLabel: 'Recetas e indicaciones',
@@ -89,8 +93,12 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
 
 const hospitalizationConfig: Record<string, EpisodeRecordPanelConfig> = {
   Ingreso: {
-    contextLabel: 'Notas de ingreso',
-    defaultActionLabel: 'Nueva nota de ingreso',
+    contextLabel: 'Ingreso hospitalario',
+    defaultActionLabel: 'Nuevo ingreso hospitalario',
+  },
+  'Ingreso hospitalario': {
+    contextLabel: 'Ingreso hospitalario',
+    defaultActionLabel: 'Nuevo ingreso hospitalario',
   },
   Evolución: {
     contextLabel: 'Notas de evolución',
@@ -114,13 +122,28 @@ const hospitalizationConfig: Record<string, EpisodeRecordPanelConfig> = {
       'Nota postanestésica',
     ],
   },
+  'Procedimientos y cirugía': {
+    contextLabel: 'Subdocumentos quirúrgicos',
+    defaultActionLabel: 'Nuevo subdocumento',
+    noteTypes: [
+      'Nota preoperatoria',
+      'Nota preanestésica',
+      'Nota postoperatoria',
+      'Nota postanestésica',
+    ],
+  },
   Enfermería: {
     contextLabel: 'Registros de enfermería',
-    defaultActionLabel: 'Nuevo registro',
+    defaultActionLabel: 'Nuevo turno',
+    noteTypes: ['Turno Matutino', 'Turno Vespertino', 'Turno Nocturno'],
   },
   Egreso: {
     contextLabel: 'Notas de egreso',
     defaultActionLabel: 'Nueva nota de egreso',
+  },
+  'Egreso hospitalario': {
+    contextLabel: 'Egreso hospitalario',
+    defaultActionLabel: 'Nuevo egreso',
   },
   Documentos: {
     contextLabel: 'Documentos del episodio',
