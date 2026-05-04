@@ -134,7 +134,8 @@ const hospitalizationConfig: Record<string, EpisodeRecordPanelConfig> = {
   },
   Enfermería: {
     contextLabel: 'Registros de enfermería',
-    defaultActionLabel: 'Nuevo registro',
+    defaultActionLabel: 'Nuevo turno',
+    noteTypes: ['Turno Matutino', 'Turno Vespertino', 'Turno Nocturno'],
   },
   Egreso: {
     contextLabel: 'Notas de egreso',

@@ -243,6 +243,14 @@ function buildHospitalSurgicalTitle(versionNumber: number) {
   return `Procedimientos y cirugía V${versionNumber}`;
 }
 
+function isHospitalNursingTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'HOSPITALIZATION' && tabTitle === 'Enfermería';
+}
+
+function buildHospitalNursingTitle(versionNumber: number) {
+  return `Enfermería V${versionNumber}`;
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
@@ -1412,6 +1420,76 @@ function buildHospitalSurgicalSnapshot(args: {
       args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     especialidadQuirLegal: args.detail.specialty?.name ?? 'Sin especialidad',
     lugarAtencionQuirLegal:
+      [args.detail.facility?.name, args.detail.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado',
+  };
+}
+
+function buildHospitalNursingSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  noteType: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const current = args.currentFormData ?? {};
+  const keep = (fieldKey: string, suggestion: RecordFieldValue): RecordFieldValue => {
+    const currentValue = current[fieldKey];
+
+    if (typeof currentValue === 'string') {
+      return currentValue.trim().length > 0 ? currentValue : suggestion;
+    }
+
+    return currentValue ?? suggestion;
+  };
+  const intake = readNumericFormValue(current.ingresosMlEnfHosp);
+  const output = readNumericFormValue(current.egresosMlEnfHosp);
+  const balance = intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : '';
+  const latestOrders = getLatestRecordByTab(
+    args.detail.sectionRecords,
+    'Indicaciones médicas',
+  );
+  const orderMedications =
+    Array.isArray(latestOrders?.formData.medicamentosIndicacionesHosp)
+      ? latestOrders.formData.medicamentosIndicacionesHosp
+      : [];
+  const existingMedications = Array.isArray(current.medicamentosMinistradosEnfHosp)
+    ? current.medicamentosMinistradosEnfHosp
+    : [];
+  const suggestedMedications =
+    existingMedications.length > 0
+      ? existingMedications
+      : orderMedications.map((item, index) => {
+          const medication =
+            item && typeof item === 'object' && !Array.isArray(item)
+              ? (item as Record<string, RecordFieldValue>)
+              : {};
+          return {
+            medicamento: String(medication.medicamento ?? ''),
+            horaProgramada: args.recordedAt.slice(11, 16),
+            horaAdministrada: '',
+            estado: '',
+            motivoNoAdministracion: '',
+            enfermeria:
+              args.detail.attendingClinician?.fullName ??
+              'Sin profesional responsable',
+            sourceMedicalOrderId: latestOrders?.id ?? '',
+            sourceMedicationId: String(medication.id ?? `med-${index + 1}`),
+          };
+        });
+
+  return {
+    tipoRegistro: 'Enfermería',
+    turnoEnfermeriaHosp: args.noteType,
+    estadoTurnoEnfermeriaHosp: keep('estadoTurnoEnfermeriaHosp', 'BORRADOR'),
+    balanceTotalEnfHosp: String(balance),
+    medicamentosMinistradosEnfHosp: suggestedMedications,
+    profesionalEnfermeriaLegal:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaEnfermeriaLegal:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    especialidadEnfermeriaLegal: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionEnfermeriaLegal:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
         .filter(Boolean)
         .join(' · ') || 'Lugar no configurado',
@@ -3259,6 +3337,8 @@ export function EpisodeDetailPage() {
               ? 'Interconsultas'
               : isHospitalSurgicalTab(detail.encounterType, activeTab)
                 ? 'Procedimientos / Cirugía'
+                : isHospitalNursingTab(detail.encounterType, activeTab)
+                  ? 'Enfermería'
             : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeRecordTabKey,
@@ -3324,6 +3404,10 @@ export function EpisodeDetailPage() {
     activeTab,
   );
   const isHospitalSurgicalSection = isHospitalSurgicalTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isHospitalNursingSection = isHospitalNursingTab(
     detail.encounterType,
     activeTab,
   );
@@ -3463,6 +3547,11 @@ export function EpisodeDetailPage() {
     : getLatestRecordByTab(detail.sectionRecords, 'Procedimientos / Cirugía');
   const nextHospitalSurgicalVersionNumber =
     (latestHospitalSurgicalRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestHospitalNursingRecord = isHospitalNursingSection
+    ? getLatestRecordByTab(activeTabRecords, 'Enfermería')
+    : getLatestRecordByTab(detail.sectionRecords, 'Enfermería');
+  const nextHospitalNursingVersionNumber =
+    (latestHospitalNursingRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -3961,6 +4050,34 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isHospitalNursingSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      const nextNoteType = noteType ?? 'Turno Matutino';
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: nextNoteType,
+          title: buildHospitalNursingTitle(nextHospitalNursingVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: {
+            ...buildHospitalNursingSnapshot({
+              detail,
+              recordedAt: nextRecordedAt,
+              noteType: nextNoteType,
+            }),
+          },
+        }),
+      );
+      return;
+    }
+
     const nextNoteType =
       noteType ??
       activeTabPanelConfig?.noteTypes?.[0] ??
@@ -4223,6 +4340,23 @@ export function EpisodeDetailPage() {
                                                 >,
                                             }),
                                           }
+                                        : isHospitalNursingSection
+                                          ? {
+                                              ...(record.formData as Record<
+                                                string,
+                                                RecordFieldValue
+                                              >),
+                                              ...buildHospitalNursingSnapshot({
+                                                detail,
+                                                recordedAt: record.recordedAt.slice(0, 16),
+                                                noteType: record.noteType,
+                                                currentFormData:
+                                                  record.formData as Record<
+                                                    string,
+                                                    RecordFieldValue
+                                                  >,
+                                              }),
+                                            }
                     : record.formData,
       }),
     );
@@ -4300,13 +4434,28 @@ export function EpisodeDetailPage() {
   const updateRecordFormDataField = (fieldKey: string, value: RecordFieldValue) => {
     setRecordForm((currentValue) =>
       currentValue
-        ? {
-            ...currentValue,
-            formData: {
+        ? (() => {
+            const nextFormData = {
               ...currentValue.formData,
               [fieldKey]: value,
-            },
-          }
+            };
+            if (
+              isHospitalNursingSection &&
+              (fieldKey === 'ingresosMlEnfHosp' ||
+                fieldKey === 'egresosMlEnfHosp')
+            ) {
+              const intake = readNumericFormValue(nextFormData.ingresosMlEnfHosp);
+              const output = readNumericFormValue(nextFormData.egresosMlEnfHosp);
+              nextFormData.balanceTotalEnfHosp =
+                intake !== null || output !== null
+                  ? String((intake ?? 0) - (output ?? 0))
+                  : '';
+            }
+            return {
+              ...currentValue,
+              formData: nextFormData,
+            };
+          })()
         : currentValue,
     );
   };
@@ -4475,6 +4624,16 @@ export function EpisodeDetailPage() {
                                             currentFormData: recordForm.formData,
                                           }),
                                         }
+                                      : isHospitalNursingSection
+                                        ? {
+                                            ...recordForm.formData,
+                                            ...buildHospitalNursingSnapshot({
+                                              detail,
+                                              recordedAt: recordForm.recordedAt,
+                                              noteType: recordForm.noteType,
+                                              currentFormData: recordForm.formData,
+                                            }),
+                                          }
                   : recordForm.formData,
     };
 
@@ -5645,6 +5804,41 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isHospitalNursingSection ? (
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {selectedRecord
+                                      ? buildHospitalNursingTitle(
+                                          selectedRecord.metadata.versionNumber ?? 1,
+                                        )
+                                      : buildHospitalNursingTitle(
+                                          nextHospitalNursingVersionNumber,
+                                        )}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Corte de enfermería por turno con signos, ministración,
+                                    balance, eventos y firma independiente.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">Enfermería</Badge>
+                                  <Badge variant="secondary">{recordForm.noteType}</Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -5748,7 +5942,8 @@ export function EpisodeDetailPage() {
                           isHospitalEvolutionSection ||
                           isHospitalMedicalOrdersSection ||
                           isHospitalConsultationSection ||
-                          isHospitalSurgicalSection ? null : (
+                          isHospitalSurgicalSection ||
+                          isHospitalNursingSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
@@ -5919,7 +6114,8 @@ export function EpisodeDetailPage() {
                         isHospitalEvolutionSection ||
                         isHospitalMedicalOrdersSection ||
                         isHospitalConsultationSection ||
-                        isHospitalSurgicalSection ? (
+                        isHospitalSurgicalSection ||
+                        isHospitalNursingSection ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div>
@@ -5948,6 +6144,8 @@ export function EpisodeDetailPage() {
                                                     ? 'Documento de Interconsulta'
                                                     : isHospitalSurgicalSection
                                                       ? 'Subdocumento quirúrgico'
+                                                      : isHospitalNursingSection
+                                                        ? 'Corte de enfermería'
                                       : 'Documento oficial del episodio'}
                                 </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
@@ -5975,6 +6173,8 @@ export function EpisodeDetailPage() {
                                                         ? 'La vista previa y el PDF usan solicitud, respuesta, estado y tiempos de auditoría.'
                                                         : isHospitalSurgicalSection
                                                           ? 'La vista previa y el PDF pertenecen solo a este subdocumento quirúrgico.'
+                                                          : isHospitalNursingSection
+                                                            ? 'La vista previa y el PDF pertenecen solo a este turno de enfermería.'
                                       : 'La vista previa y la descarga del PDF se habilitan desde este bloque. La nota de cierre firmada bloqueará toda la edición del episodio.'}
                                 </p>
                               </div>
@@ -6011,7 +6211,8 @@ export function EpisodeDetailPage() {
                                       !isHospitalEvolutionSection &&
                                       !isHospitalMedicalOrdersSection &&
                                       !isHospitalConsultationSection &&
-                                      !isHospitalSurgicalSection) ||
+                                      !isHospitalSurgicalSection &&
+                                      !isHospitalNursingSection) ||
                                     (isConsultationPrescriptionSection &&
                                       (selectedRecord.metadata.pdfDownloadCount ?? 0) >= 1) ||
                                     downloadPrescriptionPdfMutation.isPending

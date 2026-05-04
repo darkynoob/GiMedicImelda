@@ -833,6 +833,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const hospitalNursingShiftVersionContext =
+      await this.resolveHospitalNursingShiftVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -862,6 +868,7 @@ export class EncountersService {
       hospitalMedicalOrdersVersionContext,
       hospitalConsultationVersionContext,
       hospitalSurgicalDocumentVersionContext,
+      hospitalNursingShiftVersionContext,
       responsibleUser,
     });
 
@@ -1001,6 +1008,18 @@ export class EncountersService {
       sectionRecordId: createdRecord.id,
       tabKey: normalizedRecordPayload.tabKey,
       noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalNursingShiftRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
       recordedAt,
       title: normalizedRecordPayload.title,
       status: normalizedRecordPayload.status,
@@ -1158,6 +1177,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const hospitalNursingShiftVersionContext =
+      await this.resolveHospitalNursingShiftVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1187,6 +1213,7 @@ export class EncountersService {
       hospitalMedicalOrdersVersionContext,
       hospitalConsultationVersionContext,
       hospitalSurgicalDocumentVersionContext,
+      hospitalNursingShiftVersionContext,
       responsibleUser,
     });
 
@@ -1323,6 +1350,18 @@ export class EncountersService {
       sectionRecordId: recordId,
       tabKey: normalizedRecordPayload.tabKey,
       noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncHospitalNursingShiftRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
       recordedAt,
       title: normalizedRecordPayload.title,
       status: normalizedRecordPayload.status,
@@ -1813,6 +1852,58 @@ export class EncountersService {
           },
         });
       }
+
+      if (
+        this.isHospitalNursingShiftRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const nursingFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        const nextNursingFormData = {
+          ...nursingFormData,
+          estadoTurnoEnfermeriaHosp: 'FIRMADO',
+          signedAtTurnoEnfermeriaHosp: signedAt.toISOString(),
+        };
+        await transaction.encounterSectionRecord.update({
+          where: { id: currentRecord.id },
+          data: {
+            formDataJson: nextNursingFormData as Prisma.InputJsonValue,
+          },
+        });
+        await transaction.$executeRaw`
+          UPDATE "HospitalNursingShift"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "contentJson" = ${this.jsonbParameter(nextNursingFormData)}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalNursingShift',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              shiftType: currentRecord.noteType,
+              signedAt: signedAt.toISOString(),
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              status: EncounterRecordStatus.SIGNED,
+            },
+          },
+        });
+      }
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
@@ -1870,7 +1961,8 @@ export class EncountersService {
       !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey)
+      !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey)
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -1960,6 +2052,14 @@ export class EncountersService {
     if (this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalSurgicalDocument"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalNursingShift"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -3158,6 +3258,36 @@ export class EncountersService {
     };
   }
 
+  private async resolveHospitalNursingShiftVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Enfermería',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -3217,6 +3347,9 @@ export class EncountersService {
     hospitalSurgicalDocumentVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalSurgicalDocumentVersionContext']>
     >;
+    hospitalNursingShiftVersionContext: Awaited<
+      ReturnType<EncountersService['resolveHospitalNursingShiftVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -3225,6 +3358,46 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isHospitalNursingShiftRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.hospitalNursingShiftVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildHospitalNursingShiftFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        responsibleUser: input.responsibleUser,
+        noteType: input.input.noteType,
+      });
+
+      return {
+        tabKey: 'Enfermería',
+        noteType: formData.turnoEnfermeriaHosp,
+        title: `Enfermería V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Enfermería',
+          shiftType: formData.turnoEnfermeriaHosp,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isHospitalSurgicalDocumentRecord(
         input.encounter.encounterType,
@@ -3817,6 +3990,10 @@ export class EncountersService {
       !this.isHospitalConsultationRecord(
         input.encounter.encounterType,
         input.input.tabKey,
+      ) &&
+      !this.isHospitalNursingShiftRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
       )
     ) {
       return {
@@ -4263,6 +4440,13 @@ export class EncountersService {
     );
   }
 
+  private isHospitalNursingShiftRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Enfermería';
+  }
+
   private isAllowedEmergencyDocumentType(noteType: string) {
     return [
       'Solicitud de laboratorio',
@@ -4592,6 +4776,68 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
     };
+  }
+
+  private buildHospitalNursingShiftFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    noteType: string;
+  }) {
+    const shiftType =
+      this.resolveHospitalNursingShiftType(input.noteType) ||
+      this.resolveHospitalNursingShiftType(
+        this.readStringValue(input.incomingFormData.turnoEnfermeriaHosp),
+      ) ||
+      'Turno Matutino';
+    const intake = this.readNumericValue(input.incomingFormData.ingresosMlEnfHosp);
+    const output = this.readNumericValue(input.incomingFormData.egresosMlEnfHosp);
+    const balance = intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : null;
+    const nurseName =
+      input.responsibleUser?.fullName ?? 'Sin profesional responsable';
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistro: 'Enfermería',
+      turnoEnfermeriaHosp: shiftType,
+      estadoTurnoEnfermeriaHosp:
+        this.readStringValue(input.incomingFormData.estadoTurnoEnfermeriaHosp) ||
+        'BORRADOR',
+      balanceTotalEnfHosp: balance === null ? '' : String(balance),
+      medicamentosMinistradosEnfHosp: this
+        .readObjectArray(input.incomingFormData.medicamentosMinistradosEnfHosp)
+        .map((medication) => ({
+          ...medication,
+          enfermeria:
+            this.readStringValue(medication.enfermeria) || nurseName,
+        })),
+      procedimientosEnfermeriaTurnoHosp: this
+        .readObjectArray(input.incomingFormData.procedimientosEnfermeriaTurnoHosp)
+        .map((procedure) => ({
+          ...procedure,
+          realizadoPor:
+            this.readStringValue(procedure.realizadoPor) || nurseName,
+        })),
+      profesionalEnfermeriaLegal: nurseName,
+      cedulaEnfermeriaLegal:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadEnfermeriaLegal:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionEnfermeriaLegal:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+    };
+  }
+
+  private resolveHospitalNursingShiftType(noteType: string) {
+    return ['Turno Matutino', 'Turno Vespertino', 'Turno Nocturno'].find(
+      (allowedType) => allowedType === noteType,
+    );
   }
 
   private resolveHospitalSurgicalSubdocumentType(noteType: string) {
@@ -6779,6 +7025,155 @@ export class EncountersService {
     `;
   }
 
+  private async syncHospitalNursingShiftRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isHospitalNursingShiftRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const nursingShiftId = randomUUID();
+    const intake = this.readNumericValue(input.formData.ingresosMlEnfHosp);
+    const output = this.readNumericValue(input.formData.egresosMlEnfHosp);
+    const balance = intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : null;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalNursingShift" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "recordType", "shiftType", "status", "recordedAt",
+        "habitusExterior", "fluidIntakeMl", "fluidOutputMl", "fluidBalanceMl",
+        "woundCare", "mobilization", "hygiene", "surveillance", "devices",
+        "morseFallRisk", "bradenUppRisk", "adverseEvent", "adverseEventType",
+        "adverseEventDescriptionAction", "generalObservations", "professionalName",
+        "professionalLicense", "professionalSpecialty", "careLocation",
+        "signerUserId", "signedAt", "pdfDownloadCount", "pdfLastDownloadedAt",
+        "contentJson", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${nursingShiftId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, 'Enfermería', ${this.readStringValue(input.formData.turnoEnfermeriaHosp)}, ${input.status}, ${input.recordedAt},
+        ${this.readStringValue(input.formData.habitusExteriorEnfHosp)}, ${intake}, ${output}, ${balance},
+        ${this.readStringValue(input.formData.curacionesEnfHosp)}, ${this.readStringValue(input.formData.movilizacionEnfHosp)}, ${this.readStringValue(input.formData.higieneEnfHosp)}, ${this.readStringValue(input.formData.vigilanciaEnfHosp)}, ${this.readStringValue(input.formData.dispositivosEnfHosp)},
+        ${this.readStringValue(input.formData.riesgoCaidaMorseEnfHosp)}, ${this.readStringValue(input.formData.riesgoUppBradenEnfHosp)}, ${this.readStringValue(input.formData.eventoAdversoEnfHosp)}, ${this.readStringValue(input.formData.tipoEventoAdversoEnfHosp)},
+        ${this.readStringValue(input.formData.descripcionAccionEventoEnfHosp)}, ${this.readStringValue(input.formData.observacionesGeneralesEnfHosp)}, ${this.readStringValue(input.formData.profesionalEnfermeriaLegal) || 'Sin profesional responsable'},
+        ${this.readStringValue(input.formData.cedulaEnfermeriaLegal)}, ${this.readStringValue(input.formData.especialidadEnfermeriaLegal)}, ${this.readStringValue(input.formData.lugarAtencionEnfermeriaLegal)},
+        ${signedAt ? input.userId : null}, ${signedAt}, ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)},
+        ${this.jsonbParameter(input.formData)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "shiftType" = EXCLUDED."shiftType",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "habitusExterior" = EXCLUDED."habitusExterior",
+        "fluidIntakeMl" = EXCLUDED."fluidIntakeMl",
+        "fluidOutputMl" = EXCLUDED."fluidOutputMl",
+        "fluidBalanceMl" = EXCLUDED."fluidBalanceMl",
+        "woundCare" = EXCLUDED."woundCare",
+        "mobilization" = EXCLUDED."mobilization",
+        "hygiene" = EXCLUDED."hygiene",
+        "surveillance" = EXCLUDED."surveillance",
+        "devices" = EXCLUDED."devices",
+        "morseFallRisk" = EXCLUDED."morseFallRisk",
+        "bradenUppRisk" = EXCLUDED."bradenUppRisk",
+        "adverseEvent" = EXCLUDED."adverseEvent",
+        "adverseEventType" = EXCLUDED."adverseEventType",
+        "adverseEventDescriptionAction" = EXCLUDED."adverseEventDescriptionAction",
+        "generalObservations" = EXCLUDED."generalObservations",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+
+    const storedRows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "HospitalNursingShift" WHERE "sectionRecordId" = ${input.sectionRecordId} LIMIT 1
+    `;
+    const storedShiftId = storedRows[0]?.id;
+    if (!storedShiftId) return;
+
+    await this.prisma.$executeRaw`DELETE FROM "HospitalNursingVitalSign" WHERE "nursingShiftId" = ${storedShiftId}`;
+    await this.prisma.$executeRaw`DELETE FROM "HospitalMedicationAdministration" WHERE "nursingShiftId" = ${storedShiftId}`;
+    await this.prisma.$executeRaw`DELETE FROM "HospitalNursingProcedure" WHERE "nursingShiftId" = ${storedShiftId}`;
+
+    for (const [index, vital] of this.readObjectArray(input.formData.signosVitalesSeriadosEnfHosp).entries()) {
+      const date = this.readStringValue(vital.fecha);
+      const time = this.readStringValue(vital.hora);
+      const takenAt = this.parseOptionalDate(`${date}T${time}`);
+      if (!takenAt) continue;
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalNursingVitalSign" (
+          "id", "tenantId", "encounterId", "patientId", "nursingShiftId",
+          "takenAt", "systolicBp", "diastolicBp", "heartRate", "respiratoryRate",
+          "temperatureC", "oxygenSaturation", "capillaryGlucose", "painEva",
+          "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${storedShiftId},
+          ${takenAt}, ${this.readRoundedNumericValue(vital.taSistolica) ?? 0}, ${this.readRoundedNumericValue(vital.taDiastolica) ?? 0}, ${this.readRoundedNumericValue(vital.fc) ?? 0}, ${this.readRoundedNumericValue(vital.fr) ?? 0},
+          ${this.readNumericValue(vital.temperatura) ?? 0}, ${this.readNumericValue(vital.spo2) ?? 0}, ${this.readNumericValue(vital.glucosaCapilar)}, ${this.readRoundedNumericValue(vital.dolorEva)},
+          ${index}, NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const [index, medication] of this.readObjectArray(input.formData.medicamentosMinistradosEnfHosp).entries()) {
+      const name = this.readStringValue(medication.medicamento);
+      const scheduledTime = this.readStringValue(medication.horaProgramada);
+      if (!name || !scheduledTime) continue;
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalMedicationAdministration" (
+          "id", "tenantId", "encounterId", "patientId", "nursingShiftId",
+          "medicationName", "scheduledTime", "administeredTime", "status",
+          "omissionReason", "nurseName", "sourceMedicalOrderId", "sourceMedicationId",
+          "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${storedShiftId},
+          ${name}, ${scheduledTime}, ${this.readStringValue(medication.horaAdministrada)}, ${this.readStringValue(medication.estado)},
+          ${this.readStringValue(medication.motivoNoAdministracion)}, ${this.readStringValue(medication.enfermeria) || this.readStringValue(input.formData.profesionalEnfermeriaLegal)}, ${this.readStringValue(medication.sourceMedicalOrderId)}, ${this.readStringValue(medication.sourceMedicationId)},
+          ${index}, NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const [index, procedure] of this.readObjectArray(input.formData.procedimientosEnfermeriaTurnoHosp).entries()) {
+      const name = this.readStringValue(procedure.procedimiento);
+      if (!name) continue;
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalNursingProcedure" (
+          "id", "tenantId", "encounterId", "patientId", "nursingShiftId",
+          "procedureName", "performedTime", "performedBy", "observations",
+          "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${storedShiftId},
+          ${name}, ${this.readStringValue(procedure.hora)}, ${this.readStringValue(procedure.realizadoPor)}, ${this.readStringValue(procedure.observaciones)},
+          ${index}, NOW(), NOW()
+        )
+      `;
+    }
+  }
+
   private async syncEmergencyConsultationRecord(input: {
     tenantId: string;
     userId: string;
@@ -7546,7 +7941,8 @@ export class EncountersService {
         !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey))
+        !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -8435,6 +8831,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isHospitalNursingShiftRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildHospitalNursingShiftPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}-${this.sanitizeFileName(input.record.noteType)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -8940,6 +9359,57 @@ export class EncountersService {
     ]);
   }
 
+  private buildHospitalNursingShiftPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    const vitalLines = this.readObjectArray(input.formData.signosVitalesSeriadosEnfHosp)
+      .map((item, index) =>
+        `${index + 1}. ${this.readStringValue(item.fecha)} ${this.readStringValue(item.hora)} TA ${this.readStringValue(item.taSistolica)}/${this.readStringValue(item.taDiastolica)} FC ${this.readStringValue(item.fc)} FR ${this.readStringValue(item.fr)} T ${this.readStringValue(item.temperatura)} SpO2 ${this.readStringValue(item.spo2)}`,
+      );
+    const medicationLines = this.readObjectArray(input.formData.medicamentosMinistradosEnfHosp)
+      .map((item, index) =>
+        `${index + 1}. ${this.readStringValue(item.medicamento)} ${this.readStringValue(item.horaProgramada)} ${this.readStringValue(item.estado)} ${this.readStringValue(item.motivoNoAdministracion)}`.trim(),
+      );
+    const procedureLines = this.readObjectArray(input.formData.procedimientosEnfermeriaTurnoHosp)
+      .map((item, index) =>
+        `${index + 1}. ${this.readStringValue(item.procedimiento)} ${this.readStringValue(item.hora)} ${this.readStringValue(item.realizadoPor)}`.trim(),
+      );
+
+    return this.renderSimplePdf([
+      input.recordTitle,
+      'Tipo: Enfermería',
+      `Turno: ${this.readStringValue(input.formData.turnoEnfermeriaHosp)}`,
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Estado turno: ${this.readStringValue(input.formData.estadoTurnoEnfermeriaHosp)}`,
+      `Hábitus: ${this.readStringValue(input.formData.habitusExteriorEnfHosp)}`,
+      'Signos vitales seriados:',
+      ...(vitalLines.length > 0 ? vitalLines : ['Sin signos capturados']),
+      'Ministración de medicamentos:',
+      ...(medicationLines.length > 0 ? medicationLines : ['Sin ministración capturada']),
+      'Procedimientos:',
+      ...(procedureLines.length > 0 ? procedureLines : ['Sin procedimientos capturados']),
+      `Balance hídrico: ingresos ${this.readStringValue(input.formData.ingresosMlEnfHosp)} ml / egresos ${this.readStringValue(input.formData.egresosMlEnfHosp)} ml / total ${this.readStringValue(input.formData.balanceTotalEnfHosp)} ml`,
+      `Cuidados: curaciones ${this.readStringValue(input.formData.curacionesEnfHosp)} / movilización ${this.readStringValue(input.formData.movilizacionEnfHosp)} / higiene ${this.readStringValue(input.formData.higieneEnfHosp)}`,
+      `Vigilancia: ${this.readStringValue(input.formData.vigilanciaEnfHosp)}`,
+      `Dispositivos: ${this.readStringValue(input.formData.dispositivosEnfHosp)}`,
+      `Morse: ${this.readStringValue(input.formData.riesgoCaidaMorseEnfHosp)} / Braden: ${this.readStringValue(input.formData.riesgoUppBradenEnfHosp)}`,
+      `Evento adverso: ${this.readStringValue(input.formData.eventoAdversoEnfHosp)} ${this.readStringValue(input.formData.tipoEventoAdversoEnfHosp)}`,
+      `Acción evento: ${this.readStringValue(input.formData.descripcionAccionEventoEnfHosp)}`,
+      `Observaciones: ${this.readStringValue(input.formData.observacionesGeneralesEnfHosp)}`,
+      `Profesional: ${this.readStringValue(input.formData.profesionalEnfermeriaLegal)}`,
+      `Cédula: ${this.readStringValue(input.formData.cedulaEnfermeriaLegal)}`,
+      `Especialidad: ${this.readStringValue(input.formData.especialidadEnfermeriaLegal)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionEnfermeriaLegal)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ]);
+  }
+
   private renderSimplePdf(lines: string[]) {
     const sanitizedLines = lines
       .map((line) => this.escapePdfText(line))
@@ -9226,6 +9696,14 @@ export class EncountersService {
       this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
         ? this.resolveHospitalSurgicalRequiredFields(input.noteType)
         : [];
+    const hospitalNursingRequiredFields =
+      this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)
+        ? [
+            'turnoEnfermeriaHosp',
+            'signosVitalesSeriadosEnfHosp',
+            'medicamentosMinistradosEnfHosp',
+          ]
+        : [];
 
     const missingFields = [
       ...(requiredFieldsByNoteType[input.noteType] ?? []),
@@ -9240,6 +9718,7 @@ export class EncountersService {
       ...hospitalMedicalOrdersRequiredFields,
       ...hospitalConsultationRequiredFields,
       ...hospitalSurgicalRequiredFields,
+      ...hospitalNursingRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -9269,8 +9748,14 @@ export class EncountersService {
                             ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
                             : this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
                               ? 'Completa los campos obligatorios del subdocumento quirúrgico antes de firmarlo'
+                              : this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)
+                                ? 'Completa los signos vitales y medicamentos del turno antes de firmarlo'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)) {
+      this.assertHospitalNursingShiftReadyForSignature(formData);
     }
 
     if (this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)) {
@@ -9384,6 +9869,68 @@ export class EncountersService {
     ) {
       throw new BadRequestException(
         'Documenta tipo y manejo de las complicaciones antes de firmar la nota postoperatoria',
+      );
+    }
+  }
+
+  private assertHospitalNursingShiftReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const vitals = this.readObjectArray(formData.signosVitalesSeriadosEnfHosp);
+    if (
+      vitals.length === 0 ||
+      vitals.some(
+        (vital) =>
+          !this.hasCapturedValue(vital.fecha) ||
+          !this.hasCapturedValue(vital.hora) ||
+          !this.hasCapturedValue(vital.taSistolica) ||
+          !this.hasCapturedValue(vital.taDiastolica) ||
+          !this.hasCapturedValue(vital.fc) ||
+          !this.hasCapturedValue(vital.fr) ||
+          !this.hasCapturedValue(vital.temperatura) ||
+          !this.hasCapturedValue(vital.spo2),
+      )
+    ) {
+      throw new BadRequestException(
+        'Cada toma de signos vitales debe tener fecha, hora, TA, FC, FR, temperatura y SpO2',
+      );
+    }
+
+    const medications = this.readObjectArray(formData.medicamentosMinistradosEnfHosp);
+    if (
+      medications.length === 0 ||
+      medications.some(
+        (medication) =>
+          !this.hasCapturedValue(medication.medicamento) ||
+          !this.hasCapturedValue(medication.horaProgramada) ||
+          !this.hasCapturedValue(medication.estado) ||
+          !this.hasCapturedValue(medication.enfermeria),
+      )
+    ) {
+      throw new BadRequestException(
+        'Cada medicamento del turno debe venir de indicaciones, tener hora programada, estado y responsable de enfermería',
+      );
+    }
+
+    if (
+      medications.some(
+        (medication) =>
+          this.readStringValue(medication.estado) === 'NO_ADMINISTRADO' &&
+          !this.hasCapturedValue(medication.motivoNoAdministracion),
+      )
+    ) {
+      throw new BadRequestException(
+        'Justifica todo medicamento marcado como no administrado',
+      );
+    }
+
+    if (
+      this.readStringValue(formData.eventoAdversoEnfHosp) === 'SI' &&
+      (!this.hasCapturedValue(formData.tipoEventoAdversoEnfHosp) ||
+        !this.hasCapturedValue(formData.descripcionAccionEventoEnfHosp))
+    ) {
+      throw new BadRequestException(
+        'Documenta tipo, descripción y acción del evento adverso antes de firmar el turno',
       );
     }
   }

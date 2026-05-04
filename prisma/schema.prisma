@@ -244,6 +244,10 @@ model Tenant {
   hospitalOrderTraces        HospitalOrderTrace[]
   hospitalConsultations      HospitalConsultation[]
   hospitalSurgicalDocuments  HospitalSurgicalDocument[]
+  hospitalNursingShifts      HospitalNursingShift[]
+  hospitalNursingVitals      HospitalNursingVitalSign[]
+  hospitalMedicationAdministrations HospitalMedicationAdministration[]
+  hospitalNursingProcedures  HospitalNursingProcedure[]
 }
 
 /// Catálogo de especialidades clínicas.
@@ -492,6 +496,7 @@ model User {
   signedHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionSigner")
   signedHospitalMedicalOrders HospitalMedicalOrder[] @relation("HospitalMedicalOrderSigner")
   signedHospitalSurgicalDocuments HospitalSurgicalDocument[] @relation("HospitalSurgicalDocumentSigner")
+  signedHospitalNursingShifts HospitalNursingShift[] @relation("HospitalNursingShiftSigner")
   requestedHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationRequester")
   respondingHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationResponder")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
@@ -798,6 +803,10 @@ model Patient {
   hospitalOrderTraces HospitalOrderTrace[]
   hospitalConsultations HospitalConsultation[]
   hospitalSurgicalDocuments HospitalSurgicalDocument[]
+  hospitalNursingShifts HospitalNursingShift[]
+  hospitalNursingVitals HospitalNursingVitalSign[]
+  hospitalMedicationAdministrations HospitalMedicationAdministration[]
+  hospitalNursingProcedures HospitalNursingProcedure[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1232,6 +1241,10 @@ model Encounter {
   hospitalOrderTraces HospitalOrderTrace[]
   hospitalConsultations HospitalConsultation[]
   hospitalSurgicalDocuments HospitalSurgicalDocument[]
+  hospitalNursingShifts HospitalNursingShift[]
+  hospitalNursingVitals HospitalNursingVitalSign[]
+  hospitalMedicationAdministrations HospitalMedicationAdministration[]
+  hospitalNursingProcedures HospitalNursingProcedure[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1343,6 +1356,7 @@ model EncounterSectionRecord {
   hospitalMedicalOrder HospitalMedicalOrder?
   hospitalConsultation HospitalConsultation?
   hospitalSurgicalDocument HospitalSurgicalDocument?
+  hospitalNursingShift HospitalNursingShift?
 
   @@index([tenantId])
   @@index([encounterId])
@@ -2458,6 +2472,170 @@ model HospitalSurgicalDocument {
   @@index([subdocumentType])
   @@index([signedAt])
   @@index([signerUserId])
+}
+
+/// Corte de enfermería hospitalaria por turno.
+/// Es el documento legal firmable que agrupa signos seriados, ministración,
+/// procedimientos, balance, eventos y observaciones.
+model HospitalNursingShift {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  recordType String @default("Enfermería")
+  shiftType String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  habitusExterior String?
+  fluidIntakeMl Decimal? @db.Decimal(10, 2)
+  fluidOutputMl Decimal? @db.Decimal(10, 2)
+  fluidBalanceMl Decimal? @db.Decimal(10, 2)
+  woundCare String?
+  mobilization String?
+  hygiene String?
+  surveillance String?
+  devices String?
+  morseFallRisk String?
+  bradenUppRisk String?
+  adverseEvent String?
+  adverseEventType String?
+  adverseEventDescriptionAction String?
+  generalObservations String?
+
+  professionalName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+
+  signerUserId String?
+  signedAt DateTime?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  signer        User?                  @relation("HospitalNursingShiftSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  vitalSigns    HospitalNursingVitalSign[]
+  medicationAdministrations HospitalMedicationAdministration[]
+  procedures    HospitalNursingProcedure[]
+
+  @@unique([encounterId, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([shiftType])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signerUserId])
+}
+
+model HospitalNursingVitalSign {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  nursingShiftId String
+
+  takenAt DateTime
+  systolicBp Int
+  diastolicBp Int
+  heartRate Int
+  respiratoryRate Int
+  temperatureC Decimal @db.Decimal(5, 2)
+  oxygenSaturation Decimal @db.Decimal(5, 2)
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  painEva Int?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter    Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient      Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  nursingShift HospitalNursingShift @relation(fields: [nursingShiftId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([nursingShiftId])
+  @@index([takenAt])
+}
+
+model HospitalMedicationAdministration {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  nursingShiftId String
+
+  medicationName String
+  scheduledTime String
+  administeredTime String?
+  status String
+  omissionReason String?
+  nurseName String
+  sourceMedicalOrderId String?
+  sourceMedicationId String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter    Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient      Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  nursingShift HospitalNursingShift @relation(fields: [nursingShiftId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([nursingShiftId])
+  @@index([status])
+  @@index([sourceMedicalOrderId])
+  @@index([sourceMedicationId])
+}
+
+model HospitalNursingProcedure {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  nursingShiftId String
+
+  procedureName String
+  performedTime String?
+  performedBy String?
+  observations String?
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter    Encounter            @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient      Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  nursingShift HospitalNursingShift @relation(fields: [nursingShiftId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([nursingShiftId])
 }
 
 /// Interconsulta formal generada desde Urgencias.
