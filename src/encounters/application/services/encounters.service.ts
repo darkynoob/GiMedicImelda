@@ -968,6 +968,19 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncHospitalDocumentRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
     await this.syncHospitalAdmissionRecord({
       tenantId,
       userId,
@@ -1330,6 +1343,19 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncHospitalDocumentRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
     await this.syncHospitalAdmissionRecord({
       tenantId,
       userId,
@@ -1491,6 +1517,10 @@ export class EncountersService {
       currentRecord.encounterType,
       currentRecord.tabKey,
     );
+    const isHospitalDocument = this.isHospitalDocumentRecord(
+      currentRecord.encounterType,
+      currentRecord.tabKey,
+    );
     const hospitalConsultationFormData =
       currentRecord.formDataJson &&
       typeof currentRecord.formDataJson === 'object' &&
@@ -1533,8 +1563,18 @@ export class EncountersService {
             signedAtDocumentoQuirurgico: signedAt.toISOString(),
           }
         : null;
+    const nextHospitalDocumentFormData: Record<string, unknown> | null =
+      isHospitalDocument
+        ? {
+            ...hospitalConsultationFormData,
+            documentoEstado: 'Firmado',
+            documentoFechaFirma: signedAt.toISOString(),
+          }
+        : null;
     const nextSignedFormData =
-      nextHospitalConsultationFormData ?? nextHospitalSurgicalDocumentFormData;
+      nextHospitalConsultationFormData ??
+      nextHospitalSurgicalDocumentFormData ??
+      nextHospitalDocumentFormData;
 
     await this.prisma.$transaction(async (transaction) => {
       await transaction.encounterSectionRecord.update({
@@ -1658,6 +1698,48 @@ export class EncountersService {
             },
           });
         }
+      }
+
+      if (isHospitalDocument) {
+        await transaction.$executeRaw`
+          UPDATE "HospitalDocument"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "contentJson" = ${this.jsonbParameter(nextHospitalDocumentFormData ?? {})}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+
+        if (currentRecord.noteType === 'Defunción') {
+          await transaction.encounter.update({
+            where: { id: encounter.id },
+            data: {
+              status: EncounterStatus.CLOSED,
+              closedAt: signedAt,
+            },
+          });
+        }
+
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'HospitalDocument',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              documentType: currentRecord.noteType,
+              signedAt: signedAt.toISOString(),
+              closedEncounter: currentRecord.noteType === 'Defunción',
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              status: EncounterRecordStatus.SIGNED,
+            },
+          },
+        });
       }
 
       if (
@@ -2116,6 +2198,14 @@ export class EncountersService {
     if (this.isEmergencyDocumentRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "EmergencyDocument"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isHospitalDocumentRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "HospitalDocument"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -4212,6 +4302,17 @@ export class EncountersService {
           'Tipo de documento no permitido en Urgencias',
         );
       }
+      if (
+        this.isHospitalDocumentRecord(
+          input.encounter.encounterType,
+          input.input.tabKey,
+        ) &&
+        !this.isAllowedHospitalDocumentType(input.input.noteType)
+      ) {
+        throw new BadRequestException(
+          'Tipo de documento no permitido en Hospitalización',
+        );
+      }
       const currentRecordMetadata = this.extractRecordVersionMetadata(
         input.currentRecord?.metadataJson,
       );
@@ -4225,13 +4326,28 @@ export class EncountersService {
       const documentFolio =
         currentRecordMetadata.folio ??
         `${input.encounter.encounterNumber}-${this.sanitizeFileName(input.input.noteType).toUpperCase()}-${String(versionNumber).padStart(2, '0')}`;
-      const mergedFormData = this.buildConsultationDocumentFormData({
-        encounter: input.encounter,
-        currentRecordFormData: input.currentRecord?.formDataJson ?? null,
-        incomingFormData: input.input.formData,
-        noteType: input.input.noteType,
-        responsibleUser: input.responsibleUser,
-      }) as Record<string, unknown>;
+      const mergedFormData = this.isHospitalDocumentRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+        ? this.buildHospitalDocumentFormData({
+            encounter: input.encounter,
+            currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+            incomingFormData: input.input.formData,
+            noteType: input.input.noteType,
+            recordedAt: input.recordedAt,
+            responsibleUser: input.responsibleUser,
+            versionNumber,
+            folio: documentFolio,
+            verificationCode,
+          })
+        : (this.buildConsultationDocumentFormData({
+            encounter: input.encounter,
+            currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+            incomingFormData: input.input.formData,
+            noteType: input.input.noteType,
+            responsibleUser: input.responsibleUser,
+          }) as Record<string, unknown>);
 
       return {
         tabKey: input.input.tabKey,
@@ -4263,6 +4379,8 @@ export class EncountersService {
           versionNumber,
           folio: documentFolio,
           verificationCode,
+          documentHash: this.readStringValue(mergedFormData.documentoHash),
+          digitalSeal: this.readStringValue(mergedFormData.documentoSelloDigital),
           pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
           pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
           inheritedFromRecordId:
@@ -4642,6 +4760,260 @@ export class EncountersService {
       'Certificado / constancia',
       'Egreso voluntario',
     ].includes(noteType);
+  }
+
+  private isAllowedHospitalDocumentType(noteType: string) {
+    return [
+      'Solicitud de laboratorio',
+      'Solicitud de imagenología',
+      'Consentimiento informado',
+      'Resumen clínico',
+      'Referencia / traslado',
+      'Defunción',
+    ].includes(noteType);
+  }
+
+  private buildHospitalDocumentFormData(input: {
+    encounter: TenantEncounterRecord;
+    currentRecordFormData: Prisma.JsonValue | null;
+    incomingFormData: Record<string, unknown>;
+    noteType: string;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    versionNumber: number;
+    folio: string;
+    verificationCode: string;
+  }) {
+    const currentFormData =
+      input.currentRecordFormData &&
+      typeof input.currentRecordFormData === 'object' &&
+      !Array.isArray(input.currentRecordFormData)
+        ? (input.currentRecordFormData as Record<string, unknown>)
+        : {};
+    const latestAdmission = this.findLatestHospitalRecordFormData(
+      input.encounter,
+      'Ingreso',
+    );
+    const latestEvolution = this.findLatestHospitalRecordFormData(
+      input.encounter,
+      'Evolución',
+    );
+    const latestOrders = this.findLatestHospitalRecordFormData(
+      input.encounter,
+      'Indicaciones médicas',
+    );
+    const latestSurgical = this.findLatestHospitalRecordFormData(
+      input.encounter,
+      'Procedimientos / Cirugía',
+    );
+    const latestConsultation = this.findLatestHospitalRecordFormData(
+      input.encounter,
+      'Interconsultas',
+    );
+    const latestDischarge = this.findLatestHospitalRecordFormData(
+      input.encounter,
+      'Egreso',
+    );
+    const careLocation =
+      [
+        input.encounter.facility?.name,
+        input.encounter.serviceArea?.name,
+      ]
+        .filter(Boolean)
+        .join(' · ') ||
+      input.encounter.tenant.legalName ||
+      input.encounter.tenant.name;
+    const patientCurp = this.readStringValue(
+      (input.encounter.patient as { curp?: unknown }).curp,
+    );
+    const documentHash =
+      this.readStringValue(input.incomingFormData.documentoHash) ||
+      this.readStringValue(currentFormData.documentoHash) ||
+      randomUUID().replace(/-/g, '');
+    const digitalSeal =
+      this.readStringValue(input.incomingFormData.documentoSelloDigital) ||
+      this.readStringValue(currentFormData.documentoSelloDigital) ||
+      `${input.verificationCode}-${documentHash.slice(0, 16)}`;
+    const diagnosis =
+      this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
+      this.readStringValueFromJson(latestDischarge, 'diagnosticoFinalEgresoHosp') ||
+      this.readStringValueFromJson(latestEvolution, 'diagnosticoPrincipalEvolHosp') ||
+      this.readStringValueFromJson(latestAdmission, 'diagnosticoPrincipalHosp') ||
+      input.encounter.diagnoses[0]?.description ||
+      '';
+    const cie10 =
+      this.readStringValue(input.incomingFormData.documentoDiagnosticoCie10) ||
+      this.readStringValueFromJson(latestDischarge, 'cie10EgresoHosp') ||
+      this.readStringValueFromJson(latestEvolution, 'cie10EvolHosp') ||
+      this.readStringValueFromJson(latestAdmission, 'cie10Hosp') ||
+      input.encounter.diagnoses[0]?.code ||
+      '';
+    const hospitalSuggestions = this.buildHospitalDocumentSuggestionSnapshot({
+      noteType: input.noteType,
+      diagnosis,
+      cie10,
+      latestAdmission,
+      latestEvolution,
+      latestOrders,
+      latestSurgical,
+      latestConsultation,
+      latestDischarge,
+    });
+
+    return {
+      ...hospitalSuggestions,
+      ...input.incomingFormData,
+      tipoRegistro: input.noteType,
+      documentoTipoEpisodio: 'Hospitalización',
+      documentoPacienteNombre: input.encounter.patient.fullName,
+      documentoPacienteCurp: patientCurp,
+      documentoExpediente: input.encounter.medicalRecord.recordNumber,
+      documentoFolioEpisodio: input.encounter.encounterNumber,
+      documentoFolio: input.folio,
+      documentoVersion: `V${input.versionNumber}`,
+      documentoEstado:
+        this.readStringValue(currentFormData.documentoEstado) === 'Firmado'
+          ? 'Firmado'
+          : 'Borrador',
+      documentoCodigoVerificacion: input.verificationCode,
+      documentoHash: documentHash,
+      documentoSelloDigital: digitalSeal,
+      documentoFecha:
+        this.readStringValue(input.incomingFormData.documentoFecha) ||
+        this.readStringValue(currentFormData.documentoFecha) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      documentoHora:
+        this.readStringValue(input.incomingFormData.documentoHora) ||
+        this.readStringValue(currentFormData.documentoHora) ||
+        input.recordedAt.toISOString().slice(11, 16),
+      documentoInstitucionEmisora:
+        input.encounter.facility?.institutionName ??
+        input.encounter.facility?.legalName ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      documentoRfcMedico: input.encounter.tenant.taxId ?? 'Sin dato disponible',
+      documentoLicenciaSanitaria:
+        input.encounter.facility?.legalName ?? 'Sin dato disponible',
+      documentoNombreProfesional:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      documentoCedulaProfesional:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      documentoEspecialidadProfesional:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      documentoLugarAtencion: careLocation,
+    };
+  }
+
+  private buildHospitalDocumentSuggestionSnapshot(input: {
+    noteType: string;
+    diagnosis: string;
+    cie10: string;
+    latestAdmission: Prisma.JsonValue | null;
+    latestEvolution: Prisma.JsonValue | null;
+    latestOrders: Prisma.JsonValue | null;
+    latestSurgical: Prisma.JsonValue | null;
+    latestConsultation: Prisma.JsonValue | null;
+    latestDischarge: Prisma.JsonValue | null;
+  }): Record<string, unknown> {
+    if (input.noteType === 'Solicitud de laboratorio') {
+      return {
+        documentoDiagnosticoPrincipal: input.diagnosis,
+        documentoDiagnosticoCie10: input.cie10,
+        documentoServicioSolicitud:
+          this.readStringValueFromJson(input.latestAdmission, 'servicioIngresoHosp') ||
+          '',
+        documentoEstudiosLaboratorio: this.readObjectArray(
+          this.readUnknownFromJson(input.latestOrders, 'estudiosSolicitadosHospDoc'),
+        ),
+      };
+    }
+
+    if (input.noteType === 'Solicitud de imagenología') {
+      return {
+        documentoDiagnosticoPrincipal: input.diagnosis,
+        documentoDiagnosticoCie10: input.cie10,
+        documentoServicioSolicitud:
+          this.readStringValueFromJson(input.latestAdmission, 'servicioIngresoHosp') ||
+          '',
+      };
+    }
+
+    if (input.noteType === 'Consentimiento informado') {
+      return {
+        documentoProcedimientoNombre:
+          this.readStringValueFromJson(input.latestSurgical, 'cirugiaPropuestaQuirHosp') ||
+          this.readStringValueFromJson(input.latestSurgical, 'procedimientoRealizadoPostopHosp') ||
+          '',
+        documentoNombrePacienteConsentimiento:
+          this.readStringValueFromJson(input.latestAdmission, 'pacienteNombre') || '',
+      };
+    }
+
+    if (input.noteType === 'Resumen clínico') {
+      return {
+        documentoMotivoAtencion:
+          this.readStringValueFromJson(input.latestAdmission, 'motivoIngresoClinicoHosp') ||
+          '',
+        documentoDiagnosticosIniciales:
+          this.readStringValueFromJson(input.latestAdmission, 'diagnosticoPrincipalHosp') ||
+          input.diagnosis,
+        documentoDiagnosticosFinales:
+          this.readStringValueFromJson(input.latestDischarge, 'diagnosticoFinalEgresoHosp') ||
+          input.diagnosis,
+        documentoEvolucion:
+          this.readStringValueFromJson(input.latestDischarge, 'evolucionEstanciaEgresoHosp') ||
+          this.readStringValueFromJson(input.latestEvolution, 'interpretacionClinicaEvolHosp') ||
+          '',
+        documentoTratamientos:
+          this.readStringValueFromJson(input.latestDischarge, 'manejoRealizadoEgresoHosp') ||
+          this.summarizeHospitalOrderMedications(
+            this.readObjectArray(
+              this.readUnknownFromJson(input.latestOrders, 'medicamentosIndicacionesHosp'),
+            ),
+          ),
+        documentoPlan:
+          this.readStringValueFromJson(input.latestDischarge, 'seguimientoEgresoHosp') ||
+          this.readStringValueFromJson(input.latestEvolution, 'seguimientoEvolHosp') ||
+          '',
+      };
+    }
+
+    if (input.noteType === 'Referencia / traslado') {
+      return {
+        documentoUnidadOrigen:
+          this.readStringValueFromJson(input.latestAdmission, 'servicioIngresoHosp') || '',
+        documentoMotivoTraslado:
+          this.readStringValueFromJson(input.latestDischarge, 'problemasPendientesEgresoHosp') ||
+          '',
+        documentoResumenClinicoBreve:
+          this.readStringValueFromJson(input.latestDischarge, 'resumenNarrativoEgresoHosp') ||
+          this.readStringValueFromJson(input.latestEvolution, 'interpretacionClinicaEvolHosp') ||
+          '',
+        documentoManejoPrevio:
+          this.readStringValueFromJson(input.latestDischarge, 'manejoRealizadoEgresoHosp') ||
+          '',
+      };
+    }
+
+    if (input.noteType === 'Defunción') {
+      return {
+        documentoDatosPacienteDefuncion:
+          this.readStringValueFromJson(input.latestDischarge, 'resumenNarrativoEgresoHosp') ||
+          '',
+        documentoMedicoCertificante:
+          this.readStringValueFromJson(input.latestDischarge, 'medicoResponsableEgresoHosp') ||
+          '',
+        documentoCedulaCertificante:
+          this.readStringValueFromJson(input.latestDischarge, 'cedulaResponsableEgresoHosp') ||
+          '',
+      };
+    }
+
+    return {};
   }
 
   private buildHospitalAdmissionFormData(input: {
@@ -6546,6 +6918,193 @@ export class EncountersService {
     `;
   }
 
+  private async syncHospitalDocumentRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    noteType: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isHospitalDocumentRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const folio =
+      this.readStringValue(input.metadata.folio) ||
+      this.readStringValue(input.formData.documentoFolio) ||
+      `${input.encounter.encounterNumber}-${this.sanitizeFileName(input.noteType).toUpperCase()}-${String(versionNumber).padStart(2, '0')}`;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const documentDate = this.parseOptionalDate(input.formData.documentoFecha);
+    const documentHash =
+      this.readStringValue(input.metadata.documentHash) ||
+      this.readStringValue(input.formData.documentoHash);
+    const digitalSeal =
+      this.readStringValue(input.metadata.digitalSeal) ||
+      this.readStringValue(input.formData.documentoSelloDigital);
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "HospitalDocument" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "documentType", "versionNumber", "title", "folio", "status",
+        "recordedAt", "documentDate", "documentTime", "patientName",
+        "patientCurp", "medicalRecordNumber", "encounterFolio",
+        "responsibleName", "professionalLicense", "professionalSpecialty",
+        "careLocation", "verificationCode", "documentHash", "digitalSeal",
+        "contentJson", "signerUserId", "signedAt", "pdfDownloadCount",
+        "pdfLastDownloadedAt", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${input.noteType}, ${versionNumber}, ${input.title}, ${folio}, ${input.status},
+        ${input.recordedAt}, ${documentDate}, ${this.readStringValue(input.formData.documentoHora)}, ${this.readStringValue(input.formData.documentoPacienteNombre) || input.encounter.patient.fullName},
+        ${this.readStringValue(input.formData.documentoPacienteCurp)}, ${this.readStringValue(input.formData.documentoExpediente) || input.encounter.medicalRecord.recordNumber}, ${this.readStringValue(input.formData.documentoFolioEpisodio) || input.encounter.encounterNumber},
+        ${this.readStringValue(input.formData.documentoNombreProfesional) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.documentoCedulaProfesional)}, ${this.readStringValue(input.formData.documentoEspecialidadProfesional)},
+        ${this.readStringValue(input.formData.documentoLugarAtencion)}, ${this.readStringValue(input.formData.documentoCodigoVerificacion)}, ${documentHash}, ${digitalSeal},
+        ${this.jsonbParameter(input.formData)}, ${signedAt ? input.userId : null}, ${signedAt}, ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0},
+        ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "documentType" = EXCLUDED."documentType",
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "folio" = EXCLUDED."folio",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "documentDate" = EXCLUDED."documentDate",
+        "documentTime" = EXCLUDED."documentTime",
+        "patientName" = EXCLUDED."patientName",
+        "patientCurp" = EXCLUDED."patientCurp",
+        "medicalRecordNumber" = EXCLUDED."medicalRecordNumber",
+        "encounterFolio" = EXCLUDED."encounterFolio",
+        "responsibleName" = EXCLUDED."responsibleName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "verificationCode" = EXCLUDED."verificationCode",
+        "documentHash" = EXCLUDED."documentHash",
+        "digitalSeal" = EXCLUDED."digitalSeal",
+        "contentJson" = EXCLUDED."contentJson",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "updatedAt" = NOW()
+    `;
+
+    const storedRows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "HospitalDocument" WHERE "sectionRecordId" = ${input.sectionRecordId} LIMIT 1
+    `;
+    const hospitalDocumentId = storedRows[0]?.id;
+    if (!hospitalDocumentId) return;
+
+    await this.prisma.$executeRaw`DELETE FROM "HospitalDocumentLabStudy" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
+    await this.prisma.$executeRaw`DELETE FROM "HospitalDocumentImagingStudy" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
+    await this.prisma.$executeRaw`DELETE FROM "HospitalDocumentSigner" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
+
+    const labStudies = this.readObjectArray(input.formData.documentoEstudiosLaboratorio);
+    for (const [index, study] of labStudies.entries()) {
+      const studyType = this.readStringValue(study.tipoEstudio);
+      if (!studyType) continue;
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalDocumentLabStudy" (
+          "id", "tenantId", "encounterId", "patientId", "hospitalDocumentId",
+          "studyType", "priority", "clinicalIndication", "sortOrder",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${hospitalDocumentId},
+          ${studyType}, ${this.readStringValue(study.prioridad)}, ${this.readStringValue(study.indicacionClinica)}, ${index},
+          NOW(), NOW()
+        )
+      `;
+    }
+
+    const imagingStudies = this.readObjectArray(input.formData.documentoEstudiosImagen);
+    const fallbackImagingStudies =
+      imagingStudies.length > 0
+        ? imagingStudies
+        : this.hasCapturedValue(input.formData.documentoEstudioImagen)
+          ? [
+              {
+                estudio: input.formData.documentoEstudioImagen,
+                tipo: input.formData.documentoTipoImagen,
+                regionAnatomica: input.formData.documentoRegionAnatomica,
+                proyeccion: input.formData.documentoProyeccion,
+                prioridad: input.formData.documentoPrioridadImagen,
+                indicacionClinica: input.formData.documentoIndicacionClinicaImagen,
+                alergiaContraste: input.formData.documentoAlergiaContraste,
+                embarazo: input.formData.documentoEmbarazo,
+                funcionRenal: input.formData.documentoFuncionRenal,
+              },
+            ]
+          : [];
+    for (const [index, study] of fallbackImagingStudies.entries()) {
+      const studyName = this.readStringValue(study.estudio);
+      if (!studyName) continue;
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalDocumentImagingStudy" (
+          "id", "tenantId", "encounterId", "patientId", "hospitalDocumentId",
+          "studyName", "imageType", "anatomicalRegion", "projection",
+          "priority", "clinicalIndication", "contrastAllergy", "pregnancy",
+          "renalFunction", "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${hospitalDocumentId},
+          ${studyName}, ${this.readStringValue(study.tipo)}, ${this.readStringValue(study.regionAnatomica)}, ${this.readStringValue(study.proyeccion)},
+          ${this.readStringValue(study.prioridad)}, ${this.readStringValue(study.indicacionClinica)}, ${this.readStringValue(study.alergiaContraste)}, ${this.readStringValue(study.embarazo)},
+          ${this.readStringValue(study.funcionRenal)}, ${index}, NOW(), NOW()
+        )
+      `;
+    }
+
+    const signers = [
+      {
+        signerType: 'PACIENTE',
+        signerName: input.formData.documentoNombrePacienteConsentimiento,
+        signatureLabel: input.formData.documentoFirmaPacienteConsentimiento,
+      },
+      {
+        signerType: 'MEDICO',
+        signerName: input.formData.documentoNombreProfesional,
+        signatureLabel: input.formData.documentoFirmaMedicoConsentimiento,
+      },
+      ...this.readObjectArray(input.formData.documentoTestigosConsentimiento).map(
+        (signer) => ({
+          signerType: 'TESTIGO',
+          signerName: signer.nombre,
+          signatureLabel: signer.firma,
+        }),
+      ),
+    ];
+    for (const [index, signer] of signers.entries()) {
+      const signerName = this.readStringValue(signer.signerName);
+      if (!signerName) continue;
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "HospitalDocumentSigner" (
+          "id", "tenantId", "encounterId", "patientId", "hospitalDocumentId",
+          "signerType", "signerName", "signatureLabel", "sortOrder",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${hospitalDocumentId},
+          ${signer.signerType}, ${signerName}, ${this.readStringValue(signer.signatureLabel)}, ${index},
+          NOW(), NOW()
+        )
+      `;
+    }
+  }
+
   private async syncHospitalAdmissionRecord(input: {
     tenantId: string;
     userId: string;
@@ -7962,9 +8521,14 @@ export class EncountersService {
   ) {
     return (
       (encounterType === EncounterType.OUTPATIENT ||
-        encounterType === EncounterType.EMERGENCY) &&
+        encounterType === EncounterType.EMERGENCY ||
+        encounterType === EncounterType.HOSPITALIZATION) &&
       tabKey === 'Documentos'
     );
+  }
+
+  private isHospitalDocumentRecord(encounterType: EncounterType, tabKey: string) {
+    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Documentos';
   }
 
   private isConsultationClosureDocument(
@@ -8180,6 +8744,14 @@ export class EncountersService {
     }
 
     return this.readStringValue((rawValue as Record<string, unknown>)[key]);
+  }
+
+  private readUnknownFromJson(rawValue: Prisma.JsonValue | null, key: string) {
+    if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+      return undefined;
+    }
+
+    return (rawValue as Record<string, unknown>)[key];
   }
 
   private readNumericValue(value: unknown) {
@@ -9422,13 +9994,28 @@ export class EncountersService {
     ).map((item, index) =>
       `${index + 1}. ${item.diagnostico || 'Diagnóstico sin capturar'} ${item.cie10 ? `· ${item.cie10}` : ''} ${item.estado ? `· ${item.estado}` : ''}`.trim(),
     );
+    const labStudyLines = this.readObjectArray(
+      input.formData.documentoEstudiosLaboratorio,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.tipoEstudio) || 'Estudio sin capturar'} · ${this.readStringValue(item.prioridad) || 'Sin prioridad'} · ${this.readStringValue(item.indicacionClinica)}`,
+    );
+    const consentWitnessLines = this.readObjectArray(
+      input.formData.documentoTestigosConsentimiento,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.nombre) || 'Testigo sin capturar'} · Firma: ${this.readStringValue(item.firma) || 'Sin firma'}`,
+    );
     const commonHeader = [
       input.recordTitle,
       `Tipo: ${input.noteType}`,
       `Paciente: ${input.encounter.patient.fullName}`,
+      `CURP: ${this.readStringValue(input.formData.documentoPacienteCurp)}`,
+      `Expediente: ${this.readStringValue(input.formData.documentoExpediente)}`,
       `Episodio: ${input.encounter.encounterNumber}`,
+      `Tipo de episodio: ${this.readStringValue(input.formData.documentoTipoEpisodio)}`,
       `Fecha: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
       `Código de verificación: ${input.verificationCode}`,
+      `Hash: ${this.readStringValue(input.formData.documentoHash)}`,
+      `Sello digital: ${this.readStringValue(input.formData.documentoSelloDigital)}`,
     ];
     const commonLegal = [
       `Institución: ${this.readStringValue(input.formData.documentoInstitucionEmisora)}`,
@@ -9439,21 +10026,31 @@ export class EncountersService {
     ];
     const documentSpecificLines: Record<string, string[]> = {
       'Solicitud de laboratorio': [
+        `Servicio: ${this.readStringValue(input.formData.documentoServicioSolicitud)}`,
         `Motivo: ${this.readStringValue(input.formData.documentoMotivoSolicitud)}`,
-        `Estudios solicitados: ${this.readStringValue(input.formData.documentoEstudiosSolicitados)}`,
+        'Estudios solicitados:',
+        ...(labStudyLines.length > 0
+          ? labStudyLines
+          : [this.readStringValue(input.formData.documentoEstudiosSolicitados)]),
         `Diagnóstico: ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}`,
         `CIE-10: ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}`,
         `Prioridad: ${this.readStringValue(input.formData.documentoPrioridad)}`,
         `Observaciones: ${this.readStringValue(input.formData.documentoObservaciones)}`,
       ],
       'Solicitud de imagenología': [
+        `Servicio: ${this.readStringValue(input.formData.documentoServicioSolicitud)}`,
         `Motivo: ${this.readStringValue(input.formData.documentoMotivoSolicitud)}`,
-        `Estudio: ${this.readStringValue(input.formData.documentoEstudiosSolicitados)}`,
+        `Estudio: ${this.readStringValue(input.formData.documentoEstudioImagen) || this.readStringValue(input.formData.documentoEstudiosSolicitados)}`,
+        `Tipo: ${this.readStringValue(input.formData.documentoTipoImagen)}`,
         `Región anatómica: ${this.readStringValue(input.formData.documentoRegionAnatomica)}`,
+        `Proyección: ${this.readStringValue(input.formData.documentoProyeccion)}`,
         `Diagnóstico presuntivo: ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}`,
         `CIE-10: ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}`,
-        `Indicaciones especiales: ${this.readStringValue(input.formData.documentoIndicacionesEspeciales)}`,
-        `Prioridad: ${this.readStringValue(input.formData.documentoPrioridad)}`,
+        `Indicación clínica: ${this.readStringValue(input.formData.documentoIndicacionClinicaImagen) || this.readStringValue(input.formData.documentoIndicacionesEspeciales)}`,
+        `Prioridad: ${this.readStringValue(input.formData.documentoPrioridadImagen) || this.readStringValue(input.formData.documentoPrioridad)}`,
+        `Alergia contraste: ${this.readStringValue(input.formData.documentoAlergiaContraste)}`,
+        `Embarazo: ${this.readStringValue(input.formData.documentoEmbarazo)}`,
+        `Función renal: ${this.readStringValue(input.formData.documentoFuncionRenal)}`,
       ],
       'Referencia / contrarreferencia': [
         `Tipo: ${this.readStringValue(input.formData.documentoTipoReferencia)}`,
@@ -9467,15 +10064,57 @@ export class EncountersService {
         `Recomendaciones: ${this.readStringValue(input.formData.documentoRecomendaciones)}`,
       ],
       'Consentimiento informado': [
-        `Procedimiento: ${this.readStringValue(input.formData.documentoProcedimientoTipo)}`,
+        `Procedimiento: ${this.readStringValue(input.formData.documentoProcedimientoNombre) || this.readStringValue(input.formData.documentoProcedimientoTipo)}`,
         `Descripción: ${this.readStringValue(input.formData.documentoProcedimientoDescripcion)}`,
-        `Riesgos: ${this.readStringValue(input.formData.documentoRiesgos)}`,
+        `Riesgos generales: ${this.readStringValue(input.formData.documentoRiesgosGenerales) || this.readStringValue(input.formData.documentoRiesgos)}`,
+        `Riesgos específicos: ${this.readStringValue(input.formData.documentoRiesgosEspecificos)}`,
         `Beneficios: ${this.readStringValue(input.formData.documentoBeneficios)}`,
         `Alternativas: ${this.readStringValue(input.formData.documentoAlternativas)}`,
-        `Pronóstico sin tratamiento: ${this.readStringValue(input.formData.documentoPronosticoSinTratamiento)}`,
-        `Paciente / tutor: ${this.readStringValue(input.formData.documentoNombreTutor)}`,
+        `Riesgos de no tratamiento: ${this.readStringValue(input.formData.documentoRiesgosNoTratamiento) || this.readStringValue(input.formData.documentoPronosticoSinTratamiento)}`,
+        `Paciente / tutor: ${this.readStringValue(input.formData.documentoNombrePacienteConsentimiento) || this.readStringValue(input.formData.documentoNombreTutor)}`,
         `Relación: ${this.readStringValue(input.formData.documentoRelacionTutor)}`,
-        `Firma paciente: ${this.readStringValue(input.formData.documentoFirmaPaciente)}`,
+        `Firma paciente: ${this.readStringValue(input.formData.documentoFirmaPacienteConsentimiento) || this.readStringValue(input.formData.documentoFirmaPaciente)}`,
+        'Testigos:',
+        ...(consentWitnessLines.length > 0 ? consentWitnessLines : ['Sin testigos capturados']),
+      ],
+      'Resumen clínico': [
+        `Motivo de atención: ${this.readStringValue(input.formData.documentoMotivoAtencion)}`,
+        `Diagnósticos iniciales: ${this.readStringValue(input.formData.documentoDiagnosticosIniciales)}`,
+        `Diagnósticos finales: ${this.readStringValue(input.formData.documentoDiagnosticosFinales)}`,
+        `Evolución: ${this.readStringValue(input.formData.documentoEvolucion)}`,
+        `Estudios relevantes: ${this.readStringValue(input.formData.documentoEstudiosRelevantes)}`,
+        `Tratamientos: ${this.readStringValue(input.formData.documentoTratamientos)}`,
+        `Estado actual: ${this.readStringValue(input.formData.documentoEstadoActual)}`,
+        `Plan: ${this.readStringValue(input.formData.documentoPlan)}`,
+      ],
+      'Referencia / traslado': [
+        `Unidad origen: ${this.readStringValue(input.formData.documentoUnidadOrigen)}`,
+        `Unidad receptora: ${this.readStringValue(input.formData.documentoUnidadReceptora)}`,
+        `Hospital destino: ${this.readStringValue(input.formData.documentoHospitalDestino)}`,
+        `Servicio: ${this.readStringValue(input.formData.documentoServicioDestino)}`,
+        `Motivo: ${this.readStringValue(input.formData.documentoMotivoTraslado)}`,
+        `Resumen clínico: ${this.readStringValue(input.formData.documentoResumenClinicoBreve)}`,
+        `Signos vitales: ${this.readStringValue(input.formData.documentoSignosVitalesTraslado)}`,
+        `Estabilidad: ${this.readStringValue(input.formData.documentoEstabilidadPaciente)}`,
+        `Manejo previo: ${this.readStringValue(input.formData.documentoManejoPrevio)}`,
+        `Tratamiento traslado: ${this.readStringValue(input.formData.documentoTratamientoTraslado)}`,
+        `Ambulancia: ${this.readStringValue(input.formData.documentoAmbulanciaTraslado)}`,
+        `Tipo ambulancia: ${this.readStringValue(input.formData.documentoTipoAmbulancia)}`,
+      ],
+      Defunción: [
+        `Datos del paciente: ${this.readStringValue(input.formData.documentoDatosPacienteDefuncion)}`,
+        `Fecha de muerte: ${this.readStringValue(input.formData.documentoFechaMuerte)}`,
+        `Hora de muerte: ${this.readStringValue(input.formData.documentoHoraMuerte)}`,
+        `Lugar: ${this.readStringValue(input.formData.documentoLugarMuerte)}`,
+        `Causa inmediata: ${this.readStringValue(input.formData.documentoCausaInmediata)}`,
+        `Causa intermedia: ${this.readStringValue(input.formData.documentoCausaIntermedia)}`,
+        `Causa básica: ${this.readStringValue(input.formData.documentoCausaBasica)}`,
+        `Otros estados: ${this.readStringValue(input.formData.documentoOtrosEstadosDefuncion)}`,
+        `Comorbilidades: ${this.readStringValue(input.formData.documentoComorbilidadesDefuncion)}`,
+        `Tipo de muerte: ${this.readStringValue(input.formData.documentoTipoMuerte)}`,
+        `Aviso institucional: ${this.readStringValue(input.formData.documentoAvisoInstitucionalDefuncion)}`,
+        `Médico certificante: ${this.readStringValue(input.formData.documentoMedicoCertificante)}`,
+        `Cédula certificante: ${this.readStringValue(input.formData.documentoCedulaCertificante)}`,
       ],
       'Certificado / constancia': [
         `Tipo: ${this.readStringValue(input.formData.documentoTipoCertificado)}`,
@@ -10009,6 +10648,14 @@ export class EncountersService {
         'Tipo de documento no permitido en Urgencias',
       );
     }
+    if (
+      this.isHospitalDocumentRecord(input.encounterType, input.tabKey) &&
+      !this.isAllowedHospitalDocumentType(input.noteType)
+    ) {
+      throw new BadRequestException(
+        'Tipo de documento no permitido en Hospitalización',
+      );
+    }
 
     const formData =
       input.formDataJson &&
@@ -10237,9 +10884,17 @@ export class EncountersService {
             'cedulaResponsableEgresoHosp',
           ]
         : [];
+    const hospitalDocumentRequiredFields = this.isHospitalDocumentRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? this.resolveHospitalDocumentRequiredFields(input.noteType)
+      : [];
 
     const missingFields = [
-      ...(requiredFieldsByNoteType[input.noteType] ?? []),
+      ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
+        ? []
+        : (requiredFieldsByNoteType[input.noteType] ?? [])),
       ...triageRequiredFields,
       ...emergencyInitialNoteRequiredFields,
       ...emergencyEvolutionRequiredFields,
@@ -10253,6 +10908,7 @@ export class EncountersService {
       ...hospitalSurgicalRequiredFields,
       ...hospitalNursingRequiredFields,
       ...hospitalDischargeRequiredFields,
+      ...hospitalDocumentRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -10286,8 +10942,14 @@ export class EncountersService {
                                 ? 'Completa los signos vitales y medicamentos del turno antes de firmarlo'
                                 : this.isHospitalDischargeRecord(input.encounterType, input.tabKey)
                                   ? 'Completa los campos obligatorios del egreso antes de firmarlo'
+                                  : this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
+                                    ? 'Completa los campos obligatorios del documento hospitalario antes de firmarlo'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isHospitalDocumentRecord(input.encounterType, input.tabKey)) {
+      this.assertHospitalDocumentReadyForSignature(input.noteType, formData);
     }
 
     if (this.isHospitalDischargeRecord(input.encounterType, input.tabKey)) {
@@ -10386,6 +11048,99 @@ export class EncountersService {
       'clasificacionAsaQuirHosp',
       'consentimientoInformadoQuirHosp',
     ];
+  }
+
+  private resolveHospitalDocumentRequiredFields(noteType: string) {
+    if (noteType === 'Solicitud de laboratorio') {
+      return ['documentoEstudiosLaboratorio', 'documentoDiagnosticoPrincipal'];
+    }
+
+    if (noteType === 'Solicitud de imagenología') {
+      return [
+        'documentoEstudioImagen',
+        'documentoTipoImagen',
+        'documentoIndicacionClinicaImagen',
+        'documentoDiagnosticoPrincipal',
+      ];
+    }
+
+    if (noteType === 'Consentimiento informado') {
+      return [
+        'documentoProcedimientoNombre',
+        'documentoProcedimientoDescripcion',
+        'documentoRiesgosGenerales',
+        'documentoBeneficios',
+        'documentoNombrePacienteConsentimiento',
+      ];
+    }
+
+    if (noteType === 'Resumen clínico') {
+      return [
+        'documentoMotivoAtencion',
+        'documentoDiagnosticosIniciales',
+        'documentoEvolucion',
+        'documentoEstadoActual',
+        'documentoPlan',
+      ];
+    }
+
+    if (noteType === 'Referencia / traslado') {
+      return [
+        'documentoUnidadOrigen',
+        'documentoUnidadReceptora',
+        'documentoMotivoTraslado',
+        'documentoResumenClinicoBreve',
+        'documentoEstabilidadPaciente',
+      ];
+    }
+
+    if (noteType === 'Defunción') {
+      return [
+        'documentoFechaMuerte',
+        'documentoHoraMuerte',
+        'documentoLugarMuerte',
+        'documentoCausaInmediata',
+        'documentoCausaBasica',
+        'documentoTipoMuerte',
+        'documentoMedicoCertificante',
+        'documentoCedulaCertificante',
+      ];
+    }
+
+    return [];
+  }
+
+  private assertHospitalDocumentReadyForSignature(
+    noteType: string,
+    formData: Record<string, unknown>,
+  ) {
+    if (noteType === 'Solicitud de laboratorio') {
+      const studies = this.readObjectArray(formData.documentoEstudiosLaboratorio);
+      if (
+        studies.length === 0 ||
+        studies.some(
+          (study) =>
+            !this.hasCapturedValue(study.tipoEstudio) ||
+            !this.hasCapturedValue(study.prioridad),
+        )
+      ) {
+        throw new BadRequestException(
+          'Cada estudio de laboratorio debe tener tipo de estudio y prioridad',
+        );
+      }
+    }
+
+    if (
+      noteType === 'Defunción' &&
+      ['ACCIDENTAL', 'VIOLENTA'].includes(
+        this.readStringValue(formData.documentoTipoMuerte),
+      ) &&
+      !this.hasCapturedValue(formData.documentoAvisoInstitucionalDefuncion)
+    ) {
+      throw new BadRequestException(
+        'Registra el aviso institucional cuando la muerte sea accidental o violenta',
+      );
+    }
   }
 
   private assertHospitalSurgicalDocumentReadyForSignature(

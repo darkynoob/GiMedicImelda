@@ -3943,6 +3943,179 @@ const emergencyDocumentTypeNames = [
   'Certificado / constancia',
 ];
 
+const hospitalDocumentTypeNames = [
+  'Solicitud de laboratorio',
+  'Solicitud de imagenología',
+  'Consentimiento informado',
+  'Resumen clínico',
+  'Referencia / traslado',
+  'Defunción',
+];
+
+const hospitalDocumentHeaderSection: EpisodeSectionDefinition = {
+  key: 'documento_hospitalario_header',
+  title: 'Header institucional',
+  description:
+    'Datos automáticos del paciente, episodio y documento hospitalario.',
+  fields: [
+    { key: 'documentoPacienteNombre', label: 'Paciente', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoPacienteCurp', label: 'CURP', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoExpediente', label: 'Expediente', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoFolioEpisodio', label: 'Folio episodio', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoTipoEpisodio', label: 'Tipo de episodio', type: 'readonly', inheritanceMode: 'system' },
+  ],
+};
+
+const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinition[]> = {
+  'Solicitud de laboratorio': [
+    {
+      key: 'documento_lab_hosp',
+      title: 'Solicitud de laboratorio',
+      fields: [
+        { key: 'documentoServicioSolicitud', label: 'Servicio', type: 'text' },
+        {
+          key: 'documentoEstudiosLaboratorio',
+          label: 'Estudios solicitados',
+          type: 'object-array',
+          itemAddLabel: 'Agregar estudio',
+          itemFields: [
+            { key: 'tipoEstudio', label: 'Tipo de estudio', type: 'text' },
+            { key: 'prioridad', label: 'Prioridad', type: 'select', options: [
+              { value: 'Rutina', label: 'Rutina' },
+              { value: 'Urgente', label: 'Urgente' },
+            ] },
+            { key: 'indicacionClinica', label: 'Indicación clínica', type: 'textarea' },
+          ],
+        },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico relacionado', type: 'text' },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        { key: 'documentoObservaciones', label: 'Observaciones', type: 'textarea' },
+      ],
+    },
+  ],
+  'Solicitud de imagenología': [
+    {
+      key: 'documento_imagen_hosp',
+      title: 'Solicitud de imagenología',
+      fields: [
+        { key: 'documentoServicioSolicitud', label: 'Servicio', type: 'text' },
+        { key: 'documentoEstudioImagen', label: 'Estudio solicitado', type: 'text' },
+        { key: 'documentoTipoImagen', label: 'Tipo', type: 'select', options: [
+          { value: 'Rx', label: 'Rx' },
+          { value: 'TAC', label: 'TAC' },
+          { value: 'RM', label: 'RM' },
+          { value: 'USG', label: 'USG' },
+        ] },
+        { key: 'documentoRegionAnatomica', label: 'Región anatómica', type: 'text' },
+        { key: 'documentoProyeccion', label: 'Proyección', type: 'text' },
+        { key: 'documentoPrioridadImagen', label: 'Prioridad', type: 'select', options: [
+          { value: 'Rutina', label: 'Rutina' },
+          { value: 'Urgente', label: 'Urgente' },
+        ] },
+        { key: 'documentoIndicacionClinicaImagen', label: 'Indicación clínica', type: 'textarea' },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico', type: 'text' },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        { key: 'documentoAlergiaContraste', label: 'Alergia a contraste', type: 'select', options: yesNoUnknownOptions },
+        { key: 'documentoEmbarazo', label: 'Embarazo', type: 'select', options: yesNoUnknownOptions },
+        { key: 'documentoFuncionRenal', label: 'Función renal', type: 'text' },
+      ],
+    },
+  ],
+  'Consentimiento informado': [
+    {
+      key: 'documento_consentimiento_hosp',
+      title: 'Consentimiento informado',
+      fields: [
+        { key: 'documentoProcedimientoNombre', label: 'Nombre del procedimiento', type: 'text' },
+        { key: 'documentoProcedimientoDescripcion', label: 'Descripción', type: 'textarea' },
+        { key: 'documentoRiesgosGenerales', label: 'Riesgos generales', type: 'textarea' },
+        { key: 'documentoRiesgosEspecificos', label: 'Riesgos específicos', type: 'textarea' },
+        { key: 'documentoBeneficios', label: 'Beneficios', type: 'textarea' },
+        { key: 'documentoAlternativas', label: 'Alternativas', type: 'textarea' },
+        { key: 'documentoRiesgosNoTratamiento', label: 'Riesgos de no tratamiento', type: 'textarea' },
+        { key: 'documentoNombrePacienteConsentimiento', label: 'Nombre del paciente', type: 'text' },
+        { key: 'documentoFirmaPacienteConsentimiento', label: 'Firma paciente', type: 'text' },
+        { key: 'documentoFirmaMedicoConsentimiento', label: 'Firma médico', type: 'text' },
+        {
+          key: 'documentoTestigosConsentimiento',
+          label: 'Testigos',
+          type: 'object-array',
+          itemAddLabel: 'Agregar testigo',
+          itemFields: [
+            { key: 'nombre', label: 'Nombre', type: 'text' },
+            { key: 'firma', label: 'Firma', type: 'text' },
+          ],
+        },
+      ],
+    },
+  ],
+  'Resumen clínico': [
+    {
+      key: 'documento_resumen_hosp',
+      title: 'Resumen clínico',
+      fields: [
+        { key: 'documentoMotivoAtencion', label: 'Motivo de atención', type: 'textarea' },
+        { key: 'documentoDiagnosticosIniciales', label: 'Diagnósticos iniciales', type: 'textarea' },
+        { key: 'documentoDiagnosticosFinales', label: 'Diagnósticos finales', type: 'textarea' },
+        { key: 'documentoEvolucion', label: 'Evolución', type: 'textarea' },
+        { key: 'documentoEstudiosRelevantes', label: 'Estudios relevantes', type: 'textarea' },
+        { key: 'documentoTratamientos', label: 'Tratamientos', type: 'textarea' },
+        { key: 'documentoEstadoActual', label: 'Estado actual', type: 'textarea' },
+        { key: 'documentoPlan', label: 'Plan', type: 'textarea' },
+      ],
+    },
+  ],
+  'Referencia / traslado': [
+    {
+      key: 'documento_traslado_hosp',
+      title: 'Referencia / traslado',
+      fields: [
+        { key: 'documentoUnidadOrigen', label: 'Unidad origen', type: 'text' },
+        { key: 'documentoUnidadReceptora', label: 'Unidad receptora', type: 'text' },
+        { key: 'documentoHospitalDestino', label: 'Hospital destino', type: 'text' },
+        { key: 'documentoServicioDestino', label: 'Servicio', type: 'text' },
+        { key: 'documentoMotivoTraslado', label: 'Motivo de traslado', type: 'textarea' },
+        { key: 'documentoResumenClinicoBreve', label: 'Resumen clínico breve', type: 'textarea' },
+        { key: 'documentoSignosVitalesTraslado', label: 'Signos vitales', type: 'textarea' },
+        { key: 'documentoEstabilidadPaciente', label: 'Estabilidad', type: 'select', options: [
+          { value: 'Estable', label: 'Estable' },
+          { value: 'Inestable', label: 'Inestable' },
+          { value: 'Crítico', label: 'Crítico' },
+        ] },
+        { key: 'documentoManejoPrevio', label: 'Manejo previo', type: 'textarea' },
+        { key: 'documentoTratamientoTraslado', label: 'Tratamiento durante traslado', type: 'textarea' },
+        { key: 'documentoAmbulanciaTraslado', label: 'Ambulancia', type: 'select', options: yesNoUnknownOptions },
+        { key: 'documentoTipoAmbulancia', label: 'Tipo de ambulancia', type: 'text' },
+      ],
+    },
+  ],
+  Defunción: [
+    {
+      key: 'documento_defuncion_hosp',
+      title: 'Defunción',
+      fields: [
+        { key: 'documentoDatosPacienteDefuncion', label: 'Datos del paciente', type: 'textarea' },
+        { key: 'documentoFechaMuerte', label: 'Fecha de muerte', type: 'date' },
+        { key: 'documentoHoraMuerte', label: 'Hora de muerte', type: 'time' },
+        { key: 'documentoLugarMuerte', label: 'Lugar', type: 'text' },
+        { key: 'documentoCausaInmediata', label: 'Causa inmediata', type: 'textarea' },
+        { key: 'documentoCausaIntermedia', label: 'Causa intermedia', type: 'textarea' },
+        { key: 'documentoCausaBasica', label: 'Causa básica', type: 'textarea' },
+        { key: 'documentoOtrosEstadosDefuncion', label: 'Otros estados', type: 'textarea' },
+        { key: 'documentoComorbilidadesDefuncion', label: 'Comorbilidades', type: 'textarea' },
+        { key: 'documentoTipoMuerte', label: 'Tipo de muerte', type: 'select', options: [
+          { value: 'NATURAL', label: 'Natural' },
+          { value: 'ACCIDENTAL', label: 'Accidental' },
+          { value: 'VIOLENTA', label: 'Violenta' },
+        ] },
+        { key: 'documentoAvisoInstitucionalDefuncion', label: 'Aviso institucional', type: 'text' },
+        { key: 'documentoMedicoCertificante', label: 'Médico certificante', type: 'text' },
+        { key: 'documentoCedulaCertificante', label: 'Cédula', type: 'text' },
+      ],
+    },
+  ],
+};
+
 const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
   {
     key: 'documento_legales',
@@ -4052,6 +4225,10 @@ export function getEpisodeDocumentTypes(encounterType: string) {
     return emergencyDocumentTypeNames;
   }
 
+  if (encounterType === 'HOSPITALIZATION') {
+    return hospitalDocumentTypeNames;
+  }
+
   return getConsultationDocumentTypes();
 }
 
@@ -4065,6 +4242,23 @@ export function getConsultationDocumentTabDefinition(
     sections: [
       ...(consultationDocumentSectionDefinitions[noteType] ??
         consultationDocumentSectionDefinitions['Solicitud de laboratorio']),
+      ...consultationDocumentSharedSections,
+    ],
+  };
+}
+
+export function getHospitalDocumentTabDefinition(
+  noteType: string,
+): EpisodeTabDefinition {
+  return {
+    key: 'Documentos',
+    title: 'Documentos',
+    description:
+      'Documentos hospitalarios complementarios con firma, PDF, hash y trazabilidad.',
+    sections: [
+      hospitalDocumentHeaderSection,
+      ...(hospitalDocumentSectionDefinitions[noteType] ??
+        hospitalDocumentSectionDefinitions['Solicitud de laboratorio']),
       ...consultationDocumentSharedSections,
     ],
   };

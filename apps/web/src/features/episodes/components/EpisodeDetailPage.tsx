@@ -54,6 +54,7 @@ import {
   buildDefaultFieldValue,
   getConsultationDocumentTabDefinition,
   getEpisodeDocumentTypes,
+  getHospitalDocumentTabDefinition,
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
@@ -155,7 +156,9 @@ function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) 
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
   return (
-    (encounterType === 'OUTPATIENT' || encounterType === 'EMERGENCY') &&
+    (encounterType === 'OUTPATIENT' ||
+      encounterType === 'EMERGENCY' ||
+      encounterType === 'HOSPITALIZATION') &&
     tabTitle === 'Documentos'
   );
 }
@@ -1990,6 +1993,14 @@ function buildDocumentLegalSnapshot(
     null;
 
   return {
+    documentoPacienteNombre: detail.patient.fullName,
+    documentoPacienteCurp: detail.patient.curp ?? 'Sin dato disponible',
+    documentoExpediente: detail.medicalRecord.recordNumber,
+    documentoFolioEpisodio: detail.encounterNumber,
+    documentoTipoEpisodio:
+      detail.encounterType === 'HOSPITALIZATION'
+        ? 'Hospitalización'
+        : detail.encounterType,
     documentoInstitucionEmisora:
       detail.legalContext.facilityInstitutionName ??
       detail.legalContext.facilityLegalName ??
@@ -2005,6 +2016,8 @@ function buildDocumentLegalSnapshot(
       facilityMeta?.code ??
       'Sin dato disponible',
     documentoCodigoVerificacion: 'Se generará al guardar',
+    documentoHash: 'Se generará al guardar',
+    documentoSelloDigital: 'Se generará al guardar',
     documentoNombreProfesional:
       detail.attendingClinician?.fullName ??
       clinicalFallback.professionalName ??
@@ -2033,6 +2046,10 @@ function buildDocumentSuggestionSnapshot(
   detail: EncounterDetailResponse,
   noteType: string,
 ): Record<string, RecordFieldValue> {
+  if (detail.encounterType === 'HOSPITALIZATION') {
+    return buildHospitalDocumentSuggestionSnapshot(detail, noteType);
+  }
+
   const latestConsultationRecord =
     [...detail.sectionRecords]
       .filter((record) => record.tabKey === 'Consulta actual')
@@ -2236,6 +2253,110 @@ function buildDocumentVersionTitle(noteType: string, versionNumber: number) {
   return `${noteType} V${versionNumber}`;
 }
 
+function buildHospitalDocumentSuggestionSnapshot(
+  detail: EncounterDetailResponse,
+  noteType: string,
+): Record<string, RecordFieldValue> {
+  const latestAdmission = getLatestRecordByTab(detail.sectionRecords, 'Ingreso');
+  const latestEvolution = getLatestRecordByTab(detail.sectionRecords, 'Evolución');
+  const latestOrders = getLatestRecordByTab(detail.sectionRecords, 'Indicaciones médicas');
+  const latestSurgical = getLatestRecordByTab(
+    detail.sectionRecords,
+    'Procedimientos / Cirugía',
+  );
+  const latestDischarge = getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+  const diagnosis =
+    (latestDischarge?.formData.diagnosticoFinalEgresoHosp as string | undefined) ??
+    (latestEvolution?.formData.diagnosticoPrincipalEvolHosp as string | undefined) ??
+    (latestAdmission?.formData.diagnosticoPrincipalHosp as string | undefined) ??
+    '';
+  const cie10 =
+    (latestDischarge?.formData.cie10EgresoHosp as string | undefined) ??
+    (latestEvolution?.formData.cie10EvolHosp as string | undefined) ??
+    (latestAdmission?.formData.cie10Hosp as string | undefined) ??
+    '';
+
+  if (noteType === 'Solicitud de laboratorio') {
+    return {
+      documentoServicioSolicitud:
+        (latestAdmission?.formData.servicioIngresoHosp as string | undefined) ?? '',
+      documentoDiagnosticoPrincipal: diagnosis,
+      documentoDiagnosticoCie10: cie10,
+    };
+  }
+
+  if (noteType === 'Solicitud de imagenología') {
+    return {
+      documentoServicioSolicitud:
+        (latestAdmission?.formData.servicioIngresoHosp as string | undefined) ?? '',
+      documentoDiagnosticoPrincipal: diagnosis,
+      documentoDiagnosticoCie10: cie10,
+    };
+  }
+
+  if (noteType === 'Consentimiento informado') {
+    return {
+      documentoProcedimientoNombre:
+        (latestSurgical?.formData.cirugiaPropuestaQuirHosp as string | undefined) ??
+        (latestSurgical?.formData.procedimientoRealizadoPostopHosp as string | undefined) ??
+        '',
+      documentoNombrePacienteConsentimiento: detail.patient.fullName,
+    };
+  }
+
+  if (noteType === 'Resumen clínico') {
+    return {
+      documentoMotivoAtencion:
+        (latestAdmission?.formData.motivoIngresoClinicoHosp as string | undefined) ?? '',
+      documentoDiagnosticosIniciales:
+        (latestAdmission?.formData.diagnosticoPrincipalHosp as string | undefined) ??
+        diagnosis,
+      documentoDiagnosticosFinales:
+        (latestDischarge?.formData.diagnosticoFinalEgresoHosp as string | undefined) ??
+        diagnosis,
+      documentoEvolucion:
+        (latestDischarge?.formData.evolucionEstanciaEgresoHosp as string | undefined) ??
+        (latestEvolution?.formData.interpretacionClinicaEvolHosp as string | undefined) ??
+        '',
+      documentoTratamientos:
+        (latestDischarge?.formData.manejoRealizadoEgresoHosp as string | undefined) ??
+        '',
+      documentoPlan:
+        (latestDischarge?.formData.seguimientoEgresoHosp as string | undefined) ??
+        (latestEvolution?.formData.seguimientoEvolHosp as string | undefined) ??
+        '',
+    };
+  }
+
+  if (noteType === 'Referencia / traslado') {
+    return {
+      documentoUnidadOrigen:
+        (latestAdmission?.formData.servicioIngresoHosp as string | undefined) ?? '',
+      documentoResumenClinicoBreve:
+        (latestDischarge?.formData.resumenNarrativoEgresoHosp as string | undefined) ??
+        (latestEvolution?.formData.interpretacionClinicaEvolHosp as string | undefined) ??
+        '',
+      documentoManejoPrevio:
+        (latestDischarge?.formData.manejoRealizadoEgresoHosp as string | undefined) ??
+        '',
+    };
+  }
+
+  if (noteType === 'Defunción') {
+    return {
+      documentoDatosPacienteDefuncion: `${detail.patient.fullName} · Exp. ${detail.medicalRecord.recordNumber}`,
+      documentoMedicoCertificante:
+        (latestDischarge?.formData.medicoResponsableEgresoHosp as string | undefined) ??
+        '',
+      documentoCedulaCertificante:
+        (latestDischarge?.formData.cedulaResponsableEgresoHosp as string | undefined) ??
+        '',
+    };
+  }
+
+  return {};
+}
+
 function buildDocumentVersionPrefill(args: {
   noteType: string;
   detail: EncounterDetailResponse;
@@ -2266,7 +2387,10 @@ function buildDocumentVersionPrefill(args: {
     }>;
   } | null;
 }) {
-  const tabDefinition = getConsultationDocumentTabDefinition(args.noteType);
+  const tabDefinition =
+    args.detail.encounterType === 'HOSPITALIZATION'
+      ? getHospitalDocumentTabDefinition(args.noteType)
+      : getConsultationDocumentTabDefinition(args.noteType);
   const nextFormData = normalizeRecordFormData(tabDefinition, undefined);
 
   return mergeDocumentSystemFields(
@@ -3120,10 +3244,17 @@ export function EpisodeDetailPage() {
       },
     );
     const systemFieldKeys = [
+      'documentoPacienteNombre',
+      'documentoPacienteCurp',
+      'documentoExpediente',
+      'documentoFolioEpisodio',
+      'documentoTipoEpisodio',
       'documentoInstitucionEmisora',
       'documentoRfcMedico',
       'documentoLicenciaSanitaria',
       'documentoCodigoVerificacion',
+      'documentoHash',
+      'documentoSelloDigital',
       'documentoNombreProfesional',
       'documentoCedulaProfesional',
       'documentoEspecialidadProfesional',
@@ -3626,7 +3757,9 @@ export function EpisodeDetailPage() {
     activeTabPanelConfig?.noteTypes?.[0] ??
     getEpisodeDocumentTypes(detail.encounterType)[0];
   const documentWorkspaceDefinition = isConsultationDocumentsSection
-    ? getConsultationDocumentTabDefinition(selectedDocumentNoteType)
+    ? detail.encounterType === 'HOSPITALIZATION'
+      ? getHospitalDocumentTabDefinition(selectedDocumentNoteType)
+      : getConsultationDocumentTabDefinition(selectedDocumentNoteType)
     : undefined;
   const workspaceTabDefinition =
     isConsultationDocumentsSection && documentWorkspaceDefinition
@@ -3826,7 +3959,10 @@ export function EpisodeDetailPage() {
         noteType ??
         activeTabPanelConfig?.noteTypes?.[0] ??
         getEpisodeDocumentTypes(detail.encounterType)[0];
-      const nextTabDefinition = getConsultationDocumentTabDefinition(nextNoteType);
+      const nextTabDefinition =
+        detail.encounterType === 'HOSPITALIZATION'
+          ? getHospitalDocumentTabDefinition(nextNoteType)
+          : getConsultationDocumentTabDefinition(nextNoteType);
 
       setFeedback(null);
       setActiveRecordId(null);
@@ -4291,7 +4427,9 @@ export function EpisodeDetailPage() {
       buildRecordFormState({
         tabDefinition:
           isConsultationDocumentsSection
-            ? getConsultationDocumentTabDefinition(record.noteType)
+            ? detail.encounterType === 'HOSPITALIZATION'
+              ? getHospitalDocumentTabDefinition(record.noteType)
+              : getConsultationDocumentTabDefinition(record.noteType)
             : workspaceTabDefinition,
         noteType: record.noteType,
         title: record.title,
@@ -4578,7 +4716,10 @@ export function EpisodeDetailPage() {
       return;
     }
 
-    const nextTabDefinition = getConsultationDocumentTabDefinition(nextNoteType);
+    const nextTabDefinition =
+      detail.encounterType === 'HOSPITALIZATION'
+        ? getHospitalDocumentTabDefinition(nextNoteType)
+        : getConsultationDocumentTabDefinition(nextNoteType);
     const nextVersionForType =
       [...activeTabRecords]
         .filter(
