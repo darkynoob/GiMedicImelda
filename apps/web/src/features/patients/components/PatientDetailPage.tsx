@@ -409,13 +409,13 @@ export function PatientDetailPage() {
                 </div>
 
                 <Button size="sm" variant="ghost">
-                  + Subir
+                  + Crear
                 </Button>
               </div>
               <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
                 <p>No hay documentos disponibles</p>
                 <Button size="sm" variant="outline">
-                  Subir documento
+                  Crear documento
                 </Button>
               </div>
               <div className="px-4 py-6 text-sm text-muted-foreground px-4 py-2 text-sm gap-2">
