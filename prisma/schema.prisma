@@ -2150,6 +2150,149 @@ model AmbulatoryDischargePrescriptionValidation {
   @@index([blocking])
 }
 
+model AmbulatoryDischargeSummary {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  linkedPrescriptionId String?
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  dischargeType String?
+  destination String?
+  dischargeDate DateTime?
+  dischargeTime String?
+  finalDiagnosis String?
+  finalCie10 String?
+  dischargeCondition String?
+  clinicalStatusAtDischarge String?
+  prognosis String?
+  procedureReason String?
+  performedProcedure String?
+  recoveryEvolution String?
+  statusSummaryAtDischarge String?
+  linkedPrescriptionPlan String?
+  linkedMedications String?
+  linkedPrescriptionFolio String?
+  followUp String?
+  disabilityDays Int?
+  disabilityType String?
+  patientEducation String?
+  patientUnderstands Boolean @default(false)
+  companionInformed Boolean @default(false)
+  responsiblePhysician String
+  responsiblePhysicianLicense String
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+  closureWarning String?
+  signerUserId String?
+  signedAt DateTime?
+  closedEncounterAt DateTime?
+  documentHash String
+  digitalSeal String
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vitalSnapshot AmbulatoryDischargeVitalSnapshot?
+  dischargeCriteria AmbulatoryDischargeCriteria?
+  transferReference AmbulatoryDischargeTransferReference?
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([linkedPrescriptionId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([closedEncounterAt])
+  @@index([finalCie10])
+  @@index([documentHash])
+}
+
+model AmbulatoryDischargeVitalSnapshot {
+  id String @id @default(uuid())
+  dischargeSummaryId String @unique
+  bloodPressure String?
+  heartRate Int?
+  respiratoryRate Int?
+  temperatureC Decimal? @db.Decimal(4, 1)
+  oxygenSaturation Decimal? @db.Decimal(5, 2)
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  painEva Int?
+  aldreteScore Int?
+  prognosis String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dischargeSummary AmbulatoryDischargeSummary @relation(fields: [dischargeSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([aldreteScore])
+  @@index([oxygenSaturation])
+}
+
+model AmbulatoryDischargeCriteria {
+  id String @id @default(uuid())
+  dischargeSummaryId String @unique
+  stableVitalsOneHour Boolean @default(false)
+  controlledPain Boolean @default(false)
+  oralTolerance Boolean @default(false)
+  independentAmbulation Boolean @default(false)
+  spontaneousUrination Boolean @default(false)
+  woundsWithoutBleeding Boolean @default(false)
+  aldreteAtLeastNine Boolean @default(false)
+  responsibleCompanion Boolean @default(false)
+  writtenInstructionsDelivered Boolean @default(false)
+  prescriptionDelivered Boolean @default(false)
+  meetsCriteria String?
+  finalAldrete Int?
+  completed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dischargeSummary AmbulatoryDischargeSummary @relation(fields: [dischargeSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+  @@index([finalAldrete])
+}
+
+model AmbulatoryDischargeTransferReference {
+  id String @id @default(uuid())
+  dischargeSummaryId String @unique
+  referenceDateTime DateTime?
+  referralReason String?
+  clinicalSummary String?
+  physicalExam String?
+  studyResults String?
+  diagnoses String?
+  previousTreatmentPlan String?
+  prognosis String?
+  sendingFacility String?
+  receivingFacility String?
+  receivingPhysician String?
+  transportMethod String?
+  transportConditions String?
+  transferVitalSigns String?
+  issuingPhysician String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dischargeSummary AmbulatoryDischargeSummary @relation(fields: [dischargeSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([referenceDateTime])
+  @@index([receivingFacility])
+}
+
 /// Evolución médica longitudinal dentro de un episodio de Urgencias.
 /// Mantiene datos normalizados para auditoría NOM-004, signos vitales por toma
 /// y diagnósticos que evolucionan sin sobrescribir registros previos.

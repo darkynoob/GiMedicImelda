@@ -880,6 +880,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const ambulatoryDischargeVersionContext =
+      await this.resolveAmbulatoryDischargeVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -923,6 +929,7 @@ export class EncountersService {
       ambulatoryProcedureVersionContext,
       ambulatoryRecoveryEvaluationVersionContext,
       ambulatoryDischargePrescriptionVersionContext,
+      ambulatoryDischargeVersionContext,
       responsibleUser,
     });
 
@@ -1153,6 +1160,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryDischargeSummary({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1357,6 +1376,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const ambulatoryDischargeVersionContext =
+      await this.resolveAmbulatoryDischargeVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1392,6 +1418,7 @@ export class EncountersService {
       ambulatoryProcedureVersionContext,
       ambulatoryRecoveryEvaluationVersionContext,
       ambulatoryDischargePrescriptionVersionContext,
+      ambulatoryDischargeVersionContext,
       responsibleUser,
     });
 
@@ -1619,6 +1646,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryDischargeSummary({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1782,6 +1821,31 @@ export class EncountersService {
         title: currentRecord.title,
         status: currentRecord.status,
         formData: prescriptionFormData,
+        metadata: currentMetadata,
+      });
+    }
+    if (
+      this.isAmbulatoryDischargeRecord(
+        currentRecord.encounterType,
+        currentRecord.tabKey,
+      )
+    ) {
+      const dischargeFormData =
+        currentRecord.formDataJson &&
+        typeof currentRecord.formDataJson === 'object' &&
+        !Array.isArray(currentRecord.formDataJson)
+          ? (currentRecord.formDataJson as Record<string, unknown>)
+          : {};
+      await this.syncAmbulatoryDischargeSummary({
+        tenantId,
+        userId,
+        encounter,
+        sectionRecordId: currentRecord.id,
+        tabKey: currentRecord.tabKey,
+        recordedAt: currentRecord.recordedAt,
+        title: currentRecord.title,
+        status: currentRecord.status,
+        formData: dischargeFormData,
         metadata: currentMetadata,
       });
     }
@@ -2305,6 +2369,64 @@ export class EncountersService {
       }
 
       if (
+        this.isAmbulatoryDischargeRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const dischargeFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        await transaction.$executeRaw`
+          UPDATE "AmbulatoryDischargeSummary"
+          SET "status" = ${EncounterRecordStatus.SIGNED},
+              "signerUserId" = ${userId},
+              "signedAt" = ${signedAt},
+              "closedEncounterAt" = ${signedAt},
+              "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${signedAt}),
+              "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(currentRecord.title)}.pdf`}),
+              "documentHash" = ${this.readStringValue(dischargeFormData.hashEgresoAmb)},
+              "digitalSeal" = ${this.readStringValue(dischargeFormData.selloDigitalEgresoAmb)},
+              "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.encounter.update({
+          where: { id: encounter.id },
+          data: {
+            status: EncounterStatus.CLOSED,
+            closedAt: signedAt,
+          },
+        });
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'AmbulatoryDischargeSummary',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              signedAt: signedAt.toISOString(),
+              status: EncounterRecordStatus.SIGNED,
+              closedEncounter: true,
+              hash: this.readStringValue(dischargeFormData.hashEgresoAmb),
+              digitalSeal: this.readStringValue(dischargeFormData.selloDigitalEgresoAmb),
+            },
+          },
+        });
+      }
+
+      if (
         this.isHospitalAdmissionRecord(
           currentRecord.encounterType,
           currentRecord.tabKey,
@@ -2718,6 +2840,10 @@ export class EncountersService {
       !this.isAmbulatoryDischargePrescriptionRecord(
         record.encounterType,
         record.tabKey,
+      ) &&
+      !this.isAmbulatoryDischargeRecord(
+        record.encounterType,
+        record.tabKey,
       )
     ) {
       throw new BadRequestException(
@@ -2875,6 +3001,14 @@ export class EncountersService {
       await this.prisma.$executeRaw`
         UPDATE "AmbulatoryDischargePrescription"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "completePdfGeneratedAt" = COALESCE("completePdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isAmbulatoryDischargeRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "AmbulatoryDischargeSummary"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
     }
@@ -4258,6 +4392,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveAmbulatoryDischargeVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isAmbulatoryDischargeRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Egreso',
+        noteType: 'Egreso',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -4339,6 +4504,9 @@ export class EncountersService {
         EncountersService['resolveAmbulatoryDischargePrescriptionVersionContext']
       >
     >;
+    ambulatoryDischargeVersionContext: Awaited<
+      ReturnType<EncountersService['resolveAmbulatoryDischargeVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -4347,6 +4515,48 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isAmbulatoryDischargeRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.ambulatoryDischargeVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildAmbulatoryDischargeFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+        versionNumber,
+        currentMetadata:
+          this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      });
+
+      return {
+        tabKey: 'Egreso',
+        noteType: 'Egreso',
+        title: `Egreso V${versionNumber}`,
+        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Egreso',
+          documentHash: formData.hashEgresoAmb,
+          digitalSeal: formData.selloDigitalEgresoAmb,
+          closesEncounter: true,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isAmbulatoryDischargePrescriptionRecord(
         input.encounter.encounterType,
@@ -5723,6 +5933,13 @@ export class EncountersService {
     );
   }
 
+  private isAmbulatoryDischargeRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.SURGERY && tabKey === 'Egreso';
+  }
+
   private async assertAmbulatoryProcedureStageEnabled(encounterId: string) {
     const signedPreprocedure = await this.prisma.encounterSectionRecord.findFirst({
       where: {
@@ -6536,6 +6753,64 @@ export class EncountersService {
       selloDigitalRecetaEgreso:
         this.readStringValue(input.currentMetadata.digitalSeal) ||
         `GIMEDIC-RECETA-EGRESO-${String(input.versionNumber).padStart(3, '0')}-${documentHash.slice(0, 12)}`,
+    };
+  }
+
+  private buildAmbulatoryDischargeFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    versionNumber: number;
+    currentMetadata: Record<string, unknown>;
+  }) {
+    const hashSeed = JSON.stringify({
+      encounterId: input.encounter.id,
+      tabKey: 'Egreso',
+      versionNumber: input.versionNumber,
+      formData: input.incomingFormData,
+    });
+    const documentHash =
+      this.readStringValue(input.currentMetadata.documentHash) ||
+      createHash('sha256').update(hashSeed).digest('hex');
+    return {
+      ...input.incomingFormData,
+      tipoRegistroEgresoAmb: 'Egreso',
+      versionEgresoAmb: input.versionNumber,
+      fechaEgresoAmb:
+        this.readStringValue(input.incomingFormData.fechaEgresoAmb) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      horaEgresoAmb:
+        this.readStringValue(input.incomingFormData.horaEgresoAmb) ||
+        input.recordedAt.toISOString().slice(11, 16),
+      alertaCierreEgresoAmb:
+        'Al firmar esta nota de egreso, el episodio se marcará como cerrado, todo el expediente quedará en solo lectura, se generará sello digital y hash, y se registrará en auditoría.',
+      medicoAutorizaEgresoAmb:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      cedulaAutorizaEgresoAmb:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      referenciaEstablecimientoEnviaEgresoAmb:
+        input.encounter.facility?.name ?? input.encounter.tenant.name,
+      referenciaMedicoEmisorEgresoAmb:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      profesionalNombreEgresoAmb:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      profesionalCedulaEgresoAmb:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      profesionalEspecialidadEgresoAmb:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionEgresoAmb:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      hashEgresoAmb: documentHash,
+      selloDigitalEgresoAmb:
+        this.readStringValue(input.currentMetadata.digitalSeal) ||
+        `GIMEDIC-EGRESO-AMB-${String(input.versionNumber).padStart(3, '0')}-${documentHash.slice(0, 12)}`,
     };
   }
 
@@ -10264,6 +10539,90 @@ export class EncountersService {
     );
   }
 
+  private async syncAmbulatoryDischargeSummary(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isAmbulatoryDischargeRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const completedCriteria = this.ambulatoryDischargeCriteriaComplete(input.formData);
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryDischargeSummary" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "dischargeType",
+        "destination", "dischargeDate", "dischargeTime", "finalDiagnosis",
+        "finalCie10", "dischargeCondition", "clinicalStatusAtDischarge",
+        "prognosis", "procedureReason", "performedProcedure", "recoveryEvolution",
+        "statusSummaryAtDischarge", "linkedPrescriptionPlan", "linkedMedications",
+        "linkedPrescriptionFolio", "followUp", "disabilityDays", "disabilityType",
+        "patientEducation", "patientUnderstands", "companionInformed",
+        "responsiblePhysician", "responsiblePhysicianLicense", "professionalName",
+        "professionalLicense", "professionalSpecialty", "careLocation",
+        "closureWarning", "signerUserId", "signedAt", "closedEncounterAt",
+        "documentHash", "digitalSeal", "pdfGeneratedAt", "pdfFileName",
+        "pdfDownloadCount", "pdfLastDownloadedAt", "contentJson", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.tipoEgresoAmb)},
+        ${this.readStringValue(input.formData.destinoEgresoAmb)}, ${this.parseOptionalDate(input.formData.fechaEgresoAmb)}, ${this.readStringValue(input.formData.horaEgresoAmb)}, ${this.readStringValue(input.formData.diagnosticoFinalEgresoAmb)},
+        ${this.readStringValue(input.formData.cie10EgresoAmb)}, ${this.readStringValue(input.formData.condicionesEgresoAmb)}, ${this.readStringValue(input.formData.estadoClinicoEgresoAmb)},
+        ${this.readStringValue(input.formData.pronosticoEgresoAmb)}, ${this.readStringValue(input.formData.motivoProcedimientoEgresoAmb)}, ${this.readStringValue(input.formData.procedimientoRealizadoEgresoAmb)}, ${this.readStringValue(input.formData.evolucionRecuperacionEgresoAmb)},
+        ${this.readStringValue(input.formData.estadoAlEgresoResumenAmb)}, ${this.readStringValue(input.formData.planVinculadoRecetaEgresoAmb)}, ${this.readStringValue(input.formData.medicamentosRecetaEgresoAmb)},
+        ${this.readStringValue(input.formData.recetaRelacionadaEgresoAmb)}, ${this.readStringValue(input.formData.seguimientoEgresoAmb)}, ${this.readRoundedNumericValue(input.formData.diasIncapacidadEgresoAmb)}, ${this.readStringValue(input.formData.tipoIncapacidadEgresoAmb)},
+        ${this.readStringValue(input.formData.educacionPacienteEgresoAmb)}, ${Boolean(input.formData.pacienteComprendeEgresoAmb)}, ${Boolean(input.formData.familiarInformadoEgresoAmb)},
+        ${this.readStringValue(input.formData.medicoAutorizaEgresoAmb)}, ${this.readStringValue(input.formData.cedulaAutorizaEgresoAmb)}, ${this.readStringValue(input.formData.profesionalNombreEgresoAmb)},
+        ${this.readStringValue(input.formData.profesionalCedulaEgresoAmb)}, ${this.readStringValue(input.formData.profesionalEspecialidadEgresoAmb)}, ${this.readStringValue(input.formData.lugarAtencionEgresoAmb)},
+        ${this.readStringValue(input.formData.alertaCierreEgresoAmb)}, ${signedAt ? input.userId : null}, ${signedAt}, ${input.status === EncounterRecordStatus.SIGNED ? signedAt : null},
+        ${this.readStringValue(input.formData.hashEgresoAmb)}, ${this.readStringValue(input.formData.selloDigitalEgresoAmb)}, ${signedAt}, ${input.status === EncounterRecordStatus.SIGNED ? `${this.sanitizeFileName(input.title)}.pdf` : null},
+        ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.jsonbParameter(input.formData)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber", "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status", "recordedAt" = EXCLUDED."recordedAt",
+        "dischargeType" = EXCLUDED."dischargeType", "destination" = EXCLUDED."destination",
+        "dischargeDate" = EXCLUDED."dischargeDate", "dischargeTime" = EXCLUDED."dischargeTime",
+        "finalDiagnosis" = EXCLUDED."finalDiagnosis", "finalCie10" = EXCLUDED."finalCie10",
+        "dischargeCondition" = EXCLUDED."dischargeCondition", "clinicalStatusAtDischarge" = EXCLUDED."clinicalStatusAtDischarge",
+        "prognosis" = EXCLUDED."prognosis", "procedureReason" = EXCLUDED."procedureReason",
+        "performedProcedure" = EXCLUDED."performedProcedure", "recoveryEvolution" = EXCLUDED."recoveryEvolution",
+        "statusSummaryAtDischarge" = EXCLUDED."statusSummaryAtDischarge",
+        "linkedPrescriptionPlan" = EXCLUDED."linkedPrescriptionPlan", "linkedMedications" = EXCLUDED."linkedMedications",
+        "linkedPrescriptionFolio" = EXCLUDED."linkedPrescriptionFolio", "followUp" = EXCLUDED."followUp",
+        "disabilityDays" = EXCLUDED."disabilityDays", "disabilityType" = EXCLUDED."disabilityType",
+        "patientEducation" = EXCLUDED."patientEducation", "patientUnderstands" = EXCLUDED."patientUnderstands",
+        "companionInformed" = EXCLUDED."companionInformed", "responsiblePhysician" = EXCLUDED."responsiblePhysician",
+        "responsiblePhysicianLicense" = EXCLUDED."responsiblePhysicianLicense", "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense", "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation", "closureWarning" = EXCLUDED."closureWarning",
+        "documentHash" = EXCLUDED."documentHash", "digitalSeal" = EXCLUDED."digitalSeal",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount", "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson", "updatedAt" = NOW()
+    `;
+    const [summary] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryDischargeSummary"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+      LIMIT 1
+    `;
+    if (!summary) {
+      return;
+    }
+    await this.syncAmbulatoryDischargeSummaryChildren(summary.id, input, completedCriteria);
+  }
+
   private async syncAmbulatoryPreprocedureChildren(
     assessmentId: string,
     input: {
@@ -10491,6 +10850,112 @@ export class EncountersService {
           ${randomUUID()}, ${prescriptionId}, ${validation.severity}, ${validation.validationType},
           ${validation.message}, ${validation.blocking}, NOW()
         )
+      `;
+    }
+  }
+
+  private async syncAmbulatoryDischargeSummaryChildren(
+    summaryId: string,
+    input: {
+      formData: Record<string, unknown>;
+    },
+    completedCriteria: boolean,
+  ) {
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryDischargeVitalSnapshot" (
+        "id", "dischargeSummaryId", "bloodPressure", "heartRate",
+        "respiratoryRate", "temperatureC", "oxygenSaturation",
+        "capillaryGlucose", "painEva", "aldreteScore", "prognosis",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${summaryId}, ${this.readStringValue(input.formData.taEgresoAmb)}, ${this.readRoundedNumericValue(input.formData.fcEgresoAmb)},
+        ${this.readRoundedNumericValue(input.formData.frEgresoAmb)}, ${this.readNumericValue(input.formData.temperaturaEgresoAmb)}, ${this.readNumericValue(input.formData.spo2EgresoAmb)},
+        ${this.readNumericValue(input.formData.glucosaCapilarEgresoAmb)}, ${this.readRoundedNumericValue(input.formData.evaDolorEgresoAmb)}, ${this.readRoundedNumericValue(input.formData.aldreteEgresoAmb)}, ${this.readStringValue(input.formData.pronosticoEgresoAmb)},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("dischargeSummaryId") DO UPDATE SET
+        "bloodPressure" = EXCLUDED."bloodPressure",
+        "heartRate" = EXCLUDED."heartRate",
+        "respiratoryRate" = EXCLUDED."respiratoryRate",
+        "temperatureC" = EXCLUDED."temperatureC",
+        "oxygenSaturation" = EXCLUDED."oxygenSaturation",
+        "capillaryGlucose" = EXCLUDED."capillaryGlucose",
+        "painEva" = EXCLUDED."painEva",
+        "aldreteScore" = EXCLUDED."aldreteScore",
+        "prognosis" = EXCLUDED."prognosis",
+        "updatedAt" = NOW()
+    `;
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryDischargeCriteria" (
+        "id", "dischargeSummaryId", "stableVitalsOneHour", "controlledPain",
+        "oralTolerance", "independentAmbulation", "spontaneousUrination",
+        "woundsWithoutBleeding", "aldreteAtLeastNine", "responsibleCompanion",
+        "writtenInstructionsDelivered", "prescriptionDelivered", "meetsCriteria",
+        "finalAldrete", "completed", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${summaryId}, ${Boolean(input.formData.altaSignosEstablesEgresoAmb)}, ${Boolean(input.formData.altaDolorControladoEgresoAmb)},
+        ${Boolean(input.formData.altaToleraViaOralEgresoAmb)}, ${Boolean(input.formData.altaDeambulacionEgresoAmb)}, ${Boolean(input.formData.altaMiccionEgresoAmb)},
+        ${Boolean(input.formData.altaHeridasSinSangradoEgresoAmb)}, ${Boolean(input.formData.altaAldreteMayor9EgresoAmb)}, ${Boolean(input.formData.altaAcompananteEgresoAmb)},
+        ${Boolean(input.formData.altaIndicacionesEntregadasEgresoAmb)}, ${Boolean(input.formData.altaRecetaEntregadaEgresoAmb)}, ${this.readStringValue(input.formData.cumpleCriteriosAltaEgresoAmb)},
+        ${this.readRoundedNumericValue(input.formData.aldreteFinalEgresoAmb)}, ${completedCriteria}, NOW(), NOW()
+      )
+      ON CONFLICT ("dischargeSummaryId") DO UPDATE SET
+        "stableVitalsOneHour" = EXCLUDED."stableVitalsOneHour",
+        "controlledPain" = EXCLUDED."controlledPain",
+        "oralTolerance" = EXCLUDED."oralTolerance",
+        "independentAmbulation" = EXCLUDED."independentAmbulation",
+        "spontaneousUrination" = EXCLUDED."spontaneousUrination",
+        "woundsWithoutBleeding" = EXCLUDED."woundsWithoutBleeding",
+        "aldreteAtLeastNine" = EXCLUDED."aldreteAtLeastNine",
+        "responsibleCompanion" = EXCLUDED."responsibleCompanion",
+        "writtenInstructionsDelivered" = EXCLUDED."writtenInstructionsDelivered",
+        "prescriptionDelivered" = EXCLUDED."prescriptionDelivered",
+        "meetsCriteria" = EXCLUDED."meetsCriteria",
+        "finalAldrete" = EXCLUDED."finalAldrete",
+        "completed" = EXCLUDED."completed",
+        "updatedAt" = NOW()
+    `;
+    if (['TRASLADO', 'REFERENCIA'].includes(this.readStringValue(input.formData.tipoEgresoAmb))) {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryDischargeTransferReference" (
+          "id", "dischargeSummaryId", "referenceDateTime", "referralReason",
+          "clinicalSummary", "physicalExam", "studyResults", "diagnoses",
+          "previousTreatmentPlan", "prognosis", "sendingFacility",
+          "receivingFacility", "receivingPhysician", "transportMethod",
+          "transportConditions", "transferVitalSigns", "issuingPhysician",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${summaryId}, ${this.parseOptionalDate(input.formData.referenciaFechaHoraEgresoAmb)}, ${this.readStringValue(input.formData.referenciaMotivoEnvioEgresoAmb)},
+          ${this.readStringValue(input.formData.referenciaResumenClinicoEgresoAmb)}, ${this.readStringValue(input.formData.referenciaExploracionFisicaEgresoAmb)}, ${this.readStringValue(input.formData.referenciaResultadosEstudiosEgresoAmb)}, ${this.readStringValue(input.formData.referenciaDiagnosticosEgresoAmb)},
+          ${this.readStringValue(input.formData.referenciaPlanTratamientoEgresoAmb)}, ${this.readStringValue(input.formData.referenciaPronosticoEgresoAmb)}, ${this.readStringValue(input.formData.referenciaEstablecimientoEnviaEgresoAmb)},
+          ${this.readStringValue(input.formData.referenciaEstablecimientoReceptorEgresoAmb)}, ${this.readStringValue(input.formData.referenciaMedicoReceptorEgresoAmb)}, ${this.readStringValue(input.formData.referenciaMedioTrasladoEgresoAmb)},
+          ${this.readStringValue(input.formData.referenciaCondicionesTrasladoEgresoAmb)}, ${this.readStringValue(input.formData.referenciaSignosVitalesEgresoAmb)}, ${this.readStringValue(input.formData.referenciaMedicoEmisorEgresoAmb)},
+          NOW(), NOW()
+        )
+        ON CONFLICT ("dischargeSummaryId") DO UPDATE SET
+          "referenceDateTime" = EXCLUDED."referenceDateTime",
+          "referralReason" = EXCLUDED."referralReason",
+          "clinicalSummary" = EXCLUDED."clinicalSummary",
+          "physicalExam" = EXCLUDED."physicalExam",
+          "studyResults" = EXCLUDED."studyResults",
+          "diagnoses" = EXCLUDED."diagnoses",
+          "previousTreatmentPlan" = EXCLUDED."previousTreatmentPlan",
+          "prognosis" = EXCLUDED."prognosis",
+          "sendingFacility" = EXCLUDED."sendingFacility",
+          "receivingFacility" = EXCLUDED."receivingFacility",
+          "receivingPhysician" = EXCLUDED."receivingPhysician",
+          "transportMethod" = EXCLUDED."transportMethod",
+          "transportConditions" = EXCLUDED."transportConditions",
+          "transferVitalSigns" = EXCLUDED."transferVitalSigns",
+          "issuingPhysician" = EXCLUDED."issuingPhysician",
+          "updatedAt" = NOW()
+      `;
+    } else {
+      await this.prisma.$executeRaw`
+        DELETE FROM "AmbulatoryDischargeTransferReference" WHERE "dischargeSummaryId" = ${summaryId}
       `;
     }
   }
@@ -11758,7 +12223,8 @@ export class EncountersService {
         !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalDischargeRecord(record.encounterType, record.tabKey) &&
-        !this.isAmbulatoryDischargePrescriptionRecord(record.encounterType, record.tabKey))
+        !this.isAmbulatoryDischargePrescriptionRecord(record.encounterType, record.tabKey) &&
+        !this.isAmbulatoryDischargeRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -12785,6 +13251,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isAmbulatoryDischargeRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildAmbulatoryDischargePdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -13330,6 +13819,68 @@ export class EncountersService {
       `Cédula: ${this.readStringValue(input.formData.profesionalCedulaRecetaEgreso)}`,
       `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadRecetaEgreso)}`,
       `Lugar: ${this.readStringValue(input.formData.lugarAtencionRecetaEgreso)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private buildAmbulatoryDischargePdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    const criteriaLines = [
+      ['Signos estables', input.formData.altaSignosEstablesEgresoAmb],
+      ['Dolor controlado', input.formData.altaDolorControladoEgresoAmb],
+      ['Tolera vía oral', input.formData.altaToleraViaOralEgresoAmb],
+      ['Deambulación', input.formData.altaDeambulacionEgresoAmb],
+      ['Micción', input.formData.altaMiccionEgresoAmb],
+      ['Heridas sin sangrado', input.formData.altaHeridasSinSangradoEgresoAmb],
+      ['Aldrete >= 9', input.formData.altaAldreteMayor9EgresoAmb],
+      ['Acompañante', input.formData.altaAcompananteEgresoAmb],
+      ['Indicaciones entregadas', input.formData.altaIndicacionesEntregadasEgresoAmb],
+      ['Receta entregada', input.formData.altaRecetaEntregadaEgresoAmb],
+    ].map(([label, value]) => `${label}: ${Boolean(value) ? 'Sí' : 'No'}`);
+    const lines = [
+      input.recordTitle,
+      'Tipo: Egreso',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Expediente: ${input.encounter.medicalRecord.recordNumber}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Hash: ${this.readStringValue(input.formData.hashEgresoAmb)}`,
+      `Sello digital: ${this.readStringValue(input.formData.selloDigitalEgresoAmb)}`,
+      'Datos de egreso',
+      `Tipo/destino: ${this.readStringValue(input.formData.tipoEgresoAmb)} / ${this.readStringValue(input.formData.destinoEgresoAmb)}`,
+      `Fecha/hora: ${this.readStringValue(input.formData.fechaEgresoAmb)} ${this.readStringValue(input.formData.horaEgresoAmb)}`,
+      `Diagnóstico final: ${this.readStringValue(input.formData.diagnosticoFinalEgresoAmb)} · ${this.readStringValue(input.formData.cie10EgresoAmb)}`,
+      `Condición/estado: ${this.readStringValue(input.formData.condicionesEgresoAmb)} / ${this.readStringValue(input.formData.estadoClinicoEgresoAmb)}`,
+      'Signos vitales',
+      `TA/FC/FR/T/SpO2: ${this.readStringValue(input.formData.taEgresoAmb)} / ${this.readStringValue(input.formData.fcEgresoAmb)} / ${this.readStringValue(input.formData.frEgresoAmb)} / ${this.readStringValue(input.formData.temperaturaEgresoAmb)} / ${this.readStringValue(input.formData.spo2EgresoAmb)}`,
+      `EVA/Aldrete/Pronóstico: ${this.readStringValue(input.formData.evaDolorEgresoAmb)} / ${this.readStringValue(input.formData.aldreteFinalEgresoAmb)} / ${this.readStringValue(input.formData.pronosticoEgresoAmb)}`,
+      'Criterios de alta',
+      ...criteriaLines,
+      `Cumple criterios: ${this.readStringValue(input.formData.cumpleCriteriosAltaEgresoAmb)}`,
+      'Resumen clínico',
+      `Motivo: ${this.readStringValue(input.formData.motivoProcedimientoEgresoAmb)}`,
+      `Procedimiento: ${this.readStringValue(input.formData.procedimientoRealizadoEgresoAmb)}`,
+      `Recuperación: ${this.readStringValue(input.formData.evolucionRecuperacionEgresoAmb)}`,
+      `Estado al egreso: ${this.readStringValue(input.formData.estadoAlEgresoResumenAmb)}`,
+      'Plan',
+      `Receta: ${this.readStringValue(input.formData.recetaRelacionadaEgresoAmb)}`,
+      `Medicamentos: ${this.readStringValue(input.formData.medicamentosRecetaEgresoAmb)}`,
+      `Seguimiento: ${this.readStringValue(input.formData.seguimientoEgresoAmb)}`,
+      `Incapacidad: ${this.readStringValue(input.formData.diasIncapacidadEgresoAmb)} días · ${this.readStringValue(input.formData.tipoIncapacidadEgresoAmb)}`,
+      `Educación: ${this.readStringValue(input.formData.educacionPacienteEgresoAmb)}`,
+      `Comprensión paciente/familiar: ${Boolean(input.formData.pacienteComprendeEgresoAmb) ? 'Sí' : 'No'} / ${Boolean(input.formData.familiarInformadoEgresoAmb) ? 'Sí' : 'No'}`,
+      `Referencia/traslado: ${this.readStringValue(input.formData.referenciaEstablecimientoReceptorEgresoAmb)} ${this.readStringValue(input.formData.referenciaMotivoEnvioEgresoAmb)}`.trim(),
+      'Responsable',
+      `Médico: ${this.readStringValue(input.formData.medicoAutorizaEgresoAmb)} · ${this.readStringValue(input.formData.cedulaAutorizaEgresoAmb)}`,
+      `Profesional firma: ${this.readStringValue(input.formData.profesionalNombreEgresoAmb)} · ${this.readStringValue(input.formData.profesionalCedulaEgresoAmb)}`,
+      `Especialidad/lugar: ${this.readStringValue(input.formData.profesionalEspecialidadEgresoAmb)} / ${this.readStringValue(input.formData.lugarAtencionEgresoAmb)}`,
       `Descargas registradas: ${input.downloadCount}`,
     ];
 
@@ -14097,6 +14648,10 @@ export class EncountersService {
       this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)
         ? this.resolveAmbulatoryDischargePrescriptionRequiredFields()
         : [];
+    const ambulatoryDischargeRequiredFields =
+      this.isAmbulatoryDischargeRecord(input.encounterType, input.tabKey)
+        ? this.resolveAmbulatoryDischargeRequiredFields(formData)
+        : [];
 
     const missingFields = [
       ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
@@ -14120,6 +14675,7 @@ export class EncountersService {
       ...ambulatoryProcedureRequiredFields,
       ...ambulatoryRecoveryEvaluationRequiredFields,
       ...ambulatoryDischargePrescriptionRequiredFields,
+      ...ambulatoryDischargeRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -14163,8 +14719,14 @@ export class EncountersService {
                                           ? 'Completa los campos obligatorios de Recuperación / Evaluación antes de firmarla'
                                           : this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)
                                             ? 'Completa los campos obligatorios de receta e indicaciones de egreso antes de firmar'
+                                            : this.isAmbulatoryDischargeRecord(input.encounterType, input.tabKey)
+                                              ? 'Completa los campos obligatorios de Egreso antes de firmar'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isAmbulatoryDischargeRecord(input.encounterType, input.tabKey)) {
+      this.assertAmbulatoryDischargeReadyForSignature(formData);
     }
 
     if (this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)) {
@@ -14460,6 +15022,107 @@ export class EncountersService {
       'profesionalEspecialidadRecetaEgreso',
       'lugarAtencionRecetaEgreso',
     ];
+  }
+
+  private resolveAmbulatoryDischargeRequiredFields(
+    formData: Record<string, unknown>,
+  ) {
+    const transferRequired = ['TRASLADO', 'REFERENCIA'].includes(
+      this.readStringValue(formData.tipoEgresoAmb),
+    )
+      ? [
+          'referenciaFechaHoraEgresoAmb',
+          'referenciaMotivoEnvioEgresoAmb',
+          'referenciaResumenClinicoEgresoAmb',
+          'referenciaDiagnosticosEgresoAmb',
+          'referenciaEstablecimientoReceptorEgresoAmb',
+          'referenciaMedicoReceptorEgresoAmb',
+          'referenciaMedioTrasladoEgresoAmb',
+          'referenciaCondicionesTrasladoEgresoAmb',
+        ]
+      : [];
+    return [
+      'tipoEgresoAmb',
+      'destinoEgresoAmb',
+      'fechaEgresoAmb',
+      'horaEgresoAmb',
+      'diagnosticoFinalEgresoAmb',
+      'cie10EgresoAmb',
+      'condicionesEgresoAmb',
+      'estadoClinicoEgresoAmb',
+      'taEgresoAmb',
+      'fcEgresoAmb',
+      'frEgresoAmb',
+      'temperaturaEgresoAmb',
+      'spo2EgresoAmb',
+      'evaDolorEgresoAmb',
+      'aldreteEgresoAmb',
+      'pronosticoEgresoAmb',
+      'cumpleCriteriosAltaEgresoAmb',
+      'aldreteFinalEgresoAmb',
+      'motivoProcedimientoEgresoAmb',
+      'procedimientoRealizadoEgresoAmb',
+      'evolucionRecuperacionEgresoAmb',
+      'estadoAlEgresoResumenAmb',
+      'educacionPacienteEgresoAmb',
+      'medicoAutorizaEgresoAmb',
+      'cedulaAutorizaEgresoAmb',
+      'profesionalNombreEgresoAmb',
+      'profesionalCedulaEgresoAmb',
+      ...transferRequired,
+    ];
+  }
+
+  private assertAmbulatoryDischargeReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    if (!this.ambulatoryDischargeCriteriaComplete(formData)) {
+      throw new BadRequestException(
+        'No se puede firmar el egreso: deben cumplirse todos los criterios de alta',
+      );
+    }
+    if (this.readStringValue(formData.cumpleCriteriosAltaEgresoAmb) !== 'SI') {
+      throw new BadRequestException(
+        'No se puede firmar el egreso si no cumple criterios de alta',
+      );
+    }
+    const finalAldrete = this.readRoundedNumericValue(formData.aldreteFinalEgresoAmb);
+    if (
+      this.readStringValue(formData.tipoEgresoAmb) === 'ALTA_MEDICA' &&
+      (finalAldrete === null || finalAldrete < 9)
+    ) {
+      throw new BadRequestException(
+        'No se puede firmar alta ambulatoria con Aldrete final menor a 9',
+      );
+    }
+    if (
+      !Boolean(formData.pacienteComprendeEgresoAmb) &&
+      !Boolean(formData.familiarInformadoEgresoAmb)
+    ) {
+      throw new BadRequestException(
+        'Marca comprensión del paciente o familiar informado antes de firmar el egreso',
+      );
+    }
+    if (!this.hasCapturedValue(formData.recetaRelacionadaEgresoAmb)) {
+      throw new BadRequestException(
+        'Vincula la receta e indicaciones de egreso antes de firmar el Egreso',
+      );
+    }
+  }
+
+  private ambulatoryDischargeCriteriaComplete(formData: Record<string, unknown>) {
+    return [
+      'altaSignosEstablesEgresoAmb',
+      'altaDolorControladoEgresoAmb',
+      'altaToleraViaOralEgresoAmb',
+      'altaDeambulacionEgresoAmb',
+      'altaMiccionEgresoAmb',
+      'altaHeridasSinSangradoEgresoAmb',
+      'altaAldreteMayor9EgresoAmb',
+      'altaAcompananteEgresoAmb',
+      'altaIndicacionesEntregadasEgresoAmb',
+      'altaRecetaEntregadaEgresoAmb',
+    ].every((fieldKey) => Boolean(formData[fieldKey]));
   }
 
   private assertAmbulatoryDischargePrescriptionReadyForSignature(
