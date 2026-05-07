@@ -265,6 +265,102 @@ function buildHospitalDischargeTitle() {
   return 'Egreso V1';
 }
 
+function isAmbulatoryPreprocedureTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'SURGERY' && tabTitle === 'Valoración preprocedimiento';
+}
+
+function isAmbulatoryProcedureTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'SURGERY' && tabTitle === 'Procedimiento';
+}
+
+function buildAmbulatoryPreprocedureTitle(versionNumber: number) {
+  return `Valoración preprocedimiento V${versionNumber}`;
+}
+
+function buildAmbulatoryPreprocedureSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const currentFormData = args.currentFormData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const readNumber = (value: unknown) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  };
+  const weight = readNumber(currentFormData.pesoKgPreproc);
+  const height = readNumber(currentFormData.tallaCmPreproc);
+  const heightMeters = height ? height / 100 : null;
+  const imc =
+    weight && heightMeters && heightMeters > 0
+      ? (weight / (heightMeters * heightMeters)).toFixed(1)
+      : '';
+  const hasAnesthesia =
+    readString(currentFormData.tipoAnestesiaPrevistaPreproc) !== '' &&
+    readString(currentFormData.tipoAnestesiaPrevistaPreproc) !== 'NO_APLICA';
+  const alerts = [
+    ['ASA_III', 'ASA_IV', 'ASA_V'].includes(
+      readString(currentFormData.clasificacionAsaPreproc),
+    )
+      ? 'ASA alto: requiere revisión de factibilidad ambulatoria.'
+      : '',
+    readString(currentFormData.riesgoQuirurgicoPreproc) === 'ALTO'
+      ? 'Riesgo quirúrgico alto.'
+      : '',
+    readString(currentFormData.riesgoCardiovascularPreproc) === 'ALTO'
+      ? 'Riesgo cardiovascular alto.'
+      : '',
+    readString(currentFormData.riesgoTromboembolicoCapriniPreproc) === 'ALTO'
+      ? 'Riesgo tromboembólico alto.'
+      : '',
+    readString(currentFormData.ayunoConfirmadoPreproc) === 'NO'
+      ? 'Ayuno no confirmado.'
+      : '',
+    Boolean(currentFormData.antAlergiasMedicamentosasPreproc) &&
+    readString(currentFormData.atbProfilacticoPreproc)
+      ? 'Verificar alergias antes de ATB profiláctico.'
+      : '',
+  ].filter(Boolean);
+
+  return {
+    tipoRegistroPreproc: 'Valoración preprocedimiento',
+    tituloDocumentoConsentimientoPreproc: 'Consentimiento informado NOM-004',
+    institucionConsentimientoPreproc:
+      readString(currentFormData.institucionConsentimientoPreproc) ||
+      args.detail.legalContext.facilityInstitutionName ||
+      args.detail.legalContext.tenantName,
+    razonSocialConsentimientoPreproc:
+      readString(currentFormData.razonSocialConsentimientoPreproc) ||
+      args.detail.legalContext.tenantLegalName ||
+      args.detail.legalContext.tenantName,
+    lugarFechaConsentimientoPreproc:
+      readString(currentFormData.lugarFechaConsentimientoPreproc) ||
+      `${args.detail.facility?.name ?? 'Lugar no configurado'} · ${args.recordedAt.slice(0, 10)}`,
+    medicoExplicaPreproc:
+      readString(currentFormData.medicoExplicaPreproc) ||
+      args.detail.attendingClinician?.fullName ||
+      'Sin profesional responsable',
+    nombreRealizaActoPreproc:
+      readString(currentFormData.nombreRealizaActoPreproc) ||
+      args.detail.attendingClinician?.fullName ||
+      'Sin profesional responsable',
+    profesionalNombrePreproc:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaPreproc:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadPreproc: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionPreproc: args.detail.facility?.name ?? 'Sin sede',
+    imcPreproc: imc,
+    consentimientoAnestesicoPreproc: hasAnesthesia
+      ? readString(currentFormData.consentimientoAnestesicoPreproc)
+      : 'NO_APLICA',
+    alertasClinicasPreproc: alerts.length > 0 ? alerts.join('\n') : 'Sin alertas críticas',
+    hashPreproc:
+      readString(currentFormData.hashPreproc) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}`,
+  };
+}
+
 function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
@@ -3544,6 +3640,42 @@ export function EpisodeDetailPage() {
     );
   }, [activeTab, detail, recordForm]);
 
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const synchronizedSystemFields = buildAmbulatoryPreprocedureSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      currentFormData: recordForm.formData,
+    });
+    const hasChanges = Object.entries(synchronizedSystemFields).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges && recordForm.noteType === 'Valoración preprocedimiento') {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Valoración preprocedimiento',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -3608,7 +3740,9 @@ export function EpisodeDetailPage() {
                   ? 'Enfermería'
                   : isHospitalDischargeTab(detail.encounterType, activeTab)
                     ? 'Egreso'
-            : activeTab;
+                    : isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
+                      ? 'Valoración preprocedimiento'
+                      : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
     (record) => record.tabKey === activeRecordTabKey,
   );
@@ -3681,6 +3815,14 @@ export function EpisodeDetailPage() {
     activeTab,
   );
   const isHospitalDischargeSection = isHospitalDischargeTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isAmbulatoryPreprocedureSection = isAmbulatoryPreprocedureTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isAmbulatoryProcedureSection = isAmbulatoryProcedureTab(
     detail.encounterType,
     activeTab,
   );
@@ -3830,6 +3972,11 @@ export function EpisodeDetailPage() {
   const latestHospitalDischargeRecord = isHospitalDischargeSection
     ? getLatestRecordByTab(activeTabRecords, 'Egreso')
     : getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+  const latestAmbulatoryPreprocedureRecord = isAmbulatoryPreprocedureSection
+    ? getLatestRecordByTab(activeTabRecords, 'Valoración preprocedimiento')
+    : getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
+  const nextAmbulatoryPreprocedureVersionNumber =
+    (latestAmbulatoryPreprocedureRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -3842,6 +3989,49 @@ export function EpisodeDetailPage() {
     }
 
     const nextRecordedAt = new Date().toISOString().slice(0, 16);
+
+    if (
+      isAmbulatoryProcedureSection &&
+      !detail.sectionRecords.some(
+        (record) =>
+          record.tabKey === 'Valoración preprocedimiento' &&
+          record.status === 'SIGNED',
+      )
+    ) {
+      setFeedback(
+        'Firma la valoración preprocedimiento antes de avanzar a Procedimiento.',
+      );
+      return;
+    }
+
+    if (isAmbulatoryPreprocedureSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Valoración preprocedimiento',
+          title: buildAmbulatoryPreprocedureTitle(
+            nextAmbulatoryPreprocedureVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryPreprocedureSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)[
+              'Valoración preprocedimiento'
+            ] as Record<string, RecordFieldValue>,
+          }),
+        }),
+      );
+      return;
+    }
 
     if (isConsultationHistorySection) {
       if (!activeTabDefinition) {
@@ -4686,6 +4876,22 @@ export function EpisodeDetailPage() {
                                                     >,
                                                 }),
                                               }
+                                            : isAmbulatoryPreprocedureSection
+                                              ? {
+                                                  ...(record.formData as Record<
+                                                    string,
+                                                    RecordFieldValue
+                                                  >),
+                                                  ...buildAmbulatoryPreprocedureSnapshot({
+                                                    detail,
+                                                    recordedAt: record.recordedAt.slice(0, 16),
+                                                    currentFormData:
+                                                      record.formData as Record<
+                                                        string,
+                                                        RecordFieldValue
+                                                      >,
+                                                  }),
+                                                }
                     : record.formData,
       }),
     );
@@ -4975,7 +5181,16 @@ export function EpisodeDetailPage() {
                                                 currentFormData: recordForm.formData,
                                               }),
                                             }
-                  : recordForm.formData,
+                                          : isAmbulatoryPreprocedureSection
+                                            ? {
+                                                ...recordForm.formData,
+                                                ...buildAmbulatoryPreprocedureSnapshot({
+                                                  detail,
+                                                  recordedAt: recordForm.recordedAt,
+                                                  currentFormData: recordForm.formData,
+                                                }),
+                                              }
+                                          : recordForm.formData,
     };
 
     if (selectedRecord) {
@@ -6208,6 +6423,30 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isAmbulatoryPreprocedureSection ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Valoración preprocedimiento
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -6264,7 +6503,9 @@ export function EpisodeDetailPage() {
                             </label>
                           ) : null}
 
-                          {isConsultationPrescriptionSection || isConsultationDocumentsSection ? (
+                          {isConsultationPrescriptionSection ||
+                          isConsultationDocumentsSection ||
+                          isAmbulatoryPreprocedureSection ? (
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Estado</span>
                               <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
@@ -6313,7 +6554,8 @@ export function EpisodeDetailPage() {
                           isHospitalConsultationSection ||
                           isHospitalSurgicalSection ||
                           isHospitalNursingSection ||
-                          isHospitalDischargeSection ? null : (
+                          isHospitalDischargeSection ||
+                          isAmbulatoryPreprocedureSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input

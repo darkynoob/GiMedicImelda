@@ -1387,6 +1387,286 @@ model EncounterSectionRecord {
   @@index([authoredByUserId])
 }
 
+/// Valoración clínica integral previa a un procedimiento ambulatorio.
+/// Se sincroniza desde EncounterSectionRecord para conservar el snapshot editable
+/// y exponer datos normalizados para consulta clínica, auditoría y NOM-004/NOM-006.
+model AmbulatoryPreprocedureAssessment {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  preoperativeDiagnosis String
+  preoperativeCie10 String
+  indicatedProcedure String
+  procedureCode String?
+  procedureCodeSystem String?
+  clinicalIndication String
+  procedureType String
+  currentSymptoms String
+  illnessEvolution String
+  relevantHistoryDetail String?
+
+  physicalExam String
+  preoperativeStudies String
+
+  anesthesiaPlanned String
+  hasAnesthesia Boolean @default(false)
+
+  asaClassification String
+  surgicalRisk String
+  cardiovascularRisk String?
+  capriniThromboembolicRisk String?
+  informedProcedureRisks String
+  prognosis String
+  indicatedProphylaxis String?
+  clinicalAlerts String?
+
+  preoperativePreparation String
+  fastingHours Decimal? @db.Decimal(5, 2)
+  fastingConfirmed String
+  medicationSuspension String?
+  prophylacticAntibiotic String?
+  specialPreparation String?
+
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  procedureStageEnabled Boolean @default(false)
+
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  relevantHistories AmbulatoryPreprocedureRelevantHistory[]
+  comorbidities AmbulatoryPreprocedureComorbidity[]
+  allergies AmbulatoryPreprocedureAllergy[]
+  medications AmbulatoryPreprocedureMedication[]
+  vitalMeasurements AmbulatoryPreprocedureVitalMeasurement[]
+  preanestheticEvaluation AmbulatoryPreprocedurePreanestheticEvaluation?
+  riskAssessment AmbulatoryPreprocedureRiskAssessment?
+  safetyChecklist AmbulatoryPreprocedureSafetyChecklist?
+  informedConsent AmbulatoryPreprocedureInformedConsent?
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([preoperativeCie10])
+  @@index([procedureCode])
+  @@index([documentHash])
+}
+
+model AmbulatoryPreprocedureRelevantHistory {
+  id String @id @default(uuid())
+  assessmentId String
+  conditionKey String
+  label String
+  present Boolean @default(true)
+  detail String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, conditionKey])
+  @@index([conditionKey])
+}
+
+model AmbulatoryPreprocedureComorbidity {
+  id String @id @default(uuid())
+  assessmentId String
+  diagnosis String
+  cie10 String?
+  controlStatus String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([cie10])
+  @@index([controlStatus])
+}
+
+model AmbulatoryPreprocedureAllergy {
+  id String @id @default(uuid())
+  assessmentId String
+  substance String
+  reaction String?
+  severity String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([substance])
+  @@index([severity])
+}
+
+model AmbulatoryPreprocedureMedication {
+  id String @id @default(uuid())
+  assessmentId String
+  drugName String
+  dose String?
+  frequency String?
+  sourceFromRecord Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([drugName])
+}
+
+model AmbulatoryPreprocedureVitalMeasurement {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  weightKg Decimal @db.Decimal(8, 2)
+  heightCm Decimal @db.Decimal(8, 2)
+  bmi Decimal? @db.Decimal(8, 2)
+  bloodPressure String
+  heartRate Int
+  respiratoryRate Int
+  oxygenSaturation Decimal @db.Decimal(5, 2)
+  temperatureC Decimal @db.Decimal(4, 1)
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  measuredAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([measuredAt])
+}
+
+model AmbulatoryPreprocedurePreanestheticEvaluation {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  anesthesiaPlanned String
+  mallampati String?
+  mouthOpening String?
+  cervicalMobility String?
+  thyromentalDistance String?
+  anestheticRisk String
+  functionalCapacityMets String?
+  functionalLimitation String?
+  clinicalEvaluation String?
+  anestheticHistory String?
+  anesthesiaPlanType String?
+  anesthesiaSpecificRisk String?
+  anesthesiaRelevantAllergies String?
+  anesthesiaPlan String?
+  anesthesiologistName String?
+  anesthesiologistLicense String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([anesthesiaPlanned])
+  @@index([anestheticRisk])
+}
+
+model AmbulatoryPreprocedureRiskAssessment {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  asaClassification String
+  surgicalRisk String
+  cardiovascularRisk String?
+  capriniThromboembolicRisk String?
+  informedProcedureRisks String
+  prognosis String
+  indicatedProphylaxis String?
+  clinicalAlerts String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([asaClassification])
+  @@index([surgicalRisk])
+  @@index([cardiovascularRisk])
+  @@index([capriniThromboembolicRisk])
+}
+
+model AmbulatoryPreprocedureSafetyChecklist {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  patientIdentified Boolean @default(false)
+  procedureConfirmed Boolean @default(false)
+  surgicalSiteMarked Boolean @default(false)
+  consentSigned Boolean @default(false)
+  allergiesVerified Boolean @default(false)
+  studiesAvailable Boolean @default(false)
+  fastingVerified Boolean @default(false)
+  antibioticProphylaxisIndicated Boolean @default(false)
+  completed Boolean @default(false)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+}
+
+model AmbulatoryPreprocedureInformedConsent {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  institutionName String
+  legalName String
+  documentTitle String
+  placeAndDate String
+  surgicalConsentStatus String
+  anesthesiaConsentStatus String?
+  consentSignedDate DateTime
+  explainingPhysician String
+  authorizedAct String
+  expectedRisks String
+  expectedBenefits String
+  contingencyAuthorization String
+  patientExplanation String
+  authorizerName String
+  relationshipToPatient String
+  witnessOneName String
+  witnessTwoName String
+  performerName String
+  patientUnderstands Boolean @default(false)
+  responsibleInformed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([surgicalConsentStatus])
+  @@index([anesthesiaConsentStatus])
+  @@index([consentSignedDate])
+}
+
 /// Evolución médica longitudinal dentro de un episodio de Urgencias.
 /// Mantiene datos normalizados para auditoría NOM-004, signos vitales por toma
 /// y diagnósticos que evolucionan sin sobrescribir registros previos.
