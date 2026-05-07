@@ -1750,6 +1750,7 @@ model AmbulatoryProcedureDocument {
   timeOutChecklist AmbulatoryProcedureTimeOutChecklist?
   materials AmbulatoryProcedureMaterial[]
   postanestheticNote AmbulatoryProcedurePostanestheticNote?
+  recoveryEvaluations AmbulatoryRecoveryEvaluation[]
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1838,6 +1839,212 @@ model AmbulatoryProcedurePostanestheticNote {
 
   @@index([anesthesiologistName])
   @@index([anesthesiologistLicense])
+}
+
+/// Documento clínico de vigilancia postprocedimiento inmediata.
+/// Proyecta datos críticos de recuperación para auditoría, egreso seguro y NOM-004.
+model AmbulatoryRecoveryEvaluation {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  procedureDocumentId String?
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  evaluationDate DateTime?
+  evaluationTime String?
+  postprocedureTime String?
+  monitoringFrequency String?
+  patientSymptoms String?
+  oralTolerance String?
+  ambulation String?
+  urination String?
+  consciousnessState String?
+  generalState String?
+  postprocedureExam String?
+  postprocedureComplications String?
+  complicationManagement String?
+
+  adverseEvent String?
+  adverseEventAction String?
+  surveillancePlan String?
+  recoveryTimeMinutes Int?
+  postRecoveryDestination String?
+  immediateChanges String?
+  alertsSummary String?
+  trafficLight String?
+  redAlertActive Boolean @default(false)
+  readyForDischarge Boolean @default(false)
+
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument? @relation(fields: [procedureDocumentId], references: [id])
+  vitalMeasurement AmbulatoryRecoveryVitalMeasurement?
+  aldreteScore AmbulatoryRecoveryAldreteScore?
+  dischargeChecklist AmbulatoryRecoveryDischargeChecklist?
+  alerts AmbulatoryRecoveryAlert[]
+  nursingRecords AmbulatoryRecoveryNursingRecord[]
+  auxiliaryServices AmbulatoryRecoveryAuxiliaryService[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([procedureDocumentId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([trafficLight])
+  @@index([redAlertActive])
+  @@index([readyForDischarge])
+  @@index([documentHash])
+}
+
+model AmbulatoryRecoveryVitalMeasurement {
+  id String @id @default(uuid())
+  recoveryEvaluationId String @unique
+  systolicBloodPressure Int?
+  diastolicBloodPressure Int?
+  heartRate Int?
+  respiratoryRate Int?
+  oxygenSaturation Decimal? @db.Decimal(5, 2)
+  temperatureC Decimal? @db.Decimal(4, 1)
+  painEva Int?
+  glasgow Int?
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  measuredAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([measuredAt])
+  @@index([oxygenSaturation])
+  @@index([painEva])
+  @@index([glasgow])
+}
+
+model AmbulatoryRecoveryAldreteScore {
+  id String @id @default(uuid())
+  recoveryEvaluationId String @unique
+  motorActivity Int?
+  respiration Int?
+  circulation Int?
+  consciousness Int?
+  oxygenSaturation Int?
+  totalScore Int?
+  interpretation String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([totalScore])
+}
+
+model AmbulatoryRecoveryDischargeChecklist {
+  id String @id @default(uuid())
+  recoveryEvaluationId String @unique
+  oralToleranceWithoutNausea Boolean @default(false)
+  independentAmbulation Boolean @default(false)
+  spontaneousUrination Boolean @default(false)
+  controlledPain Boolean @default(false)
+  noNauseaVomiting Boolean @default(false)
+  stableVitalsOneHour Boolean @default(false)
+  woundsWithoutBleeding Boolean @default(false)
+  aldreteAtLeastNine Boolean @default(false)
+  responsibleCompanionPresent Boolean @default(false)
+  dischargeInstructionsDelivered Boolean @default(false)
+  completed Boolean @default(false)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+}
+
+model AmbulatoryRecoveryAlert {
+  id String @id @default(uuid())
+  recoveryEvaluationId String
+  severity String
+  code String
+  message String
+  sourceMetric String?
+  createdAt DateTime @default(now())
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([severity])
+  @@index([code])
+}
+
+model AmbulatoryRecoveryNursingRecord {
+  id String @id @default(uuid())
+  recoveryEvaluationId String
+  recordDate DateTime?
+  recordTime String?
+  shift String?
+  authorName String?
+  habitusExterior String?
+  medicationAdministration String?
+  nursingProcedures String?
+  painEva Int?
+  fallRisk String?
+  observations String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([recordDate])
+  @@index([shift])
+  @@index([authorName])
+  @@index([fallRisk])
+}
+
+model AmbulatoryRecoveryAuxiliaryService {
+  id String @id @default(uuid())
+  recoveryEvaluationId String
+  studyDateTime DateTime?
+  requestedStudy String?
+  clinicalProblem String?
+  incidentsOrAccidents String?
+  resultsDescription String?
+  treatingPhysicianInterpretation String?
+  physicianName String?
+  studyFolio String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([studyDateTime])
+  @@index([requestedStudy])
+  @@index([studyFolio])
 }
 
 /// Evolución médica longitudinal dentro de un episodio de Urgencias.

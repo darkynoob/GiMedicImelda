@@ -210,7 +210,7 @@ const encounterTabsByType: Record<EncounterType, string[]> = {
     'Resumen',
     'Valoración preprocedimiento',
     'Procedimiento',
-    'Recuperación / Evolución',
+    'Recuperación / Evaluación',
     'Indicaciones / Receta',
     'Egreso',
     'Documentos',
@@ -741,6 +741,14 @@ export class EncountersService {
     if (this.isAmbulatoryProcedureRecord(encounter.encounterType, input.tabKey)) {
       await this.assertAmbulatoryProcedureStageEnabled(encounter.id);
     }
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      await this.assertAmbulatoryRecoveryEvaluationStageEnabled(encounter.id);
+    }
     const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
@@ -860,6 +868,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const ambulatoryRecoveryEvaluationVersionContext =
+      await this.resolveAmbulatoryRecoveryEvaluationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -901,6 +915,7 @@ export class EncountersService {
       hospitalDischargeVersionContext,
       ambulatoryPreprocedureVersionContext,
       ambulatoryProcedureVersionContext,
+      ambulatoryRecoveryEvaluationVersionContext,
       responsibleUser,
     });
 
@@ -1107,6 +1122,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryRecoveryEvaluation({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1147,6 +1174,14 @@ export class EncountersService {
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
     if (this.isAmbulatoryProcedureRecord(encounter.encounterType, input.tabKey)) {
       await this.assertAmbulatoryProcedureStageEnabled(encounter.id);
+    }
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      await this.assertAmbulatoryRecoveryEvaluationStageEnabled(encounter.id);
     }
     const recordedAt = input.recordedAt
       ? new Date(input.recordedAt)
@@ -1289,6 +1324,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const ambulatoryRecoveryEvaluationVersionContext =
+      await this.resolveAmbulatoryRecoveryEvaluationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1322,6 +1364,7 @@ export class EncountersService {
       hospitalDischargeVersionContext,
       ambulatoryPreprocedureVersionContext,
       ambulatoryProcedureVersionContext,
+      ambulatoryRecoveryEvaluationVersionContext,
       responsibleUser,
     });
 
@@ -1525,6 +1568,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryRecoveryEvaluation({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1638,6 +1693,31 @@ export class EncountersService {
         title: currentRecord.title,
         status: currentRecord.status,
         formData: procedureFormData,
+        metadata: currentMetadata,
+      });
+    }
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        currentRecord.encounterType,
+        currentRecord.tabKey,
+      )
+    ) {
+      const recoveryFormData =
+        currentRecord.formDataJson &&
+        typeof currentRecord.formDataJson === 'object' &&
+        !Array.isArray(currentRecord.formDataJson)
+          ? (currentRecord.formDataJson as Record<string, unknown>)
+          : {};
+      await this.syncAmbulatoryRecoveryEvaluation({
+        tenantId,
+        userId,
+        encounter,
+        sectionRecordId: currentRecord.id,
+        tabKey: currentRecord.tabKey,
+        recordedAt: currentRecord.recordedAt,
+        title: currentRecord.title,
+        status: currentRecord.status,
+        formData: recoveryFormData,
         metadata: currentMetadata,
       });
     }
@@ -2010,6 +2090,75 @@ export class EncountersService {
               hash: this.readStringValue(procedureFormData.hashProc),
               digitalSeal: this.readStringValue(procedureFormData.selloDigitalProc),
               availableForDischarge: true,
+            },
+          },
+        });
+      }
+
+      if (
+        this.isAmbulatoryRecoveryEvaluationRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const recoveryFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        const aldreteTotal = this.calculateAldreteTotal(recoveryFormData);
+        const alerts = this.buildAmbulatoryRecoveryEvaluationAlerts(
+          recoveryFormData,
+          aldreteTotal,
+        );
+        const readyForDischarge =
+          this.readStringValue(
+            recoveryFormData.destinoPostRecuperacionRecEval,
+          ) === 'ALTA_AMBULATORIA' &&
+          aldreteTotal !== null &&
+          aldreteTotal >= 9 &&
+          !alerts.some((alert) => alert.severity === 'ROJO') &&
+          this.ambulatoryRecoveryDischargeChecklistComplete(recoveryFormData);
+
+        await transaction.$executeRaw`
+          UPDATE "AmbulatoryRecoveryEvaluation"
+          SET "status" = ${EncounterRecordStatus.SIGNED},
+              "signerUserId" = ${userId},
+              "signedAt" = ${signedAt},
+              "readyForDischarge" = ${readyForDischarge},
+              "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${signedAt}),
+              "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(currentRecord.title)}.pdf`}),
+              "documentHash" = ${this.readStringValue(recoveryFormData.hashRecEval)},
+              "digitalSeal" = ${this.readStringValue(recoveryFormData.selloDigitalRecEval)},
+              "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'AmbulatoryRecoveryEvaluation',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              signedAt: signedAt.toISOString(),
+              status: EncounterRecordStatus.SIGNED,
+              hash: this.readStringValue(recoveryFormData.hashRecEval),
+              digitalSeal: this.readStringValue(
+                recoveryFormData.selloDigitalRecEval,
+              ),
+              readyForDischarge,
+              aldreteTotal,
+              redAlertActive: alerts.some((alert) => alert.severity === 'ROJO'),
             },
           },
         });
@@ -2421,7 +2570,11 @@ export class EncountersService {
       !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalDischargeRecord(record.encounterType, record.tabKey)
+      !this.isHospitalDischargeRecord(record.encounterType, record.tabKey) &&
+      !this.isAmbulatoryRecoveryEvaluationRecord(
+        record.encounterType,
+        record.tabKey,
+      )
     ) {
       throw new BadRequestException(
         'El documento debe estar firmado antes de descargarse',
@@ -2551,6 +2704,19 @@ export class EncountersService {
     if (this.isAmbulatoryProcedureRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "AmbulatoryProcedureDocument"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        record.encounterType,
+        record.tabKey,
+      )
+    ) {
+      await this.prisma.$executeRaw`
+        UPDATE "AmbulatoryRecoveryEvaluation"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -3868,6 +4034,42 @@ export class EncountersService {
     };
   }
 
+  private async resolveAmbulatoryRecoveryEvaluationVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (
+      !this.isAmbulatoryRecoveryEvaluationRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: { in: ['Recuperación / Evaluación', 'Recuperación / Evolución'] },
+        noteType: { in: ['Recuperación / Evaluación', 'Recuperación / Evolución'] },
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -3939,6 +4141,11 @@ export class EncountersService {
     ambulatoryProcedureVersionContext: Awaited<
       ReturnType<EncountersService['resolveAmbulatoryProcedureVersionContext']>
     >;
+    ambulatoryRecoveryEvaluationVersionContext: Awaited<
+      ReturnType<
+        EncountersService['resolveAmbulatoryRecoveryEvaluationVersionContext']
+      >
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -3947,6 +4154,48 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.ambulatoryRecoveryEvaluationVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildAmbulatoryRecoveryEvaluationFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+        versionNumber,
+        currentMetadata:
+          this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      });
+
+      return {
+        tabKey: 'Recuperación / Evaluación',
+        noteType: 'Recuperación / Evaluación',
+        title: `Recuperación / Evaluación V${versionNumber}`,
+        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Recuperación / Evaluación',
+          documentHash: formData.hashRecEval,
+          digitalSeal: formData.selloDigitalRecEval,
+          readyForDischarge: false,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isAmbulatoryProcedureRecord(
         input.encounter.encounterType,
@@ -5206,6 +5455,17 @@ export class EncountersService {
     return encounterType === EncounterType.SURGERY && tabKey === 'Procedimiento';
   }
 
+  private isAmbulatoryRecoveryEvaluationRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.SURGERY &&
+      (tabKey === 'Recuperación / Evaluación' ||
+        tabKey === 'Recuperación / Evolución')
+    );
+  }
+
   private async assertAmbulatoryProcedureStageEnabled(encounterId: string) {
     const signedPreprocedure = await this.prisma.encounterSectionRecord.findFirst({
       where: {
@@ -5221,6 +5481,25 @@ export class EncountersService {
     if (!signedPreprocedure) {
       throw new BadRequestException(
         'Firma la valoración preprocedimiento antes de avanzar a Procedimiento',
+      );
+    }
+  }
+
+  private async assertAmbulatoryRecoveryEvaluationStageEnabled(encounterId: string) {
+    const signedProcedure = await this.prisma.encounterSectionRecord.findFirst({
+      where: {
+        encounterId,
+        encounterType: EncounterType.SURGERY,
+        tabKey: 'Procedimiento',
+        noteType: 'Procedimiento',
+        status: EncounterRecordStatus.SIGNED,
+      },
+      select: { id: true },
+    });
+
+    if (!signedProcedure) {
+      throw new BadRequestException(
+        'Firma el procedimiento antes de avanzar a Recuperación / Evaluación',
       );
     }
   }
@@ -5840,6 +6119,178 @@ export class EncountersService {
         ? 'Complicaciones sin documentación completa.'
         : '',
     ].filter((alert) => alert.length > 0);
+  }
+
+  private buildAmbulatoryRecoveryEvaluationFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    versionNumber: number;
+    currentMetadata: Record<string, unknown>;
+  }) {
+    const aldreteTotal = this.calculateAldreteTotal(input.incomingFormData);
+    const alerts = this.buildAmbulatoryRecoveryEvaluationAlerts(
+      input.incomingFormData,
+      aldreteTotal,
+    );
+    const hasRedAlert = alerts.some((alert) => alert.severity === 'ROJO');
+    const hashSeed = JSON.stringify({
+      encounterId: input.encounter.id,
+      tabKey: 'Recuperación / Evaluación',
+      versionNumber: input.versionNumber,
+      recordedAt: input.recordedAt.toISOString(),
+      formData: input.incomingFormData,
+    });
+    const documentHash =
+      this.readStringValue(input.currentMetadata.documentHash) ||
+      createHash('sha256').update(hashSeed).digest('hex');
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistroRecEval: 'Recuperación / Evaluación',
+      versionRecEval: input.versionNumber,
+      fechaRecEval:
+        this.readStringValue(input.incomingFormData.fechaRecEval) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      horaValoracionRecEval:
+        this.readStringValue(input.incomingFormData.horaValoracionRecEval) ||
+        input.recordedAt.toISOString().slice(11, 16),
+      aldreteTotalRecEval:
+        aldreteTotal === null ? '' : String(aldreteTotal),
+      aldreteInterpretacionRecEval:
+        aldreteTotal === null
+          ? 'Aldrete pendiente de cálculo'
+          : `Aldrete ${aldreteTotal}/10 — ${aldreteTotal >= 9 ? 'Cumple criterios de alta' : 'No cumple criterios de alta'}`,
+      altaAldreteMayorIgual9RecEval:
+        aldreteTotal === null
+          ? Boolean(input.incomingFormData.altaAldreteMayorIgual9RecEval)
+          : aldreteTotal >= 9,
+      semaforoRecEval: hasRedAlert
+        ? 'Rojo - crítico'
+        : alerts.length > 0
+          ? 'Amarillo - vigilancia'
+          : 'Verde - normal',
+      alertasAutomaticasRecEval:
+        alerts.length > 0
+          ? alerts.map((alert) => `${alert.severity}: ${alert.message}`).join('\n')
+          : 'Sin alertas activas',
+      profesionalNombreRecEval:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      profesionalCedulaRecEval:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      profesionalEspecialidadRecEval:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionRecEval:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      hashRecEval: documentHash,
+      selloDigitalRecEval:
+        this.readStringValue(input.currentMetadata.digitalSeal) ||
+        `GIMEDIC-REC-EVAL-${String(input.versionNumber).padStart(3, '0')}-${documentHash.slice(0, 12)}`,
+    };
+  }
+
+  private calculateAldreteTotal(formData: Record<string, unknown>) {
+    const values = [
+      formData.aldreteActividadRecEval,
+      formData.aldreteRespiracionRecEval,
+      formData.aldreteCirculacionRecEval,
+      formData.aldreteConcienciaRecEval,
+      formData.aldreteSpo2RecEval,
+    ].map((value) => this.readRoundedNumericValue(value));
+
+    if (values.some((value) => value === null || value === undefined)) {
+      return null;
+    }
+
+    return values.reduce<number>((total, value) => total + (value ?? 0), 0);
+  }
+
+  private buildAmbulatoryRecoveryEvaluationAlerts(
+    formData: Record<string, unknown>,
+    aldreteTotal = this.calculateAldreteTotal(formData),
+  ) {
+    const alerts: Array<{
+      severity: 'VERDE' | 'AMARILLO' | 'ROJO';
+      code: string;
+      message: string;
+      sourceMetric: string;
+    }> = [];
+    const systolic = this.readRoundedNumericValue(formData.taSistolicaRecEval);
+    const diastolic = this.readRoundedNumericValue(formData.taDiastolicaRecEval);
+    const heartRate = this.readRoundedNumericValue(formData.fcRecEval);
+    const spo2 = this.readNumericValue(formData.spo2RecEval);
+    const temperature = this.readNumericValue(formData.temperaturaRecEval);
+    const painEva = this.readRoundedNumericValue(formData.dolorEvaRecEval);
+    const glasgow = this.readRoundedNumericValue(formData.glasgowRecEval);
+
+    if (spo2 !== null && spo2 < 92) {
+      alerts.push({
+        severity: 'ROJO',
+        code: 'SPO2_LOW',
+        message: 'SpO2 < 92%: bloqueo de alta.',
+        sourceMetric: 'spo2RecEval',
+      });
+    }
+    if (
+      (systolic !== null && (systolic < 90 || systolic > 180)) ||
+      (diastolic !== null && (diastolic < 50 || diastolic > 110))
+    ) {
+      alerts.push({
+        severity: 'ROJO',
+        code: 'BLOOD_PRESSURE_UNSAFE',
+        message: 'Tensión arterial fuera de rango seguro.',
+        sourceMetric: 'taRecEval',
+      });
+    }
+    if (painEva !== null && painEva > 6) {
+      alerts.push({
+        severity: 'AMARILLO',
+        code: 'PAIN_HIGH',
+        message: 'Dolor EVA > 6: continuar vigilancia.',
+        sourceMetric: 'dolorEvaRecEval',
+      });
+    }
+    if (glasgow !== null && glasgow < 15) {
+      alerts.push({
+        severity: 'ROJO',
+        code: 'GLASGOW_LOW',
+        message: 'Glasgow < 15: no permitir alta.',
+        sourceMetric: 'glasgowRecEval',
+      });
+    }
+    if (heartRate !== null && (heartRate < 50 || heartRate > 120)) {
+      alerts.push({
+        severity: 'AMARILLO',
+        code: 'HEART_RATE_WATCH',
+        message: 'FC fuera de rango de vigilancia.',
+        sourceMetric: 'fcRecEval',
+      });
+    }
+    if (temperature !== null && (temperature < 35.5 || temperature >= 38)) {
+      alerts.push({
+        severity: 'AMARILLO',
+        code: 'TEMPERATURE_WATCH',
+        message: 'Temperatura fuera de rango esperado.',
+        sourceMetric: 'temperaturaRecEval',
+      });
+    }
+    if (aldreteTotal !== null && aldreteTotal < 9) {
+      alerts.push({
+        severity: 'AMARILLO',
+        code: 'ALDRETE_LOW',
+        message: 'Aldrete < 9: continuar vigilancia.',
+        sourceMetric: 'aldreteTotalRecEval',
+      });
+    }
+
+    return alerts;
   }
 
   private buildAmbulatoryPreprocedureFormData(input: {
@@ -9147,6 +9598,146 @@ export class EncountersService {
     await this.syncAmbulatoryProcedureChildren(procedureDocument.id, input);
   }
 
+  private async syncAmbulatoryRecoveryEvaluation(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isAmbulatoryRecoveryEvaluationRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const documentHash = this.readStringValue(input.formData.hashRecEval);
+    const digitalSeal = this.readStringValue(input.formData.selloDigitalRecEval);
+    const aldreteTotal = this.calculateAldreteTotal(input.formData);
+    const alerts = this.buildAmbulatoryRecoveryEvaluationAlerts(
+      input.formData,
+      aldreteTotal,
+    );
+    const redAlertActive = alerts.some((alert) => alert.severity === 'ROJO');
+    const readyForDischarge =
+      input.status === EncounterRecordStatus.SIGNED &&
+      this.readStringValue(input.formData.destinoPostRecuperacionRecEval) ===
+        'ALTA_AMBULATORIA' &&
+      aldreteTotal !== null &&
+      aldreteTotal >= 9 &&
+      !redAlertActive &&
+      this.ambulatoryRecoveryDischargeChecklistComplete(input.formData);
+    const [procedureDocument] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryProcedureDocument"
+      WHERE "encounterId" = ${input.encounter.id} AND "status" = ${EncounterRecordStatus.SIGNED}
+      ORDER BY "versionNumber" DESC, "signedAt" DESC NULLS LAST, "createdAt" DESC
+      LIMIT 1
+    `;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryRecoveryEvaluation" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "procedureDocumentId", "versionNumber", "title", "status",
+        "recordedAt", "evaluationDate", "evaluationTime", "postprocedureTime",
+        "monitoringFrequency", "patientSymptoms", "oralTolerance", "ambulation",
+        "urination", "consciousnessState", "generalState", "postprocedureExam",
+        "postprocedureComplications", "complicationManagement", "adverseEvent",
+        "adverseEventAction", "surveillancePlan", "recoveryTimeMinutes",
+        "postRecoveryDestination", "immediateChanges", "alertsSummary",
+        "trafficLight", "redAlertActive", "readyForDischarge",
+        "professionalName", "professionalLicense", "professionalSpecialty",
+        "careLocation", "signerUserId", "signedAt", "documentHash",
+        "digitalSeal", "pdfGeneratedAt", "pdfFileName", "pdfDownloadCount",
+        "pdfLastDownloadedAt", "contentJson", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${procedureDocument?.id ?? null}, ${versionNumber}, ${input.title}, ${input.status},
+        ${input.recordedAt}, ${this.parseOptionalDate(input.formData.fechaRecEval)}, ${this.readStringValue(input.formData.horaValoracionRecEval)}, ${this.readStringValue(input.formData.tiempoPostprocedimientoRecEval)},
+        ${this.readStringValue(input.formData.frecuenciaMonitoreoRecEval)}, ${this.readStringValue(input.formData.sintomasPacienteRecEval)}, ${this.readStringValue(input.formData.toleranciaViaOralRecEval)}, ${this.readStringValue(input.formData.deambulacionRecEval)},
+        ${this.readStringValue(input.formData.miccionRecEval)}, ${this.readStringValue(input.formData.estadoConcienciaRecEval)}, ${this.readStringValue(input.formData.estadoGeneralRecEval)}, ${this.readStringValue(input.formData.exploracionPostprocedimientoRecEval)},
+        ${this.readStringValue(input.formData.complicacionesPostprocedimientoRecEval)}, ${this.readStringValue(input.formData.manejoComplicacionRecEval)}, ${this.readStringValue(input.formData.eventoAdversoRecEval)},
+        ${this.readStringValue(input.formData.descripcionAccionEventoRecEval)}, ${this.readStringValue(input.formData.planVigilanciaRecEval)}, ${this.readRoundedNumericValue(input.formData.tiempoEnRecuperacionMinRecEval)},
+        ${this.readStringValue(input.formData.destinoPostRecuperacionRecEval)}, ${this.readStringValue(input.formData.cambiosValoracionInmediataRecEval)}, ${this.readStringValue(input.formData.alertasAutomaticasRecEval)},
+        ${this.readStringValue(input.formData.semaforoRecEval)}, ${redAlertActive}, ${readyForDischarge},
+        ${this.readStringValue(input.formData.profesionalNombreRecEval)}, ${this.readStringValue(input.formData.profesionalCedulaRecEval)}, ${this.readStringValue(input.formData.profesionalEspecialidadRecEval)},
+        ${this.readStringValue(input.formData.lugarAtencionRecEval)}, ${signedAt ? input.userId : null}, ${signedAt}, ${documentHash},
+        ${digitalSeal}, ${signedAt}, ${input.status === EncounterRecordStatus.SIGNED ? `${this.sanitizeFileName(input.title)}.pdf` : null}, ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0},
+        ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.jsonbParameter(input.formData)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "procedureDocumentId" = EXCLUDED."procedureDocumentId",
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "evaluationDate" = EXCLUDED."evaluationDate",
+        "evaluationTime" = EXCLUDED."evaluationTime",
+        "postprocedureTime" = EXCLUDED."postprocedureTime",
+        "monitoringFrequency" = EXCLUDED."monitoringFrequency",
+        "patientSymptoms" = EXCLUDED."patientSymptoms",
+        "oralTolerance" = EXCLUDED."oralTolerance",
+        "ambulation" = EXCLUDED."ambulation",
+        "urination" = EXCLUDED."urination",
+        "consciousnessState" = EXCLUDED."consciousnessState",
+        "generalState" = EXCLUDED."generalState",
+        "postprocedureExam" = EXCLUDED."postprocedureExam",
+        "postprocedureComplications" = EXCLUDED."postprocedureComplications",
+        "complicationManagement" = EXCLUDED."complicationManagement",
+        "adverseEvent" = EXCLUDED."adverseEvent",
+        "adverseEventAction" = EXCLUDED."adverseEventAction",
+        "surveillancePlan" = EXCLUDED."surveillancePlan",
+        "recoveryTimeMinutes" = EXCLUDED."recoveryTimeMinutes",
+        "postRecoveryDestination" = EXCLUDED."postRecoveryDestination",
+        "immediateChanges" = EXCLUDED."immediateChanges",
+        "alertsSummary" = EXCLUDED."alertsSummary",
+        "trafficLight" = EXCLUDED."trafficLight",
+        "redAlertActive" = EXCLUDED."redAlertActive",
+        "readyForDischarge" = EXCLUDED."readyForDischarge",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "documentHash" = EXCLUDED."documentHash",
+        "digitalSeal" = EXCLUDED."digitalSeal",
+        "pdfGeneratedAt" = EXCLUDED."pdfGeneratedAt",
+        "pdfFileName" = EXCLUDED."pdfFileName",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+
+    const [recoveryEvaluation] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryRecoveryEvaluation"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+      LIMIT 1
+    `;
+    if (!recoveryEvaluation) {
+      return;
+    }
+
+    await this.syncAmbulatoryRecoveryEvaluationChildren(
+      recoveryEvaluation.id,
+      input,
+      alerts,
+      aldreteTotal,
+    );
+  }
+
   private async syncAmbulatoryPreprocedureChildren(
     assessmentId: string,
     input: {
@@ -9236,6 +9827,205 @@ export class EncountersService {
     }
 
     await this.syncAmbulatoryPreprocedureOneToOneChildren(assessmentId, input);
+  }
+
+  private async syncAmbulatoryRecoveryEvaluationChildren(
+    recoveryEvaluationId: string,
+    input: {
+      recordedAt: Date;
+      formData: Record<string, unknown>;
+    },
+    alerts: Array<{
+      severity: 'VERDE' | 'AMARILLO' | 'ROJO';
+      code: string;
+      message: string;
+      sourceMetric: string;
+    }>,
+    aldreteTotal: number | null,
+  ) {
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryRecoveryAlert" WHERE "recoveryEvaluationId" = ${recoveryEvaluationId}
+    `;
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryRecoveryNursingRecord" WHERE "recoveryEvaluationId" = ${recoveryEvaluationId}
+    `;
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryRecoveryAuxiliaryService" WHERE "recoveryEvaluationId" = ${recoveryEvaluationId}
+    `;
+
+    await this.syncAmbulatoryRecoveryVitals(recoveryEvaluationId, input);
+    await this.syncAmbulatoryRecoveryAldrete(
+      recoveryEvaluationId,
+      input,
+      aldreteTotal,
+    );
+    await this.syncAmbulatoryRecoveryDischargeChecklist(
+      recoveryEvaluationId,
+      input,
+    );
+
+    for (const alert of alerts) {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryRecoveryAlert" (
+          "id", "recoveryEvaluationId", "severity", "code", "message",
+          "sourceMetric", "createdAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${recoveryEvaluationId}, ${alert.severity},
+          ${alert.code}, ${alert.message}, ${alert.sourceMetric}, NOW()
+        )
+      `;
+    }
+
+    for (const item of this.readObjectArray(input.formData.registrosEnfermeriaRecEval)) {
+      if (!this.hasCapturedValue(item.fecha) && !this.hasCapturedValue(item.hora)) {
+        continue;
+      }
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryRecoveryNursingRecord" (
+          "id", "recoveryEvaluationId", "recordDate", "recordTime", "shift",
+          "authorName", "habitusExterior", "medicationAdministration",
+          "nursingProcedures", "painEva", "fallRisk", "observations",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${recoveryEvaluationId}, ${this.parseOptionalDate(item.fecha)}, ${this.readStringValue(item.hora)}, ${this.readStringValue(item.turno)},
+          ${this.readStringValue(item.nombreElabora)}, ${this.readStringValue(item.habitusExterior)}, ${this.readStringValue(item.ministracionMedicamentos)},
+          ${this.readStringValue(item.procedimientosEnfermeria)}, ${this.readRoundedNumericValue(item.dolorEva)}, ${this.readStringValue(item.riesgoCaidas)}, ${this.readStringValue(item.observaciones)},
+          NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const item of this.readObjectArray(input.formData.serviciosAuxiliaresRecEval)) {
+      if (!this.hasCapturedValue(item.estudioSolicitado) && !this.hasCapturedValue(item.folioEstudio)) {
+        continue;
+      }
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryRecoveryAuxiliaryService" (
+          "id", "recoveryEvaluationId", "studyDateTime", "requestedStudy",
+          "clinicalProblem", "incidentsOrAccidents", "resultsDescription",
+          "treatingPhysicianInterpretation", "physicianName", "studyFolio",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${recoveryEvaluationId}, ${this.parseOptionalDate(item.fechaHoraEstudio)}, ${this.readStringValue(item.estudioSolicitado)},
+          ${this.readStringValue(item.problemaClinico)}, ${this.readStringValue(item.incidentesAccidentes)}, ${this.readStringValue(item.descripcionResultados)},
+          ${this.readStringValue(item.interpretacionMedico)}, ${this.readStringValue(item.nombreMedico)}, ${this.readStringValue(item.folioEstudio)},
+          NOW(), NOW()
+        )
+      `;
+    }
+  }
+
+  private async syncAmbulatoryRecoveryVitals(
+    recoveryEvaluationId: string,
+    input: {
+      recordedAt: Date;
+      formData: Record<string, unknown>;
+    },
+  ) {
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryRecoveryVitalMeasurement" (
+        "id", "recoveryEvaluationId", "systolicBloodPressure",
+        "diastolicBloodPressure", "heartRate", "respiratoryRate",
+        "oxygenSaturation", "temperatureC", "painEva", "glasgow",
+        "capillaryGlucose", "measuredAt", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${recoveryEvaluationId}, ${this.readRoundedNumericValue(input.formData.taSistolicaRecEval)},
+        ${this.readRoundedNumericValue(input.formData.taDiastolicaRecEval)}, ${this.readRoundedNumericValue(input.formData.fcRecEval)}, ${this.readRoundedNumericValue(input.formData.frRecEval)},
+        ${this.readNumericValue(input.formData.spo2RecEval)}, ${this.readNumericValue(input.formData.temperaturaRecEval)}, ${this.readRoundedNumericValue(input.formData.dolorEvaRecEval)}, ${this.readRoundedNumericValue(input.formData.glasgowRecEval)},
+        ${this.readNumericValue(input.formData.glucosaCapilarRecEval)}, ${input.recordedAt}, NOW(), NOW()
+      )
+      ON CONFLICT ("recoveryEvaluationId") DO UPDATE SET
+        "systolicBloodPressure" = EXCLUDED."systolicBloodPressure",
+        "diastolicBloodPressure" = EXCLUDED."diastolicBloodPressure",
+        "heartRate" = EXCLUDED."heartRate",
+        "respiratoryRate" = EXCLUDED."respiratoryRate",
+        "oxygenSaturation" = EXCLUDED."oxygenSaturation",
+        "temperatureC" = EXCLUDED."temperatureC",
+        "painEva" = EXCLUDED."painEva",
+        "glasgow" = EXCLUDED."glasgow",
+        "capillaryGlucose" = EXCLUDED."capillaryGlucose",
+        "measuredAt" = EXCLUDED."measuredAt",
+        "updatedAt" = NOW()
+    `;
+  }
+
+  private async syncAmbulatoryRecoveryAldrete(
+    recoveryEvaluationId: string,
+    input: {
+      formData: Record<string, unknown>;
+    },
+    aldreteTotal: number | null,
+  ) {
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryRecoveryAldreteScore" (
+        "id", "recoveryEvaluationId", "motorActivity", "respiration",
+        "circulation", "consciousness", "oxygenSaturation", "totalScore",
+        "interpretation", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${recoveryEvaluationId}, ${this.readRoundedNumericValue(input.formData.aldreteActividadRecEval)}, ${this.readRoundedNumericValue(input.formData.aldreteRespiracionRecEval)},
+        ${this.readRoundedNumericValue(input.formData.aldreteCirculacionRecEval)}, ${this.readRoundedNumericValue(input.formData.aldreteConcienciaRecEval)}, ${this.readRoundedNumericValue(input.formData.aldreteSpo2RecEval)}, ${aldreteTotal},
+        ${this.readStringValue(input.formData.aldreteInterpretacionRecEval)}, NOW(), NOW()
+      )
+      ON CONFLICT ("recoveryEvaluationId") DO UPDATE SET
+        "motorActivity" = EXCLUDED."motorActivity",
+        "respiration" = EXCLUDED."respiration",
+        "circulation" = EXCLUDED."circulation",
+        "consciousness" = EXCLUDED."consciousness",
+        "oxygenSaturation" = EXCLUDED."oxygenSaturation",
+        "totalScore" = EXCLUDED."totalScore",
+        "interpretation" = EXCLUDED."interpretation",
+        "updatedAt" = NOW()
+    `;
+  }
+
+  private async syncAmbulatoryRecoveryDischargeChecklist(
+    recoveryEvaluationId: string,
+    input: {
+      recordedAt: Date;
+      formData: Record<string, unknown>;
+    },
+  ) {
+    const completed = this.ambulatoryRecoveryDischargeChecklistComplete(
+      input.formData,
+    );
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryRecoveryDischargeChecklist" (
+        "id", "recoveryEvaluationId", "oralToleranceWithoutNausea",
+        "independentAmbulation", "spontaneousUrination", "controlledPain",
+        "noNauseaVomiting", "stableVitalsOneHour", "woundsWithoutBleeding",
+        "aldreteAtLeastNine", "responsibleCompanionPresent",
+        "dischargeInstructionsDelivered", "completed", "completedAt",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${recoveryEvaluationId}, ${Boolean(input.formData.altaToleraViaOralRecEval)},
+        ${Boolean(input.formData.altaDeambulacionIndependienteRecEval)}, ${Boolean(input.formData.altaMiccionEspontaneaRecEval)}, ${Boolean(input.formData.altaDolorControladoRecEval)},
+        ${Boolean(input.formData.altaSinNauseaVomitoRecEval)}, ${Boolean(input.formData.altaSignosVitalesEstablesRecEval)}, ${Boolean(input.formData.altaHeridasSinSangradoRecEval)},
+        ${Boolean(input.formData.altaAldreteMayorIgual9RecEval)}, ${Boolean(input.formData.altaAcompananteResponsableRecEval)},
+        ${Boolean(input.formData.altaInstruccionesEntregadasRecEval)}, ${completed}, ${completed ? input.recordedAt : null},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("recoveryEvaluationId") DO UPDATE SET
+        "oralToleranceWithoutNausea" = EXCLUDED."oralToleranceWithoutNausea",
+        "independentAmbulation" = EXCLUDED."independentAmbulation",
+        "spontaneousUrination" = EXCLUDED."spontaneousUrination",
+        "controlledPain" = EXCLUDED."controlledPain",
+        "noNauseaVomiting" = EXCLUDED."noNauseaVomiting",
+        "stableVitalsOneHour" = EXCLUDED."stableVitalsOneHour",
+        "woundsWithoutBleeding" = EXCLUDED."woundsWithoutBleeding",
+        "aldreteAtLeastNine" = EXCLUDED."aldreteAtLeastNine",
+        "responsibleCompanionPresent" = EXCLUDED."responsibleCompanionPresent",
+        "dischargeInstructionsDelivered" = EXCLUDED."dischargeInstructionsDelivered",
+        "completed" = EXCLUDED."completed",
+        "completedAt" = EXCLUDED."completedAt",
+        "updatedAt" = NOW()
+    `;
   }
 
   private async syncAmbulatoryProcedureChildren(
@@ -11371,6 +12161,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildAmbulatoryRecoveryEvaluationPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -11789,6 +12602,81 @@ export class EncountersService {
       `Cédula: ${this.readStringValue(input.formData.profesionalCedulaProc)}`,
       `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadProc)}`,
       `Lugar: ${this.readStringValue(input.formData.lugarAtencionProc)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private buildAmbulatoryRecoveryEvaluationPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    const nursingLines = this.readObjectArray(
+      input.formData.registrosEnfermeriaRecEval,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.fecha)} ${this.readStringValue(item.hora)} · ${this.readStringValue(item.turno)} · ${this.readStringValue(item.nombreElabora)} · EVA ${this.readStringValue(item.dolorEva)} · Caídas ${this.readStringValue(item.riesgoCaidas)}`.trim(),
+    );
+    const auxiliaryLines = this.readObjectArray(
+      input.formData.serviciosAuxiliaresRecEval,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.fechaHoraEstudio)} · ${this.readStringValue(item.estudioSolicitado)} · Folio ${this.readStringValue(item.folioEstudio)} · ${this.readStringValue(item.interpretacionMedico)}`.trim(),
+    );
+    const checklistLines = [
+      ['Tolera vía oral', input.formData.altaToleraViaOralRecEval],
+      ['Deambulación independiente', input.formData.altaDeambulacionIndependienteRecEval],
+      ['Micción espontánea', input.formData.altaMiccionEspontaneaRecEval],
+      ['Dolor controlado', input.formData.altaDolorControladoRecEval],
+      ['Sin náusea/vómito', input.formData.altaSinNauseaVomitoRecEval],
+      ['Signos vitales estables', input.formData.altaSignosVitalesEstablesRecEval],
+      ['Heridas sin sangrado', input.formData.altaHeridasSinSangradoRecEval],
+      ['Aldrete >= 9', input.formData.altaAldreteMayorIgual9RecEval],
+      ['Acompañante responsable', input.formData.altaAcompananteResponsableRecEval],
+      ['Instrucciones entregadas', input.formData.altaInstruccionesEntregadasRecEval],
+    ].map(([label, value]) => `${label}: ${Boolean(value) ? 'Sí' : 'No'}`);
+    const lines = [
+      input.recordTitle,
+      'Tipo: Recuperación / Evaluación',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Expediente: ${input.encounter.medicalRecord.recordNumber}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Hash: ${this.readStringValue(input.formData.hashRecEval)}`,
+      `Sello digital: ${this.readStringValue(input.formData.selloDigitalRecEval)}`,
+      'Subjetivo',
+      `Valoración: ${this.readStringValue(input.formData.fechaRecEval)} ${this.readStringValue(input.formData.horaValoracionRecEval)} · Postprocedimiento ${this.readStringValue(input.formData.tiempoPostprocedimientoRecEval)}`,
+      `Frecuencia monitoreo: ${this.readStringValue(input.formData.frecuenciaMonitoreoRecEval)}`,
+      `Síntomas: ${this.readStringValue(input.formData.sintomasPacienteRecEval)}`,
+      `VO/deambulación/micción: ${this.readStringValue(input.formData.toleranciaViaOralRecEval)} / ${this.readStringValue(input.formData.deambulacionRecEval)} / ${this.readStringValue(input.formData.miccionRecEval)}`,
+      'Objetivo',
+      `TA/FC/FR/SpO2/T: ${this.readStringValue(input.formData.taSistolicaRecEval)}/${this.readStringValue(input.formData.taDiastolicaRecEval)} ${this.readStringValue(input.formData.fcRecEval)} ${this.readStringValue(input.formData.frRecEval)} ${this.readStringValue(input.formData.spo2RecEval)} ${this.readStringValue(input.formData.temperaturaRecEval)}`,
+      `EVA/Glasgow/Glucosa: ${this.readStringValue(input.formData.dolorEvaRecEval)} / ${this.readStringValue(input.formData.glasgowRecEval)} / ${this.readStringValue(input.formData.glucosaCapilarRecEval)}`,
+      `Conciencia/general: ${this.readStringValue(input.formData.estadoConcienciaRecEval)} / ${this.readStringValue(input.formData.estadoGeneralRecEval)}`,
+      `Exploración: ${this.readStringValue(input.formData.exploracionPostprocedimientoRecEval)}`,
+      `Complicaciones: ${this.readStringValue(input.formData.complicacionesPostprocedimientoRecEval)} · Manejo ${this.readStringValue(input.formData.manejoComplicacionRecEval)}`,
+      'Aldrete y criterios de alta',
+      `Aldrete: ${this.readStringValue(input.formData.aldreteTotalRecEval)} · ${this.readStringValue(input.formData.aldreteInterpretacionRecEval)}`,
+      ...checklistLines,
+      `Semáforo: ${this.readStringValue(input.formData.semaforoRecEval)}`,
+      `Alertas: ${this.readStringValue(input.formData.alertasAutomaticasRecEval)}`,
+      'Eventos y plan',
+      `Evento adverso: ${this.readStringValue(input.formData.eventoAdversoRecEval)} · ${this.readStringValue(input.formData.descripcionAccionEventoRecEval)}`,
+      `Plan vigilancia: ${this.readStringValue(input.formData.planVigilanciaRecEval)}`,
+      `Tiempo recuperación: ${this.readStringValue(input.formData.tiempoEnRecuperacionMinRecEval)} min`,
+      `Destino: ${this.readStringValue(input.formData.destinoPostRecuperacionRecEval)}`,
+      `Cambios: ${this.readStringValue(input.formData.cambiosValoracionInmediataRecEval)}`,
+      'Registros de enfermería:',
+      ...(nursingLines.length > 0 ? nursingLines : ['Sin registros de enfermería agregados']),
+      'Servicios auxiliares:',
+      ...(auxiliaryLines.length > 0 ? auxiliaryLines : ['Sin servicios auxiliares vinculados']),
+      'Datos legales',
+      `Profesional: ${this.readStringValue(input.formData.profesionalNombreRecEval)}`,
+      `Cédula: ${this.readStringValue(input.formData.profesionalCedulaRecEval)}`,
+      `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadRecEval)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionRecEval)}`,
       `Descargas registradas: ${input.downloadCount}`,
     ];
 
@@ -12548,6 +13436,10 @@ export class EncountersService {
       this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
         ? this.resolveAmbulatoryProcedureRequiredFields(formData)
         : [];
+    const ambulatoryRecoveryEvaluationRequiredFields =
+      this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)
+        ? this.resolveAmbulatoryRecoveryEvaluationRequiredFields(formData)
+        : [];
 
     const missingFields = [
       ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
@@ -12569,6 +13461,7 @@ export class EncountersService {
       ...hospitalDocumentRequiredFields,
       ...ambulatoryPreprocedureRequiredFields,
       ...ambulatoryProcedureRequiredFields,
+      ...ambulatoryRecoveryEvaluationRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -12608,8 +13501,14 @@ export class EncountersService {
                                       ? 'Completa los campos obligatorios de la valoración preprocedimiento antes de firmarla'
                                       : this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
                                         ? 'Completa los campos obligatorios del procedimiento antes de firmarlo'
+                                        : this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)
+                                          ? 'Completa los campos obligatorios de Recuperación / Evaluación antes de firmarla'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)) {
+      this.assertAmbulatoryRecoveryEvaluationReadyForSignature(formData);
     }
 
     if (this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)) {
@@ -12829,6 +13728,124 @@ export class EncountersService {
         'Captura el folio de patología cuando se envíe pieza quirúrgica',
       );
     }
+  }
+
+  private resolveAmbulatoryRecoveryEvaluationRequiredFields(
+    formData: Record<string, unknown>,
+  ) {
+    const baseRequiredFields = [
+      'fechaRecEval',
+      'horaValoracionRecEval',
+      'sintomasPacienteRecEval',
+      'toleranciaViaOralRecEval',
+      'deambulacionRecEval',
+      'miccionRecEval',
+      'taSistolicaRecEval',
+      'taDiastolicaRecEval',
+      'fcRecEval',
+      'frRecEval',
+      'spo2RecEval',
+      'temperaturaRecEval',
+      'dolorEvaRecEval',
+      'estadoConcienciaRecEval',
+      'estadoGeneralRecEval',
+      'exploracionPostprocedimientoRecEval',
+      'complicacionesPostprocedimientoRecEval',
+      'aldreteActividadRecEval',
+      'aldreteRespiracionRecEval',
+      'aldreteCirculacionRecEval',
+      'aldreteConcienciaRecEval',
+      'aldreteSpo2RecEval',
+      'aldreteTotalRecEval',
+      'planVigilanciaRecEval',
+      'destinoPostRecuperacionRecEval',
+      'profesionalNombreRecEval',
+      'profesionalCedulaRecEval',
+      'profesionalEspecialidadRecEval',
+      'lugarAtencionRecEval',
+    ];
+
+    return [
+      ...baseRequiredFields,
+      ...(this.readStringValue(formData.complicacionesPostprocedimientoRecEval) ===
+      'SI'
+        ? ['manejoComplicacionRecEval']
+        : []),
+      ...(this.readStringValue(formData.eventoAdversoRecEval) === 'SI'
+        ? ['descripcionAccionEventoRecEval']
+        : []),
+    ];
+  }
+
+  private assertAmbulatoryRecoveryEvaluationReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const aldreteTotal = this.calculateAldreteTotal(formData);
+    if (aldreteTotal === null) {
+      throw new BadRequestException(
+        'Calcula la escala de Aldrete antes de firmar Recuperación / Evaluación',
+      );
+    }
+
+    if (
+      this.readStringValue(formData.complicacionesPostprocedimientoRecEval) ===
+        'SI' &&
+      !this.hasCapturedValue(formData.manejoComplicacionRecEval)
+    ) {
+      throw new BadRequestException(
+        'Documenta el manejo de la complicación antes de firmar',
+      );
+    }
+
+    if (
+      this.readStringValue(formData.eventoAdversoRecEval) === 'SI' &&
+      !this.hasCapturedValue(formData.descripcionAccionEventoRecEval)
+    ) {
+      throw new BadRequestException(
+        'Documenta la descripción y acción del evento adverso antes de firmar',
+      );
+    }
+
+    const alerts = this.buildAmbulatoryRecoveryEvaluationAlerts(
+      formData,
+      aldreteTotal,
+    );
+    const hasRedAlert = alerts.some((alert) => alert.severity === 'ROJO');
+    const destination = this.readStringValue(formData.destinoPostRecuperacionRecEval);
+    if (destination === 'ALTA_AMBULATORIA') {
+      if (aldreteTotal < 9) {
+        throw new BadRequestException(
+          'No se puede indicar alta ambulatoria con Aldrete menor a 9',
+        );
+      }
+      if (!this.ambulatoryRecoveryDischargeChecklistComplete(formData)) {
+        throw new BadRequestException(
+          'Completa todos los criterios de alta ambulatoria antes de firmar',
+        );
+      }
+      if (hasRedAlert) {
+        throw new BadRequestException(
+          'No se puede indicar alta ambulatoria con alerta roja activa',
+        );
+      }
+    }
+  }
+
+  private ambulatoryRecoveryDischargeChecklistComplete(
+    formData: Record<string, unknown>,
+  ) {
+    return [
+      'altaToleraViaOralRecEval',
+      'altaDeambulacionIndependienteRecEval',
+      'altaMiccionEspontaneaRecEval',
+      'altaDolorControladoRecEval',
+      'altaSinNauseaVomitoRecEval',
+      'altaSignosVitalesEstablesRecEval',
+      'altaHeridasSinSangradoRecEval',
+      'altaAldreteMayorIgual9RecEval',
+      'altaAcompananteResponsableRecEval',
+      'altaInstruccionesEntregadasRecEval',
+    ].every((fieldKey) => Boolean(formData[fieldKey]));
   }
 
   private ambulatoryProcedureHasAnesthesia(formData: Record<string, unknown>) {

@@ -168,6 +168,10 @@ const surgeryConfig: Record<string, EpisodeRecordPanelConfig> = {
     contextLabel: 'Notas del procedimiento',
     defaultActionLabel: 'Nueva nota del procedimiento',
   },
+  'Recuperación / Evaluación': {
+    contextLabel: 'Notas de recuperación',
+    defaultActionLabel: 'Nueva nota postprocedimiento',
+  },
   'Recuperación / Evolución': {
     contextLabel: 'Notas de recuperación',
     defaultActionLabel: 'Nueva nota postprocedimiento',
