@@ -1666,7 +1666,7 @@ export function PatientEditModal({
             ) : null}
 
             
-            <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
+            <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
               <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
                 {modalSections.map((section, index) => {
                   const isCurrentSection = section.id === activeSection;
