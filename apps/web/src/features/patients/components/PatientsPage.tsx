@@ -227,7 +227,7 @@ export function PatientsPage() {
                   >
                     <td className="p-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
                           <Users className="h-3.5 w-3.5 text-primary" />
                         </div>
                         <div>
@@ -240,7 +240,7 @@ export function PatientsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="hidden p-3 font-mono text-xs text-muted-foreground md:table-cell">
+                    <td className="hidden p-3 text-xs text-muted-foreground md:table-cell">
                       {patient.curp ?? 'Sin CURP'}
                     </td>
                     <td className="hidden p-3 lg:table-cell">

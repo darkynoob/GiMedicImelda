@@ -9,7 +9,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowLeft,
-  BadgePlus,
   Building2,
   CheckCircle2,
   FilePlus2,
@@ -638,7 +637,7 @@ function SectionCard({
     <section className="clinical-card rounded-xl border border-slate-200/60 bg-white shadow-sm">
       <div className="px-5 pt-5 pb-3">
         <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-primary/10 p-2 text-primary">
+          <div className="rounded-xl bg-primary/10 p-2 text-primary">
             <Icon className="h-4 w-4" />
           </div>
           <div>
@@ -1369,7 +1368,7 @@ export function NewPatientPage() {
             <div className="clinical-card overflow-hidden">
               <div className="px-5 pt-5 pb-3">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                  <div className="rounded-xl bg-primary/10 p-2 text-primary">
                     <ShieldCheck className="h-4 w-4" />
                   </div>
                   <div>
@@ -1401,7 +1400,7 @@ export function NewPatientPage() {
             <div className="clinical-card rounded-xl border border-slate-200/60 bg-white shadow-sm">
               <div className="px-5 pt-5 pb-3">
                 <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                  <div className="rounded-xl bg-primary/10 p-2 text-primary">
                     <IdCard className="h-4 w-4" />
                   </div>
                   <div>

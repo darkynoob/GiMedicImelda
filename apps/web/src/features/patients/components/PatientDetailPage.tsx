@@ -15,8 +15,7 @@ import {
   Phone,
   Pill,
   Activity,
-  Eye,
-  Users,
+  Eye
 } from 'lucide-react';
 import { AppLayout } from '../../../components/layout/AppLayout';
 import { Badge } from '../../../components/ui/badge';
@@ -90,8 +89,8 @@ export function PatientDetailPage() {
           <div className="clinical-card p-5">
             <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
               <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50 border border-blue-100">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary font-semibold">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-primary font-semibold">
                       {getInitials(patient?.fullName) || 'P'}
                     </div>
                 </div>

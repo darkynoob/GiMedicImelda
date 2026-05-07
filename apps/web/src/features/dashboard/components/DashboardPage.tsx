@@ -67,7 +67,7 @@ export function DashboardPage() {
                   Actualizado en vivo
                 </p>
               </div>
-              <div className={`rounded-md p-1.5 sm:p-2 ${metric.color}`}>
+              <div className={`rounded-xl p-1.5 sm:p-2 ${metric.color}`}>
                 <metric.icon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </div>
@@ -137,7 +137,7 @@ export function DashboardPage() {
                 summaryQuery.data.recentEncounters.map((encounter) => (
                   <div className="flex cursor-pointer transition-all active:scale-[0.99] items-center justify-between px-4 py-3 transition-colors hover:bg-muted/30" key={encounter.id}>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
                         <Users className="h-4 w-4 text-primary" />
                       </div>
                       <div>
