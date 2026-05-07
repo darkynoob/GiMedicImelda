@@ -176,14 +176,13 @@ const surgeryConfig: Record<string, EpisodeRecordPanelConfig> = {
     contextLabel: 'Notas de recuperación',
     defaultActionLabel: 'Nueva nota postprocedimiento',
   },
+  'Receta e indicaciones de egreso': {
+    contextLabel: 'Indicaciones y recetas',
+    defaultActionLabel: 'Nueva receta e indicaciones',
+  },
   'Indicaciones / Receta': {
     contextLabel: 'Indicaciones y recetas',
-    defaultActionLabel: 'Nueva indicación',
-    noteTypes: [
-      'Indicaciones de egreso',
-      'Receta médica',
-      'Solicitud de estudios',
-    ],
+    defaultActionLabel: 'Nueva receta e indicaciones',
   },
   Egreso: {
     contextLabel: 'Notas de egreso',

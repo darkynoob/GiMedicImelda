@@ -211,7 +211,7 @@ const encounterTabsByType: Record<EncounterType, string[]> = {
     'Valoración preprocedimiento',
     'Procedimiento',
     'Recuperación / Evaluación',
-    'Indicaciones / Receta',
+    'Receta e indicaciones de egreso',
     'Egreso',
     'Documentos',
   ],
@@ -874,6 +874,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const ambulatoryDischargePrescriptionVersionContext =
+      await this.resolveAmbulatoryDischargePrescriptionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -916,6 +922,7 @@ export class EncountersService {
       ambulatoryPreprocedureVersionContext,
       ambulatoryProcedureVersionContext,
       ambulatoryRecoveryEvaluationVersionContext,
+      ambulatoryDischargePrescriptionVersionContext,
       responsibleUser,
     });
 
@@ -1134,6 +1141,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryDischargePrescription({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1331,6 +1350,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const ambulatoryDischargePrescriptionVersionContext =
+      await this.resolveAmbulatoryDischargePrescriptionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1365,6 +1391,7 @@ export class EncountersService {
       ambulatoryPreprocedureVersionContext,
       ambulatoryProcedureVersionContext,
       ambulatoryRecoveryEvaluationVersionContext,
+      ambulatoryDischargePrescriptionVersionContext,
       responsibleUser,
     });
 
@@ -1580,6 +1607,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryDischargePrescription({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1718,6 +1757,31 @@ export class EncountersService {
         title: currentRecord.title,
         status: currentRecord.status,
         formData: recoveryFormData,
+        metadata: currentMetadata,
+      });
+    }
+    if (
+      this.isAmbulatoryDischargePrescriptionRecord(
+        currentRecord.encounterType,
+        currentRecord.tabKey,
+      )
+    ) {
+      const prescriptionFormData =
+        currentRecord.formDataJson &&
+        typeof currentRecord.formDataJson === 'object' &&
+        !Array.isArray(currentRecord.formDataJson)
+          ? (currentRecord.formDataJson as Record<string, unknown>)
+          : {};
+      await this.syncAmbulatoryDischargePrescription({
+        tenantId,
+        userId,
+        encounter,
+        sectionRecordId: currentRecord.id,
+        tabKey: currentRecord.tabKey,
+        recordedAt: currentRecord.recordedAt,
+        title: currentRecord.title,
+        status: currentRecord.status,
+        formData: prescriptionFormData,
         metadata: currentMetadata,
       });
     }
@@ -2165,6 +2229,82 @@ export class EncountersService {
       }
 
       if (
+        this.isAmbulatoryDischargePrescriptionRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const prescriptionFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        const verificationCode =
+          this.extractRecordVersionMetadata(currentRecord.metadataJson)
+            .verificationCode ?? randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+        const qrValue = `GIMEDIC-QR:${this.readStringValue(prescriptionFormData.folioRecetaEgreso)}:${verificationCode}`;
+
+        await transaction.encounterSectionRecord.update({
+          where: { id: currentRecord.id },
+          data: {
+            formDataJson: {
+              ...prescriptionFormData,
+              qrActivoRecetaEgreso: 'SI',
+              qrVerificacionRecetaEgreso: qrValue,
+            } as Prisma.InputJsonValue,
+            metadataJson: {
+              ...currentMetadata,
+              signedByUserId: currentUser.id,
+              signedByUserName: currentUser.fullName,
+              signedAt: signedAt.toISOString(),
+              signedWithPasswordValidation: true,
+              qrActive: true,
+              verificationCode,
+              documentHash: this.readStringValue(prescriptionFormData.hashRecetaEgreso),
+              digitalSeal: this.readStringValue(prescriptionFormData.selloDigitalRecetaEgreso),
+            } as Prisma.InputJsonValue,
+          },
+        });
+        await transaction.$executeRaw`
+          UPDATE "AmbulatoryDischargePrescription"
+          SET "status" = ${EncounterRecordStatus.SIGNED},
+              "signerUserId" = ${userId},
+              "signedAt" = ${signedAt},
+              "qrActive" = true,
+              "verificationQr" = ${qrValue},
+              "prescriptionPdfGeneratedAt" = COALESCE("prescriptionPdfGeneratedAt", ${signedAt}),
+              "completePdfGeneratedAt" = COALESCE("completePdfGeneratedAt", ${signedAt}),
+              "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(currentRecord.title)}.pdf`}),
+              "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'AmbulatoryDischargePrescription',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              signedAt: signedAt.toISOString(),
+              status: EncounterRecordStatus.SIGNED,
+              folio: this.readStringValue(prescriptionFormData.folioRecetaEgreso),
+              qrActive: true,
+            },
+          },
+        });
+      }
+
+      if (
         this.isHospitalAdmissionRecord(
           currentRecord.encounterType,
           currentRecord.tabKey,
@@ -2574,6 +2714,10 @@ export class EncountersService {
       !this.isAmbulatoryRecoveryEvaluationRecord(
         record.encounterType,
         record.tabKey,
+      ) &&
+      !this.isAmbulatoryDischargePrescriptionRecord(
+        record.encounterType,
+        record.tabKey,
       )
     ) {
       throw new BadRequestException(
@@ -2718,6 +2862,19 @@ export class EncountersService {
       await this.prisma.$executeRaw`
         UPDATE "AmbulatoryRecoveryEvaluation"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (
+      this.isAmbulatoryDischargePrescriptionRecord(
+        record.encounterType,
+        record.tabKey,
+      )
+    ) {
+      await this.prisma.$executeRaw`
+        UPDATE "AmbulatoryDischargePrescription"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "completePdfGeneratedAt" = COALESCE("completePdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
     }
@@ -4070,6 +4227,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveAmbulatoryDischargePrescriptionVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: { in: ['Receta e indicaciones de egreso', 'Indicaciones / Receta'] },
+        noteType: { in: ['Receta e indicaciones de egreso', 'Indicaciones de egreso', 'Receta médica'] },
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -4146,6 +4334,11 @@ export class EncountersService {
         EncountersService['resolveAmbulatoryRecoveryEvaluationVersionContext']
       >
     >;
+    ambulatoryDischargePrescriptionVersionContext: Awaited<
+      ReturnType<
+        EncountersService['resolveAmbulatoryDischargePrescriptionVersionContext']
+      >
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -4154,6 +4347,59 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isAmbulatoryDischargePrescriptionRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.ambulatoryDischargePrescriptionVersionContext?.nextVersionNumber ??
+        1;
+      const prescriptionFolio =
+        currentRecordMetadata.prescriptionFolio ??
+        (this.readStringValue(input.input.formData.folioRecetaEgreso) ||
+          `${input.encounter.encounterNumber}-RA${String(versionNumber).padStart(2, '0')}`);
+      const verificationCode =
+        currentRecordMetadata.verificationCode ??
+        randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+      const formData = this.buildAmbulatoryDischargePrescriptionFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+        versionNumber,
+        prescriptionFolio,
+        verificationCode,
+        currentMetadata:
+          this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      });
+
+      return {
+        tabKey: 'Receta e indicaciones de egreso',
+        noteType: 'Receta e indicaciones de egreso',
+        title: `Receta e indicaciones de egreso V${versionNumber}`,
+        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Receta e indicaciones de egreso',
+          prescriptionFolio,
+          verificationCode,
+          documentHash: formData.hashRecetaEgreso,
+          digitalSeal: formData.selloDigitalRecetaEgreso,
+          qrActive: formData.qrActivoRecetaEgreso === 'SI',
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isAmbulatoryRecoveryEvaluationRecord(
         input.encounter.encounterType,
@@ -5466,6 +5712,17 @@ export class EncountersService {
     );
   }
 
+  private isAmbulatoryDischargePrescriptionRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.SURGERY &&
+      (tabKey === 'Receta e indicaciones de egreso' ||
+        tabKey === 'Indicaciones / Receta')
+    );
+  }
+
   private async assertAmbulatoryProcedureStageEnabled(encounterId: string) {
     const signedPreprocedure = await this.prisma.encounterSectionRecord.findFirst({
       where: {
@@ -6194,6 +6451,151 @@ export class EncountersService {
         this.readStringValue(input.currentMetadata.digitalSeal) ||
         `GIMEDIC-REC-EVAL-${String(input.versionNumber).padStart(3, '0')}-${documentHash.slice(0, 12)}`,
     };
+  }
+
+  private buildAmbulatoryDischargePrescriptionFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    versionNumber: number;
+    prescriptionFolio: string;
+    verificationCode: string;
+    currentMetadata: Record<string, unknown>;
+  }) {
+    const alerts = this.buildAmbulatoryDischargePrescriptionValidations({
+      encounter: input.encounter,
+      formData: input.incomingFormData,
+    });
+    const hasRedAlert = alerts.some((alert) => alert.severity === 'ROJO');
+    const hashSeed = JSON.stringify({
+      encounterId: input.encounter.id,
+      tabKey: 'Receta e indicaciones de egreso',
+      versionNumber: input.versionNumber,
+      prescriptionFolio: input.prescriptionFolio,
+      formData: input.incomingFormData,
+    });
+    const documentHash =
+      this.readStringValue(input.currentMetadata.documentHash) ||
+      createHash('sha256').update(hashSeed).digest('hex');
+    const qrActive = this.readStringValue(input.currentMetadata.qrActive) === 'true';
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistroRecetaEgreso: 'Receta e indicaciones de egreso',
+      versionRecetaEgreso: input.versionNumber,
+      folioRecetaEgreso: input.prescriptionFolio,
+      fechaEmisionRecetaEgreso:
+        this.readStringValue(input.incomingFormData.fechaEmisionRecetaEgreso) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      vigenciaRecetaEgreso:
+        this.readStringValue(input.incomingFormData.vigenciaRecetaEgreso) ||
+        '7 días',
+      institucionEmisoraRecetaEgreso:
+        input.encounter.facility?.institutionName ??
+        input.encounter.facility?.legalName ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      rfcMedicoRecetaEgreso:
+        input.encounter.tenant.taxId || 'RFC no configurado',
+      licenciaSanitariaRecetaEgreso:
+        input.encounter.facility?.legalName ?? 'Licencia no configurada',
+      qrVerificacionRecetaEgreso: qrActive
+        ? `GIMEDIC-QR:${input.prescriptionFolio}:${input.verificationCode}`
+        : 'Se activará al firmar',
+      qrActivoRecetaEgreso: qrActive ? 'SI' : 'NO',
+      alertasAlergiasRecetaEgreso:
+        alerts
+          .filter((alert) => alert.validationType === 'ALERGIA')
+          .map((alert) => alert.message)
+          .join('\n') || 'Sin alergias conflictivas detectadas automáticamente',
+      validacionesMedicamentosRecetaEgreso:
+        alerts.length > 0
+          ? alerts.map((alert) => `${alert.severity}: ${alert.message}`).join('\n')
+          : 'VERDE: sin problemas detectados',
+      semaforoMedicamentosRecetaEgreso: hasRedAlert
+        ? 'Rojo - bloqueo'
+        : alerts.length > 0
+          ? 'Amarillo - precaución'
+          : 'Verde - sin problemas',
+      profesionalNombreRecetaEgreso:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      profesionalCedulaRecetaEgreso:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      profesionalEspecialidadRecetaEgreso:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionRecetaEgreso:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      hashRecetaEgreso: documentHash,
+      selloDigitalRecetaEgreso:
+        this.readStringValue(input.currentMetadata.digitalSeal) ||
+        `GIMEDIC-RECETA-EGRESO-${String(input.versionNumber).padStart(3, '0')}-${documentHash.slice(0, 12)}`,
+    };
+  }
+
+  private buildAmbulatoryDischargePrescriptionValidations(input: {
+    encounter: TenantEncounterRecord;
+    formData: Record<string, unknown>;
+  }) {
+    const medications = this.readObjectArray(input.formData.medicamentosRecetaEgreso);
+    const normalizedNames = medications
+      .map((item) => this.readStringValue(item.medicamento).toLowerCase().trim())
+      .filter(Boolean);
+    const allergyText = [
+      input.encounter.allergies.map((allergy) => allergy.substance).join(', '),
+      input.encounter.patient.allergiesNotes ?? '',
+    ].join(' ').toLowerCase();
+    const validations: Array<{
+      severity: 'VERDE' | 'AMARILLO' | 'ROJO';
+      validationType: string;
+      message: string;
+      blocking: boolean;
+    }> = [];
+    const duplicates = normalizedNames.filter(
+      (name, index) => normalizedNames.indexOf(name) !== index,
+    );
+    if (duplicates.length > 0) {
+      validations.push({
+        severity: 'AMARILLO',
+        validationType: 'DUPLICIDAD',
+        message: `Duplicidad terapéutica posible: ${[...new Set(duplicates)].join(', ')}`,
+        blocking: false,
+      });
+    }
+    if (
+      allergyText.includes('penic') &&
+      normalizedNames.some((name) =>
+        ['penicilina', 'amoxicilina', 'ampicilina'].some((keyword) =>
+          name.includes(keyword),
+        ),
+      )
+    ) {
+      validations.push({
+        severity: 'ROJO',
+        validationType: 'ALERGIA',
+        message: 'Alergia registrada a penicilinas y medicamento relacionado indicado.',
+        blocking: true,
+      });
+    }
+    if (
+      normalizedNames.some((name) => name.includes('warfarina')) &&
+      normalizedNames.some((name) => name.includes('ibuprofeno'))
+    ) {
+      validations.push({
+        severity: 'ROJO',
+        validationType: 'INTERACCION',
+        message: 'Interacción grave: warfarina con ibuprofeno aumenta riesgo de sangrado.',
+        blocking: true,
+      });
+    }
+
+    return validations;
   }
 
   private calculateAldreteTotal(formData: Record<string, unknown>) {
@@ -9738,6 +10140,130 @@ export class EncountersService {
     );
   }
 
+  private async syncAmbulatoryDischargePrescription(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isAmbulatoryDischargePrescriptionRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const validations = this.buildAmbulatoryDischargePrescriptionValidations({
+      encounter: input.encounter,
+      formData: input.formData,
+    });
+    const qrActive =
+      input.status === EncounterRecordStatus.SIGNED ||
+      this.readStringValue(input.formData.qrActivoRecetaEgreso) === 'SI';
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryDischargePrescription" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "prescriptionFolio",
+        "prescriptionType", "issuedAt", "validity", "issuerInstitution",
+        "physicianRfc", "sanitaryLicense", "verificationQr", "qrActive",
+        "allergyAlerts", "medicationValidationSummary", "medicationTrafficLight",
+        "dietInstructions", "physicalActivityLevel", "physicalActivityDetail",
+        "woundCare", "homeMonitoring", "alarmSigns", "followUpDate",
+        "followUpType", "followUpReason", "patientEducation",
+        "patientUnderstands", "companionInformed", "professionalName",
+        "professionalLicense", "professionalSpecialty", "careLocation",
+        "signerUserId", "signedAt", "documentHash", "digitalSeal",
+        "prescriptionPdfGeneratedAt", "completePdfGeneratedAt", "pdfFileName",
+        "pdfDownloadCount", "pdfLastDownloadedAt", "contentJson", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.folioRecetaEgreso)},
+        ${this.readStringValue(input.formData.tipoRecetaEgreso)}, ${this.parseOptionalDate(input.formData.fechaEmisionRecetaEgreso)}, ${this.readStringValue(input.formData.vigenciaRecetaEgreso)}, ${this.readStringValue(input.formData.institucionEmisoraRecetaEgreso)},
+        ${this.readStringValue(input.formData.rfcMedicoRecetaEgreso)}, ${this.readStringValue(input.formData.licenciaSanitariaRecetaEgreso)}, ${this.readStringValue(input.formData.qrVerificacionRecetaEgreso)}, ${qrActive},
+        ${this.readStringValue(input.formData.alertasAlergiasRecetaEgreso)}, ${this.readStringValue(input.formData.validacionesMedicamentosRecetaEgreso)}, ${this.readStringValue(input.formData.semaforoMedicamentosRecetaEgreso)},
+        ${this.readStringValue(input.formData.dietaIndicacionesEgreso)}, ${this.readStringValue(input.formData.actividadFisicaNivelEgreso)}, ${this.readStringValue(input.formData.actividadFisicaDetalleEgreso)},
+        ${this.readStringValue(input.formData.cuidadosHeridaEgreso)}, ${this.readStringValue(input.formData.vigilanciaDomiciliariaEgreso)}, ${this.readStringValue(input.formData.signosAlarmaEgreso)}, ${this.parseOptionalDate(input.formData.fechaCitaSeguimientoEgreso)},
+        ${this.readStringValue(input.formData.tipoCitaSeguimientoEgreso)}, ${this.readStringValue(input.formData.motivoCitaSeguimientoEgreso)}, ${this.readStringValue(input.formData.educacionOtorgadaEgreso)},
+        ${Boolean(input.formData.pacienteComprendeIndicacionesEgreso)}, ${Boolean(input.formData.familiarInformadoEgreso)}, ${this.readStringValue(input.formData.profesionalNombreRecetaEgreso)},
+        ${this.readStringValue(input.formData.profesionalCedulaRecetaEgreso)}, ${this.readStringValue(input.formData.profesionalEspecialidadRecetaEgreso)}, ${this.readStringValue(input.formData.lugarAtencionRecetaEgreso)},
+        ${signedAt ? input.userId : null}, ${signedAt}, ${this.readStringValue(input.formData.hashRecetaEgreso)}, ${this.readStringValue(input.formData.selloDigitalRecetaEgreso)},
+        ${signedAt}, ${signedAt}, ${input.status === EncounterRecordStatus.SIGNED ? `${this.sanitizeFileName(input.title)}.pdf` : null},
+        ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.jsonbParameter(input.formData)}, NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "prescriptionFolio" = EXCLUDED."prescriptionFolio",
+        "prescriptionType" = EXCLUDED."prescriptionType",
+        "issuedAt" = EXCLUDED."issuedAt",
+        "validity" = EXCLUDED."validity",
+        "issuerInstitution" = EXCLUDED."issuerInstitution",
+        "physicianRfc" = EXCLUDED."physicianRfc",
+        "sanitaryLicense" = EXCLUDED."sanitaryLicense",
+        "verificationQr" = EXCLUDED."verificationQr",
+        "qrActive" = EXCLUDED."qrActive",
+        "allergyAlerts" = EXCLUDED."allergyAlerts",
+        "medicationValidationSummary" = EXCLUDED."medicationValidationSummary",
+        "medicationTrafficLight" = EXCLUDED."medicationTrafficLight",
+        "dietInstructions" = EXCLUDED."dietInstructions",
+        "physicalActivityLevel" = EXCLUDED."physicalActivityLevel",
+        "physicalActivityDetail" = EXCLUDED."physicalActivityDetail",
+        "woundCare" = EXCLUDED."woundCare",
+        "homeMonitoring" = EXCLUDED."homeMonitoring",
+        "alarmSigns" = EXCLUDED."alarmSigns",
+        "followUpDate" = EXCLUDED."followUpDate",
+        "followUpType" = EXCLUDED."followUpType",
+        "followUpReason" = EXCLUDED."followUpReason",
+        "patientEducation" = EXCLUDED."patientEducation",
+        "patientUnderstands" = EXCLUDED."patientUnderstands",
+        "companionInformed" = EXCLUDED."companionInformed",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "documentHash" = EXCLUDED."documentHash",
+        "digitalSeal" = EXCLUDED."digitalSeal",
+        "prescriptionPdfGeneratedAt" = EXCLUDED."prescriptionPdfGeneratedAt",
+        "completePdfGeneratedAt" = EXCLUDED."completePdfGeneratedAt",
+        "pdfFileName" = EXCLUDED."pdfFileName",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+
+    const [prescription] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryDischargePrescription"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+      LIMIT 1
+    `;
+    if (!prescription) {
+      return;
+    }
+    await this.syncAmbulatoryDischargePrescriptionChildren(
+      prescription.id,
+      input,
+      validations,
+    );
+  }
+
   private async syncAmbulatoryPreprocedureChildren(
     assessmentId: string,
     input: {
@@ -9913,6 +10439,57 @@ export class EncountersService {
           ${this.readStringValue(item.problemaClinico)}, ${this.readStringValue(item.incidentesAccidentes)}, ${this.readStringValue(item.descripcionResultados)},
           ${this.readStringValue(item.interpretacionMedico)}, ${this.readStringValue(item.nombreMedico)}, ${this.readStringValue(item.folioEstudio)},
           NOW(), NOW()
+        )
+      `;
+    }
+  }
+
+  private async syncAmbulatoryDischargePrescriptionChildren(
+    prescriptionId: string,
+    input: {
+      formData: Record<string, unknown>;
+    },
+    validations: Array<{
+      severity: 'VERDE' | 'AMARILLO' | 'ROJO';
+      validationType: string;
+      message: string;
+      blocking: boolean;
+    }>,
+  ) {
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryDischargePrescriptionMedication" WHERE "prescriptionId" = ${prescriptionId}
+    `;
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryDischargePrescriptionValidation" WHERE "prescriptionId" = ${prescriptionId}
+    `;
+
+    for (const item of this.readObjectArray(input.formData.medicamentosRecetaEgreso)) {
+      if (!this.hasCapturedValue(item.medicamento)) {
+        continue;
+      }
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryDischargePrescriptionMedication" (
+          "id", "prescriptionId", "medicationName", "dose", "route",
+          "frequency", "duration", "medicationType", "indication",
+          "sourceCatalogId", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${prescriptionId}, ${this.readStringValue(item.medicamento)}, ${this.readStringValue(item.dosis)}, ${this.readStringValue(item.via)},
+          ${this.readStringValue(item.frecuencia)}, ${this.readStringValue(item.duracion)}, ${this.readStringValue(item.tipo)}, ${this.readStringValue(item.indicacion)},
+          ${this.readStringValue(item.sourceCatalogId)}, NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const validation of validations) {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryDischargePrescriptionValidation" (
+          "id", "prescriptionId", "severity", "validationType", "message",
+          "blocking", "createdAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${prescriptionId}, ${validation.severity}, ${validation.validationType},
+          ${validation.message}, ${validation.blocking}, NOW()
         )
       `;
     }
@@ -11180,7 +11757,8 @@ export class EncountersService {
         !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalDischargeRecord(record.encounterType, record.tabKey))
+        !this.isHospitalDischargeRecord(record.encounterType, record.tabKey) &&
+        !this.isAmbulatoryDischargePrescriptionRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -12184,6 +12762,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isAmbulatoryDischargePrescriptionRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildAmbulatoryDischargePrescriptionPdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -12677,6 +13278,58 @@ export class EncountersService {
       `Cédula: ${this.readStringValue(input.formData.profesionalCedulaRecEval)}`,
       `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadRecEval)}`,
       `Lugar: ${this.readStringValue(input.formData.lugarAtencionRecEval)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private buildAmbulatoryDischargePrescriptionPdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    const medicationLines = this.readObjectArray(
+      input.formData.medicamentosRecetaEgreso,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.medicamento)} · ${this.readStringValue(item.dosis)} · ${this.readStringValue(item.via)} · ${this.readStringValue(item.frecuencia)} · ${this.readStringValue(item.duracion)} · ${this.readStringValue(item.indicacion)}`.trim(),
+    );
+    const lines = [
+      input.recordTitle,
+      'Tipo: Receta e indicaciones de egreso',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Expediente: ${input.encounter.medicalRecord.recordNumber}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Hash: ${this.readStringValue(input.formData.hashRecetaEgreso)}`,
+      `Sello digital: ${this.readStringValue(input.formData.selloDigitalRecetaEgreso)}`,
+      'RECETA MÉDICA',
+      `Folio: ${this.readStringValue(input.formData.folioRecetaEgreso)}`,
+      `Tipo: ${this.readStringValue(input.formData.tipoRecetaEgreso)} · Vigencia ${this.readStringValue(input.formData.vigenciaRecetaEgreso)}`,
+      `QR: ${this.readStringValue(input.formData.qrVerificacionRecetaEgreso)}`,
+      `Institución: ${this.readStringValue(input.formData.institucionEmisoraRecetaEgreso)}`,
+      `RFC médico: ${this.readStringValue(input.formData.rfcMedicoRecetaEgreso)}`,
+      `Licencia sanitaria: ${this.readStringValue(input.formData.licenciaSanitariaRecetaEgreso)}`,
+      'Medicamentos:',
+      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      `Alertas alergias: ${this.readStringValue(input.formData.alertasAlergiasRecetaEgreso)}`,
+      `Validaciones: ${this.readStringValue(input.formData.validacionesMedicamentosRecetaEgreso)}`,
+      'INDICACIONES DE EGRESO',
+      `Dieta: ${this.readStringValue(input.formData.dietaIndicacionesEgreso)}`,
+      `Actividad: ${this.readStringValue(input.formData.actividadFisicaNivelEgreso)} · ${this.readStringValue(input.formData.actividadFisicaDetalleEgreso)}`,
+      `Cuidados de herida: ${this.readStringValue(input.formData.cuidadosHeridaEgreso)}`,
+      `Vigilancia domiciliaria: ${this.readStringValue(input.formData.vigilanciaDomiciliariaEgreso)}`,
+      `Signos de alarma: ${this.readStringValue(input.formData.signosAlarmaEgreso)}`,
+      `Seguimiento: ${this.readStringValue(input.formData.fechaCitaSeguimientoEgreso)} · ${this.readStringValue(input.formData.tipoCitaSeguimientoEgreso)} · ${this.readStringValue(input.formData.motivoCitaSeguimientoEgreso)}`,
+      `Educación otorgada: ${this.readStringValue(input.formData.educacionOtorgadaEgreso)}`,
+      `Comprensión paciente/familiar: ${Boolean(input.formData.pacienteComprendeIndicacionesEgreso) ? 'Sí' : 'No'} / ${Boolean(input.formData.familiarInformadoEgreso) ? 'Sí' : 'No'}`,
+      'Datos legales',
+      `Profesional: ${this.readStringValue(input.formData.profesionalNombreRecetaEgreso)}`,
+      `Cédula: ${this.readStringValue(input.formData.profesionalCedulaRecetaEgreso)}`,
+      `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadRecetaEgreso)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionRecetaEgreso)}`,
       `Descargas registradas: ${input.downloadCount}`,
     ];
 
@@ -13440,6 +14093,10 @@ export class EncountersService {
       this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)
         ? this.resolveAmbulatoryRecoveryEvaluationRequiredFields(formData)
         : [];
+    const ambulatoryDischargePrescriptionRequiredFields =
+      this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)
+        ? this.resolveAmbulatoryDischargePrescriptionRequiredFields()
+        : [];
 
     const missingFields = [
       ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
@@ -13462,6 +14119,7 @@ export class EncountersService {
       ...ambulatoryPreprocedureRequiredFields,
       ...ambulatoryProcedureRequiredFields,
       ...ambulatoryRecoveryEvaluationRequiredFields,
+      ...ambulatoryDischargePrescriptionRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -13503,8 +14161,14 @@ export class EncountersService {
                                         ? 'Completa los campos obligatorios del procedimiento antes de firmarlo'
                                         : this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)
                                           ? 'Completa los campos obligatorios de Recuperación / Evaluación antes de firmarla'
+                                          : this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)
+                                            ? 'Completa los campos obligatorios de receta e indicaciones de egreso antes de firmar'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)) {
+      this.assertAmbulatoryDischargePrescriptionReadyForSignature(input, formData);
     }
 
     if (this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)) {
@@ -13775,6 +14439,77 @@ export class EncountersService {
         ? ['descripcionAccionEventoRecEval']
         : []),
     ];
+  }
+
+  private resolveAmbulatoryDischargePrescriptionRequiredFields() {
+    return [
+      'folioRecetaEgreso',
+      'tipoRecetaEgreso',
+      'fechaEmisionRecetaEgreso',
+      'institucionEmisoraRecetaEgreso',
+      'rfcMedicoRecetaEgreso',
+      'licenciaSanitariaRecetaEgreso',
+      'dietaIndicacionesEgreso',
+      'actividadFisicaNivelEgreso',
+      'cuidadosHeridaEgreso',
+      'signosAlarmaEgreso',
+      'fechaCitaSeguimientoEgreso',
+      'educacionOtorgadaEgreso',
+      'profesionalNombreRecetaEgreso',
+      'profesionalCedulaRecetaEgreso',
+      'profesionalEspecialidadRecetaEgreso',
+      'lugarAtencionRecetaEgreso',
+    ];
+  }
+
+  private assertAmbulatoryDischargePrescriptionReadyForSignature(
+    input: {
+      encounterType: EncounterType;
+      tabKey: string;
+      formDataJson: Prisma.JsonValue;
+    },
+    formData: Record<string, unknown>,
+  ) {
+    void input;
+    const medications = this.readObjectArray(formData.medicamentosRecetaEgreso);
+    if (medications.length === 0) {
+      throw new BadRequestException(
+        'Agrega al menos un medicamento antes de firmar la receta',
+      );
+    }
+    for (const medication of medications) {
+      if (
+        !this.hasCapturedValue(medication.medicamento) ||
+        !this.hasCapturedValue(medication.dosis) ||
+        !this.hasCapturedValue(medication.via) ||
+        !this.hasCapturedValue(medication.frecuencia) ||
+        !this.hasCapturedValue(medication.duracion) ||
+        !this.hasCapturedValue(medication.indicacion)
+      ) {
+        throw new BadRequestException(
+          'Completa medicamento, dosis, vía, frecuencia, duración e indicación en todos los medicamentos',
+        );
+      }
+    }
+    const normalizedNames = medications
+      .map((item) => this.readStringValue(item.medicamento).toLowerCase())
+      .filter(Boolean);
+    const hasBlockingInteraction =
+      normalizedNames.some((name) => name.includes('warfarina')) &&
+      normalizedNames.some((name) => name.includes('ibuprofeno'));
+    if (hasBlockingInteraction) {
+      throw new BadRequestException(
+        'No se puede firmar con interacción grave: warfarina con ibuprofeno',
+      );
+    }
+    if (
+      !Boolean(formData.pacienteComprendeIndicacionesEgreso) &&
+      !Boolean(formData.familiarInformadoEgreso)
+    ) {
+      throw new BadRequestException(
+        'Marca comprensión del paciente o familiar informado antes de firmar',
+      );
+    }
   }
 
   private assertAmbulatoryRecoveryEvaluationReadyForSignature(

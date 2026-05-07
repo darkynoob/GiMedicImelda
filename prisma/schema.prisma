@@ -2047,6 +2047,109 @@ model AmbulatoryRecoveryAuxiliaryService {
   @@index([studyFolio])
 }
 
+model AmbulatoryDischargePrescription {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  prescriptionFolio String @unique
+  prescriptionType String?
+  issuedAt DateTime?
+  validity String?
+  issuerInstitution String
+  physicianRfc String
+  sanitaryLicense String
+  verificationQr String?
+  qrActive Boolean @default(false)
+  allergyAlerts String?
+  medicationValidationSummary String?
+  medicationTrafficLight String?
+  dietInstructions String?
+  physicalActivityLevel String?
+  physicalActivityDetail String?
+  woundCare String?
+  homeMonitoring String?
+  alarmSigns String?
+  followUpDate DateTime?
+  followUpType String?
+  followUpReason String?
+  patientEducation String?
+  patientUnderstands Boolean @default(false)
+  companionInformed Boolean @default(false)
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  prescriptionPdfGeneratedAt DateTime?
+  completePdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  medications AmbulatoryDischargePrescriptionMedication[]
+  validations AmbulatoryDischargePrescriptionValidation[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([prescriptionFolio])
+  @@index([documentHash])
+}
+
+model AmbulatoryDischargePrescriptionMedication {
+  id String @id @default(uuid())
+  prescriptionId String
+  medicationName String
+  dose String?
+  route String?
+  frequency String?
+  duration String?
+  medicationType String?
+  indication String?
+  sourceCatalogId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prescription AmbulatoryDischargePrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+  @@index([medicationName])
+  @@index([medicationType])
+  @@index([route])
+}
+
+model AmbulatoryDischargePrescriptionValidation {
+  id String @id @default(uuid())
+  prescriptionId String
+  severity String
+  validationType String
+  message String
+  blocking Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  prescription AmbulatoryDischargePrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([severity])
+  @@index([validationType])
+  @@index([blocking])
+}
+
 /// Evolución médica longitudinal dentro de un episodio de Urgencias.
 /// Mantiene datos normalizados para auditoría NOM-004, signos vitales por toma
 /// y diagnósticos que evolucionan sin sobrescribir registros previos.
