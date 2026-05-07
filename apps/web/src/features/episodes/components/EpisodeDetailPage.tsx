@@ -273,8 +273,109 @@ function isAmbulatoryProcedureTab(encounterType: string, tabTitle: string) {
   return encounterType === 'SURGERY' && tabTitle === 'Procedimiento';
 }
 
+function buildAmbulatoryProcedureTitle(versionNumber: number) {
+  return `Procedimiento V${versionNumber}`;
+}
+
 function buildAmbulatoryPreprocedureTitle(versionNumber: number) {
   return `Valoración preprocedimiento V${versionNumber}`;
+}
+
+function calculateDurationMinutes(date: string, startTime: string, endTime: string) {
+  if (!date || !startTime || !endTime) {
+    return '';
+  }
+
+  const start = new Date(`${date}T${startTime}`);
+  let end = new Date(`${date}T${endTime}`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return '';
+  }
+  if (end < start) {
+    end = new Date(end.getTime() + 86_400_000);
+  }
+  return String(Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000)));
+}
+
+function buildAmbulatoryProcedureSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  preprocedureRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const currentFormData = args.currentFormData ?? {};
+  const preprocedureFormData = args.preprocedureRecord?.formData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const keep = (key: string, fallback: string) => readString(currentFormData[key]) || fallback;
+  const date = keep('fechaProcedimientoProc', args.recordedAt.slice(0, 10));
+  const startTime = keep('horaInicioRealProc', args.recordedAt.slice(11, 16));
+  const endTime = readString(currentFormData.horaFinRealProc);
+  const anesthesiaType = keep(
+    'tipoAnestesiaProc',
+    readString(preprocedureFormData.tipoAnestesiaPrevistaPreproc) || 'NO_APLICA',
+  );
+  const hasAnesthesia = anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
+  const allergyWarning =
+    Boolean(preprocedureFormData.antAlergiasMedicamentosasPreproc) &&
+    (readString(currentFormData.medicamentosAnestesicosProc) ||
+      readString(currentFormData.postMedicamentosAnestesicosProc))
+      ? 'Verificar alergias medicamentosas antes de cerrar anestesia.'
+      : '';
+  const destinationWarning =
+    readString(currentFormData.destinoPostprocedimientoProc) === 'HOSPITALIZACION'
+      ? 'Destino hospitalización: preparar enlace a episodio hospitalario.'
+      : 'Sin alerta de destino.';
+
+  return {
+    tipoRegistroProcedimiento: 'Procedimiento',
+    cirujanoPrincipalProc:
+      keep('cirujanoPrincipalProc', args.detail.attendingClinician?.fullName ?? '') ||
+      'Sin profesional responsable',
+    cedulaCirujanoProc:
+      keep('cedulaCirujanoProc', args.detail.attendingClinician?.professionalLicense ?? '') ||
+      'Sin cédula',
+    anestesiologoProc:
+      keep('anestesiologoProc', readString(preprocedureFormData.nombreAnestesiologoPreproc)) ||
+      'Sin anestesiólogo asignado',
+    cedulaAnestesiologoProc:
+      keep('cedulaAnestesiologoProc', readString(preprocedureFormData.cedulaAnestesiologoPreproc)) ||
+      'Sin cédula',
+    fechaProcedimientoProc: date,
+    horaInicioRealProc: startTime,
+    duracionMinutosProc:
+      readString(currentFormData.duracionMinutosProc) ||
+      calculateDurationMinutes(date, startTime, endTime),
+    codigoProcedimientoProc:
+      keep('codigoProcedimientoProc', readString(preprocedureFormData.codigoProcedimientoPreproc)),
+    diagnosticoPreoperatorioProc:
+      keep(
+        'diagnosticoPreoperatorioProc',
+        readString(preprocedureFormData.diagnosticoPreoperatorioPreproc),
+      ),
+    ciePreoperatorioProc:
+      keep('ciePreoperatorioProc', readString(preprocedureFormData.cie10Preproc)),
+    procedimientoRealizadoProc:
+      keep('procedimientoRealizadoProc', readString(preprocedureFormData.procedimientoIndicadoPreproc)),
+    tipoAnestesiaProc: anesthesiaType,
+    alertasAnestesiaProc: allergyWarning || 'Sin alertas anestésicas',
+    postNombreAnestesiologoProc:
+      keep('postNombreAnestesiologoProc', readString(currentFormData.anestesiologoProc)) ||
+      'Sin anestesiólogo asignado',
+    postCedulaAnestesiologoProc:
+      keep('postCedulaAnestesiologoProc', readString(currentFormData.cedulaAnestesiologoProc)) ||
+      'Sin cédula',
+    alertaDestinoProc: destinationWarning,
+    profesionalNombreProc:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaProc:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadProc: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionProc: args.detail.facility?.name ?? 'Sin sede',
+    hashProc:
+      readString(currentFormData.hashProc) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}-PROC`,
+    huboAnestesiaProc: hasAnesthesia ? 'SI' : 'NO',
+  };
 }
 
 function buildAmbulatoryPreprocedureSnapshot(args: {
@@ -3676,6 +3777,56 @@ export function EpisodeDetailPage() {
     );
   }, [activeTab, detail, recordForm]);
 
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryProcedureTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const signedPreprocedureRecord =
+      getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
+    const synchronizedSystemFields = buildAmbulatoryProcedureSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      preprocedureRecord:
+        signedPreprocedureRecord?.status === 'SIGNED'
+          ? signedPreprocedureRecord
+          : null,
+      currentFormData: recordForm.formData,
+    });
+    const nextTitle =
+      recordForm.title && recordForm.title.startsWith('Procedimiento V')
+        ? recordForm.title
+        : buildAmbulatoryProcedureTitle(1);
+    const hasChanges =
+      recordForm.title !== nextTitle ||
+      recordForm.noteType !== 'Procedimiento' ||
+      Object.entries(synchronizedSystemFields).some(
+        ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+      );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            title: nextTitle,
+            noteType: 'Procedimiento',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -3977,6 +4128,11 @@ export function EpisodeDetailPage() {
     : getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
   const nextAmbulatoryPreprocedureVersionNumber =
     (latestAmbulatoryPreprocedureRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestAmbulatoryProcedureRecord = isAmbulatoryProcedureSection
+    ? getLatestRecordByTab(activeTabRecords, 'Procedimiento')
+    : getLatestRecordByTab(detail.sectionRecords, 'Procedimiento');
+  const nextAmbulatoryProcedureVersionNumber =
+    (latestAmbulatoryProcedureRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -4000,6 +4156,38 @@ export function EpisodeDetailPage() {
     ) {
       setFeedback(
         'Firma la valoración preprocedimiento antes de avanzar a Procedimiento.',
+      );
+      return;
+    }
+
+    if (isAmbulatoryProcedureSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      const signedPreprocedureRecord =
+        getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
+          ?.status === 'SIGNED'
+          ? getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
+          : null;
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Procedimiento',
+          title: buildAmbulatoryProcedureTitle(nextAmbulatoryProcedureVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryProcedureSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            preprocedureRecord: signedPreprocedureRecord,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)
+              .Procedimiento as Record<string, RecordFieldValue>,
+          }),
+        }),
       );
       return;
     }
@@ -4892,6 +5080,32 @@ export function EpisodeDetailPage() {
                                                       >,
                                                   }),
                                                 }
+                                              : isAmbulatoryProcedureSection
+                                                ? {
+                                                    ...(record.formData as Record<
+                                                      string,
+                                                      RecordFieldValue
+                                                    >),
+                                                    ...buildAmbulatoryProcedureSnapshot({
+                                                      detail,
+                                                      recordedAt: record.recordedAt.slice(0, 16),
+                                                      preprocedureRecord:
+                                                        getLatestRecordByTab(
+                                                          detail.sectionRecords,
+                                                          'Valoración preprocedimiento',
+                                                        )?.status === 'SIGNED'
+                                                          ? getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Valoración preprocedimiento',
+                                                            )
+                                                          : null,
+                                                      currentFormData:
+                                                        record.formData as Record<
+                                                          string,
+                                                          RecordFieldValue
+                                                        >,
+                                                    }),
+                                                  }
                     : record.formData,
       }),
     );
@@ -4988,6 +5202,25 @@ export function EpisodeDetailPage() {
                 intake !== null || output !== null
                   ? String((intake ?? 0) - (output ?? 0))
                   : '';
+            }
+            if (
+              isAmbulatoryProcedureSection &&
+              (fieldKey === 'fechaProcedimientoProc' ||
+                fieldKey === 'horaInicioRealProc' ||
+                fieldKey === 'horaFinRealProc')
+            ) {
+              const nextDuration = calculateDurationMinutes(
+                typeof nextFormData.fechaProcedimientoProc === 'string'
+                  ? nextFormData.fechaProcedimientoProc
+                  : '',
+                typeof nextFormData.horaInicioRealProc === 'string'
+                  ? nextFormData.horaInicioRealProc
+                  : '',
+                typeof nextFormData.horaFinRealProc === 'string'
+                  ? nextFormData.horaFinRealProc
+                  : '',
+              );
+              nextFormData.duracionMinutosProc = nextDuration;
             }
             return {
               ...currentValue,
@@ -5190,6 +5423,25 @@ export function EpisodeDetailPage() {
                                                   currentFormData: recordForm.formData,
                                                 }),
                                               }
+                                            : isAmbulatoryProcedureSection
+                                              ? {
+                                                  ...recordForm.formData,
+                                                  ...buildAmbulatoryProcedureSnapshot({
+                                                    detail,
+                                                    recordedAt: recordForm.recordedAt,
+                                                    preprocedureRecord:
+                                                      getLatestRecordByTab(
+                                                        detail.sectionRecords,
+                                                        'Valoración preprocedimiento',
+                                                      )?.status === 'SIGNED'
+                                                        ? getLatestRecordByTab(
+                                                            detail.sectionRecords,
+                                                            'Valoración preprocedimiento',
+                                                          )
+                                                        : null,
+                                                    currentFormData: recordForm.formData,
+                                                  }),
+                                                }
                                           : recordForm.formData,
     };
 
@@ -6447,6 +6699,30 @@ export function EpisodeDetailPage() {
                                 </Badge>
                               </div>
                             </div>
+                          ) : isAmbulatoryProcedureSection ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Procedimiento
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -6505,7 +6781,8 @@ export function EpisodeDetailPage() {
 
                           {isConsultationPrescriptionSection ||
                           isConsultationDocumentsSection ||
-                          isAmbulatoryPreprocedureSection ? (
+                          isAmbulatoryPreprocedureSection ||
+                          isAmbulatoryProcedureSection ? (
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Estado</span>
                               <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
@@ -6555,7 +6832,8 @@ export function EpisodeDetailPage() {
                           isHospitalSurgicalSection ||
                           isHospitalNursingSection ||
                           isHospitalDischargeSection ||
-                          isAmbulatoryPreprocedureSection ? null : (
+                          isAmbulatoryPreprocedureSection ||
+                          isAmbulatoryProcedureSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input

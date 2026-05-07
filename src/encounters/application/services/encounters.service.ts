@@ -854,6 +854,12 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    const ambulatoryProcedureVersionContext =
+      await this.resolveAmbulatoryProcedureVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -894,6 +900,7 @@ export class EncountersService {
       hospitalNursingShiftVersionContext,
       hospitalDischargeVersionContext,
       ambulatoryPreprocedureVersionContext,
+      ambulatoryProcedureVersionContext,
       responsibleUser,
     });
 
@@ -1088,6 +1095,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryProcedureDocument({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1263,6 +1282,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const ambulatoryProcedureVersionContext =
+      await this.resolveAmbulatoryProcedureVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     if (
       emergencyDischargeVersionContext?.latestRecord &&
       this.isEmergencyDischargeRecord(encounter.encounterType, input.tabKey)
@@ -1295,6 +1321,7 @@ export class EncountersService {
       hospitalNursingShiftVersionContext,
       hospitalDischargeVersionContext,
       ambulatoryPreprocedureVersionContext,
+      ambulatoryProcedureVersionContext,
       responsibleUser,
     });
 
@@ -1486,6 +1513,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryProcedureDocument({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1574,6 +1613,31 @@ export class EncountersService {
         title: currentRecord.title,
         status: currentRecord.status,
         formData: preprocedureFormData,
+        metadata: currentMetadata,
+      });
+    }
+    if (
+      this.isAmbulatoryProcedureRecord(
+        currentRecord.encounterType,
+        currentRecord.tabKey,
+      )
+    ) {
+      const procedureFormData =
+        currentRecord.formDataJson &&
+        typeof currentRecord.formDataJson === 'object' &&
+        !Array.isArray(currentRecord.formDataJson)
+          ? (currentRecord.formDataJson as Record<string, unknown>)
+          : {};
+      await this.syncAmbulatoryProcedureDocument({
+        tenantId,
+        userId,
+        encounter,
+        sectionRecordId: currentRecord.id,
+        tabKey: currentRecord.tabKey,
+        recordedAt: currentRecord.recordedAt,
+        title: currentRecord.title,
+        status: currentRecord.status,
+        formData: procedureFormData,
         metadata: currentMetadata,
       });
     }
@@ -1895,6 +1959,57 @@ export class EncountersService {
                 preprocedureFormData.selloDigitalPreproc,
               ),
               procedureStageEnabled: true,
+            },
+          },
+        });
+      }
+
+      if (
+        this.isAmbulatoryProcedureRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        const procedureFormData =
+          currentRecord.formDataJson &&
+          typeof currentRecord.formDataJson === 'object' &&
+          !Array.isArray(currentRecord.formDataJson)
+            ? (currentRecord.formDataJson as Record<string, unknown>)
+            : {};
+        await transaction.$executeRaw`
+          UPDATE "AmbulatoryProcedureDocument"
+          SET "status" = ${EncounterRecordStatus.SIGNED},
+              "signerUserId" = ${userId},
+              "signedAt" = ${signedAt},
+              "availableForDischarge" = true,
+              "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${signedAt}),
+              "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(currentRecord.title)}.pdf`}),
+              "documentHash" = ${this.readStringValue(procedureFormData.hashProc)},
+              "digitalSeal" = ${this.readStringValue(procedureFormData.selloDigitalProc)},
+              "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'AmbulatoryProcedureDocument',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              version:
+                this.extractRecordVersionMetadata(currentRecord.metadataJson)
+                  .versionNumber ?? null,
+              signedAt: signedAt.toISOString(),
+              status: EncounterRecordStatus.SIGNED,
+              hash: this.readStringValue(procedureFormData.hashProc),
+              digitalSeal: this.readStringValue(procedureFormData.selloDigitalProc),
+              availableForDischarge: true,
             },
           },
         });
@@ -2428,6 +2543,14 @@ export class EncountersService {
     if (this.isAmbulatoryPreprocedureRecord(record.encounterType, record.tabKey)) {
       await this.prisma.$executeRaw`
         UPDATE "AmbulatoryPreprocedureAssessment"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (this.isAmbulatoryProcedureRecord(record.encounterType, record.tabKey)) {
+      await this.prisma.$executeRaw`
+        UPDATE "AmbulatoryProcedureDocument"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
@@ -3714,6 +3837,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveAmbulatoryProcedureVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Procedimiento',
+        noteType: 'Procedimiento',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -3782,6 +3936,9 @@ export class EncountersService {
     ambulatoryPreprocedureVersionContext: Awaited<
       ReturnType<EncountersService['resolveAmbulatoryPreprocedureVersionContext']>
     >;
+    ambulatoryProcedureVersionContext: Awaited<
+      ReturnType<EncountersService['resolveAmbulatoryProcedureVersionContext']>
+    >;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -3790,6 +3947,48 @@ export class EncountersService {
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
+    if (
+      this.isAmbulatoryProcedureRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.ambulatoryProcedureVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildAmbulatoryProcedureFormData({
+        encounter: input.encounter,
+        incomingFormData: input.input.formData,
+        recordedAt: input.recordedAt,
+        responsibleUser: input.responsibleUser,
+        versionNumber,
+        currentMetadata:
+          this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
+      });
+
+      return {
+        tabKey: 'Procedimiento',
+        noteType: 'Procedimiento',
+        title: `Procedimiento V${versionNumber}`,
+        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Procedimiento',
+          documentHash: formData.hashProc,
+          digitalSeal: formData.selloDigitalProc,
+          availableForDischarge: false,
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
     if (
       this.isAmbulatoryPreprocedureRecord(
         input.encounter.encounterType,
@@ -5527,6 +5726,120 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
     };
+  }
+
+  private buildAmbulatoryProcedureFormData(input: {
+    encounter: TenantEncounterRecord;
+    incomingFormData: Record<string, unknown>;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    versionNumber: number;
+    currentMetadata: Record<string, unknown>;
+  }) {
+    const procedureDate =
+      this.readStringValue(input.incomingFormData.fechaProcedimientoProc) ||
+      input.recordedAt.toISOString().slice(0, 10);
+    const realStartTime =
+      this.readStringValue(input.incomingFormData.horaInicioRealProc) ||
+      input.recordedAt.toISOString().slice(11, 16);
+    const realEndTime = this.readStringValue(
+      input.incomingFormData.horaFinRealProc,
+    );
+    const calculatedDuration =
+      this.calculateProcedureDurationMinutes(
+        procedureDate,
+        realStartTime,
+        realEndTime,
+      ) ?? this.readRoundedNumericValue(input.incomingFormData.duracionMinutosProc);
+    const anesthesiaType = this.readStringValue(
+      input.incomingFormData.tipoAnestesiaProc,
+    );
+    const hasAnesthesia = anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
+    const alerts = this.buildAmbulatoryProcedureAlerts(input.incomingFormData);
+    const hashSeed = JSON.stringify({
+      encounterId: input.encounter.id,
+      tabKey: 'Procedimiento',
+      versionNumber: input.versionNumber,
+      recordedAt: input.recordedAt.toISOString(),
+      formData: input.incomingFormData,
+    });
+    const documentHash =
+      this.readStringValue(input.currentMetadata.documentHash) ||
+      createHash('sha256').update(hashSeed).digest('hex');
+
+    return {
+      ...input.incomingFormData,
+      tipoRegistroProcedimiento: 'Procedimiento',
+      versionProcedimiento: input.versionNumber,
+      fechaProcedimientoProc: procedureDate,
+      horaInicioRealProc: realStartTime,
+      duracionMinutosProc:
+        calculatedDuration !== null && calculatedDuration !== undefined
+          ? String(calculatedDuration)
+          : '',
+      tipoAnestesiaProc: anesthesiaType || 'NO_APLICA',
+      huboAnestesiaProc: hasAnesthesia ? 'SI' : 'NO',
+      alertasAnestesiaProc:
+        alerts.length > 0 ? alerts.join('\n') : 'Sin alertas anestésicas',
+      alertaDestinoProc:
+        this.readStringValue(input.incomingFormData.destinoPostprocedimientoProc) ===
+        'HOSPITALIZACION'
+          ? 'Destino hospitalización: preparar enlace a episodio hospitalario.'
+          : 'Sin alerta de destino.',
+      profesionalNombreProc:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      profesionalCedulaProc:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      profesionalEspecialidadProc:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      lugarAtencionProc:
+        input.encounter.facility?.name ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      hashProc: documentHash,
+      selloDigitalProc:
+        this.readStringValue(input.currentMetadata.digitalSeal) ||
+        `GIMEDIC-PROC-${String(input.versionNumber).padStart(3, '0')}-${documentHash.slice(0, 12)}`,
+    };
+  }
+
+  private calculateProcedureDurationMinutes(
+    procedureDate: string,
+    realStartTime: string,
+    realEndTime: string,
+  ) {
+    if (!procedureDate || !realStartTime || !realEndTime) {
+      return null;
+    }
+    const start = new Date(`${procedureDate}T${realStartTime}`);
+    let end = new Date(`${procedureDate}T${realEndTime}`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return null;
+    }
+    if (end < start) {
+      end = new Date(end.getTime() + 86_400_000);
+    }
+    return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+  }
+
+  private buildAmbulatoryProcedureAlerts(formData: Record<string, unknown>) {
+    return [
+      Boolean(formData.toProfilaxisAntibioticaProc) === false
+        ? 'Profilaxis antibiótica no registrada en Time-Out.'
+        : '',
+      this.readStringValue(formData.cuentaGasasInstrumentalProc) === 'INCOMPLETA'
+        ? 'Cuenta de gasas e instrumental incompleta: bloquea firma.'
+        : '',
+      this.readStringValue(formData.huboComplicacionesProc) === 'SI' &&
+      (!this.hasCapturedValue(formData.tipoComplicacionProc) ||
+        !this.hasCapturedValue(formData.manejoComplicacionProc))
+        ? 'Complicaciones sin documentación completa.'
+        : '',
+    ].filter((alert) => alert.length > 0);
   }
 
   private buildAmbulatoryPreprocedureFormData(input: {
@@ -8684,6 +8997,156 @@ export class EncountersService {
     await this.syncAmbulatoryPreprocedureChildren(assessment.id, input);
   }
 
+  private async syncAmbulatoryProcedureDocument(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isAmbulatoryProcedureRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const hasAnesthesia = this.ambulatoryProcedureHasAnesthesia(input.formData);
+    const procedureDate =
+      this.parseOptionalDate(input.formData.fechaProcedimientoProc) ??
+      input.recordedAt;
+    const documentHash = this.readStringValue(input.formData.hashProc);
+    const digitalSeal = this.readStringValue(input.formData.selloDigitalProc);
+    const [preprocedureAssessment] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryPreprocedureAssessment"
+      WHERE "encounterId" = ${input.encounter.id} AND "status" = ${EncounterRecordStatus.SIGNED}
+      ORDER BY "versionNumber" DESC, "signedAt" DESC NULLS LAST, "createdAt" DESC
+      LIMIT 1
+    `;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryProcedureDocument" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "preprocedureAssessmentId", "versionNumber", "title", "status",
+        "recordedAt", "procedureDate", "realStartTime", "realEndTime",
+        "durationMinutes", "operatingRoom", "procedureCode",
+        "preoperativeDiagnosis", "preoperativeCie10", "postoperativeDiagnosis",
+        "postoperativeCie10", "performedProcedure", "anesthesiaType",
+        "anesthesiaMedications", "anesthesiaEvents", "anesthesiaAlerts",
+        "hasAnesthesia", "surgicalTechnique", "transoperativeFindings",
+        "woundClassification", "estimatedBleedingMl", "ivFluids",
+        "transfusions", "drainsPlaced", "implantsDevices", "lotsSeries",
+        "spongeInstrumentCount", "surgicalSpecimenDescription",
+        "sentToPathology", "pathologyFolio", "hadComplications",
+        "openConversion", "complicationType", "complicationManagement",
+        "postprocedureDestination", "requiresMonitoring",
+        "immediatePostprocedureIndications", "destinationAlert",
+        "availableForDischarge", "professionalName", "professionalLicense",
+        "professionalSpecialty", "careLocation", "signerUserId", "signedAt",
+        "documentHash", "digitalSeal", "pdfGeneratedAt", "pdfFileName",
+        "pdfDownloadCount", "pdfLastDownloadedAt", "contentJson",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${preprocedureAssessment?.id ?? null}, ${versionNumber}, ${input.title}, ${input.status},
+        ${input.recordedAt}, ${procedureDate}, ${this.readStringValue(input.formData.horaInicioRealProc)}, ${this.readStringValue(input.formData.horaFinRealProc)},
+        ${this.readRoundedNumericValue(input.formData.duracionMinutosProc)}, ${this.readStringValue(input.formData.salaQuirofanoProc)}, ${this.readStringValue(input.formData.codigoProcedimientoProc)},
+        ${this.readStringValue(input.formData.diagnosticoPreoperatorioProc)}, ${this.readStringValue(input.formData.ciePreoperatorioProc)}, ${this.readStringValue(input.formData.diagnosticoPostoperatorioProc)},
+        ${this.readStringValue(input.formData.ciePostoperatorioProc)}, ${this.readStringValue(input.formData.procedimientoRealizadoProc)}, ${this.readStringValue(input.formData.tipoAnestesiaProc) || 'NO_APLICA'},
+        ${this.readStringValue(input.formData.medicamentosAnestesicosProc)}, ${this.readStringValue(input.formData.eventosAnestesicosProc)}, ${this.readStringValue(input.formData.alertasAnestesiaProc)},
+        ${hasAnesthesia}, ${this.readStringValue(input.formData.tecnicaQuirurgicaProc)}, ${this.readStringValue(input.formData.hallazgosTransoperatoriosProc)},
+        ${this.readStringValue(input.formData.clasificacionHeridaProc)}, ${this.readNumericValue(input.formData.sangradoEstimadoMlProc) ?? 0}, ${this.readStringValue(input.formData.liquidosIvProc)},
+        ${this.readStringValue(input.formData.transfusionesProc)}, ${this.readStringValue(input.formData.drenajesColocadosProc)}, ${this.readStringValue(input.formData.implantesDispositivosProc)}, ${this.readStringValue(input.formData.lotesSeriesProc)},
+        ${this.readStringValue(input.formData.cuentaGasasInstrumentalProc)}, ${this.readStringValue(input.formData.descripcionPiezaProc)},
+        ${this.readStringValue(input.formData.envioPatologiaProc)}, ${this.readStringValue(input.formData.folioPatologiaProc)}, ${this.readStringValue(input.formData.huboComplicacionesProc)},
+        ${this.readStringValue(input.formData.conversionAbiertaProc)}, ${this.readStringValue(input.formData.tipoComplicacionProc)}, ${this.readStringValue(input.formData.manejoComplicacionProc)},
+        ${this.readStringValue(input.formData.destinoPostprocedimientoProc)}, ${this.readStringValue(input.formData.requiereMonitorizacionProc)},
+        ${this.readStringValue(input.formData.indicacionesInmediatasProc)}, ${this.readStringValue(input.formData.alertaDestinoProc)},
+        ${input.status === EncounterRecordStatus.SIGNED}, ${this.readStringValue(input.formData.profesionalNombreProc)}, ${this.readStringValue(input.formData.profesionalCedulaProc)},
+        ${this.readStringValue(input.formData.profesionalEspecialidadProc)}, ${this.readStringValue(input.formData.lugarAtencionProc)}, ${signedAt ? input.userId : null}, ${signedAt},
+        ${documentHash}, ${digitalSeal}, ${signedAt}, ${input.status === EncounterRecordStatus.SIGNED ? `${this.sanitizeFileName(input.title)}.pdf` : null},
+        ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)}, ${this.jsonbParameter(input.formData)},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "preprocedureAssessmentId" = EXCLUDED."preprocedureAssessmentId",
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "procedureDate" = EXCLUDED."procedureDate",
+        "realStartTime" = EXCLUDED."realStartTime",
+        "realEndTime" = EXCLUDED."realEndTime",
+        "durationMinutes" = EXCLUDED."durationMinutes",
+        "operatingRoom" = EXCLUDED."operatingRoom",
+        "procedureCode" = EXCLUDED."procedureCode",
+        "preoperativeDiagnosis" = EXCLUDED."preoperativeDiagnosis",
+        "preoperativeCie10" = EXCLUDED."preoperativeCie10",
+        "postoperativeDiagnosis" = EXCLUDED."postoperativeDiagnosis",
+        "postoperativeCie10" = EXCLUDED."postoperativeCie10",
+        "performedProcedure" = EXCLUDED."performedProcedure",
+        "anesthesiaType" = EXCLUDED."anesthesiaType",
+        "anesthesiaMedications" = EXCLUDED."anesthesiaMedications",
+        "anesthesiaEvents" = EXCLUDED."anesthesiaEvents",
+        "anesthesiaAlerts" = EXCLUDED."anesthesiaAlerts",
+        "hasAnesthesia" = EXCLUDED."hasAnesthesia",
+        "surgicalTechnique" = EXCLUDED."surgicalTechnique",
+        "transoperativeFindings" = EXCLUDED."transoperativeFindings",
+        "woundClassification" = EXCLUDED."woundClassification",
+        "estimatedBleedingMl" = EXCLUDED."estimatedBleedingMl",
+        "ivFluids" = EXCLUDED."ivFluids",
+        "transfusions" = EXCLUDED."transfusions",
+        "drainsPlaced" = EXCLUDED."drainsPlaced",
+        "implantsDevices" = EXCLUDED."implantsDevices",
+        "lotsSeries" = EXCLUDED."lotsSeries",
+        "spongeInstrumentCount" = EXCLUDED."spongeInstrumentCount",
+        "surgicalSpecimenDescription" = EXCLUDED."surgicalSpecimenDescription",
+        "sentToPathology" = EXCLUDED."sentToPathology",
+        "pathologyFolio" = EXCLUDED."pathologyFolio",
+        "hadComplications" = EXCLUDED."hadComplications",
+        "openConversion" = EXCLUDED."openConversion",
+        "complicationType" = EXCLUDED."complicationType",
+        "complicationManagement" = EXCLUDED."complicationManagement",
+        "postprocedureDestination" = EXCLUDED."postprocedureDestination",
+        "requiresMonitoring" = EXCLUDED."requiresMonitoring",
+        "immediatePostprocedureIndications" = EXCLUDED."immediatePostprocedureIndications",
+        "destinationAlert" = EXCLUDED."destinationAlert",
+        "availableForDischarge" = EXCLUDED."availableForDischarge",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "documentHash" = EXCLUDED."documentHash",
+        "digitalSeal" = EXCLUDED."digitalSeal",
+        "pdfGeneratedAt" = EXCLUDED."pdfGeneratedAt",
+        "pdfFileName" = EXCLUDED."pdfFileName",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+
+    const [procedureDocument] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryProcedureDocument"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+      LIMIT 1
+    `;
+
+    if (!procedureDocument) {
+      return;
+    }
+
+    await this.syncAmbulatoryProcedureChildren(procedureDocument.id, input);
+  }
+
   private async syncAmbulatoryPreprocedureChildren(
     assessmentId: string,
     input: {
@@ -8773,6 +9236,150 @@ export class EncountersService {
     }
 
     await this.syncAmbulatoryPreprocedureOneToOneChildren(assessmentId, input);
+  }
+
+  private async syncAmbulatoryProcedureChildren(
+    procedureDocumentId: string,
+    input: {
+      recordedAt: Date;
+      formData: Record<string, unknown>;
+    },
+  ) {
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryProcedureTeamMember" WHERE "procedureDocumentId" = ${procedureDocumentId}
+    `;
+    await this.prisma.$executeRaw`
+      DELETE FROM "AmbulatoryProcedureMaterial" WHERE "procedureDocumentId" = ${procedureDocumentId}
+    `;
+
+    const teamMembers = [
+      ['CIRUJANO_PRINCIPAL', input.formData.cirujanoPrincipalProc, input.formData.cedulaCirujanoProc],
+      ['PRIMER_AYUDANTE', input.formData.primerAyudanteProc, null],
+      ['SEGUNDO_AYUDANTE', input.formData.segundoAyudanteProc, null],
+      ['ANESTESIOLOGO', input.formData.anestesiologoProc, input.formData.cedulaAnestesiologoProc],
+      ['INSTRUMENTISTA', input.formData.instrumentistaProc, null],
+      ['ENFERMERIA_CIRCULANTE', input.formData.enfermeriaCirculanteProc, null],
+    ];
+    for (const [role, fullName, professionalLicense] of teamMembers) {
+      if (!this.hasCapturedValue(fullName)) {
+        continue;
+      }
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureTeamMember" (
+          "id", "procedureDocumentId", "role", "fullName", "professionalLicense", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${procedureDocumentId}, ${role}, ${this.readStringValue(fullName)}, ${this.readStringValue(professionalLicense)}, NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const item of this.readObjectArray(input.formData.materialesProc)) {
+      if (!this.hasCapturedValue(item.nombre)) {
+        continue;
+      }
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureMaterial" (
+          "id", "procedureDocumentId", "name", "quantity", "lotSerial", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${procedureDocumentId}, ${this.readStringValue(item.nombre)}, ${this.readStringValue(item.cantidad)}, ${this.readStringValue(item.loteSerie)}, NOW(), NOW()
+        )
+      `;
+    }
+
+    await this.syncAmbulatoryProcedureTimeOut(procedureDocumentId, input);
+    await this.syncAmbulatoryProcedurePostanesthesia(procedureDocumentId, input);
+  }
+
+  private async syncAmbulatoryProcedureTimeOut(
+    procedureDocumentId: string,
+    input: {
+      recordedAt: Date;
+      formData: Record<string, unknown>;
+    },
+  ) {
+    const completed = [
+      'toPacienteVerificadoProc',
+      'toProcedimientoConfirmadoProc',
+      'toSitioConfirmadoProc',
+      'toRealizadoAntesIncisionProc',
+      'toProfilaxisAntibioticaProc',
+      'toEquipoInstrumentalProc',
+      'toConsentimientoVerificadoProc',
+      'toImagenesDisponiblesProc',
+    ].every((fieldKey) => Boolean(input.formData[fieldKey]));
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryProcedureTimeOutChecklist" (
+        "id", "procedureDocumentId", "patientVerified", "procedureConfirmed",
+        "surgicalSiteConfirmed", "timeOutBeforeIncision",
+        "antibioticProphylaxisAdministered", "equipmentInstrumentalVerified",
+        "informedConsentVerified", "imagingAvailableInRoom", "completed",
+        "completedAt", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${procedureDocumentId}, ${Boolean(input.formData.toPacienteVerificadoProc)}, ${Boolean(input.formData.toProcedimientoConfirmadoProc)},
+        ${Boolean(input.formData.toSitioConfirmadoProc)}, ${Boolean(input.formData.toRealizadoAntesIncisionProc)},
+        ${Boolean(input.formData.toProfilaxisAntibioticaProc)}, ${Boolean(input.formData.toEquipoInstrumentalProc)},
+        ${Boolean(input.formData.toConsentimientoVerificadoProc)}, ${Boolean(input.formData.toImagenesDisponiblesProc)}, ${completed},
+        ${completed ? input.recordedAt : null}, NOW(), NOW()
+      )
+      ON CONFLICT ("procedureDocumentId") DO UPDATE SET
+        "patientVerified" = EXCLUDED."patientVerified",
+        "procedureConfirmed" = EXCLUDED."procedureConfirmed",
+        "surgicalSiteConfirmed" = EXCLUDED."surgicalSiteConfirmed",
+        "timeOutBeforeIncision" = EXCLUDED."timeOutBeforeIncision",
+        "antibioticProphylaxisAdministered" = EXCLUDED."antibioticProphylaxisAdministered",
+        "equipmentInstrumentalVerified" = EXCLUDED."equipmentInstrumentalVerified",
+        "informedConsentVerified" = EXCLUDED."informedConsentVerified",
+        "imagingAvailableInRoom" = EXCLUDED."imagingAvailableInRoom",
+        "completed" = EXCLUDED."completed",
+        "completedAt" = EXCLUDED."completedAt",
+        "updatedAt" = NOW()
+    `;
+  }
+
+  private async syncAmbulatoryProcedurePostanesthesia(
+    procedureDocumentId: string,
+    input: {
+      formData: Record<string, unknown>;
+    },
+  ) {
+    if (!this.ambulatoryProcedureHasAnesthesia(input.formData)) {
+      await this.prisma.$executeRaw`
+        DELETE FROM "AmbulatoryProcedurePostanestheticNote" WHERE "procedureDocumentId" = ${procedureDocumentId}
+      `;
+      return;
+    }
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryProcedurePostanestheticNote" (
+        "id", "procedureDocumentId", "anestheticMedicationsUsed",
+        "anesthesiaDuration", "bloodApplied", "solutionsApplied",
+        "anesthesiaIncidents", "clinicalStatusAtRoomDischarge",
+        "postanestheticManagementPlan", "anesthesiologistName",
+        "anesthesiologistLicense", "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${procedureDocumentId}, ${this.readStringValue(input.formData.postMedicamentosAnestesicosProc)},
+        ${this.readStringValue(input.formData.postDuracionAnestesiaProc)}, ${this.readStringValue(input.formData.postSangreAplicadaProc)}, ${this.readStringValue(input.formData.postSolucionesAplicadasProc)},
+        ${this.readStringValue(input.formData.postIncidentesAnestesiaProc)}, ${this.readStringValue(input.formData.postEstadoClinicoEgresoSalaProc)},
+        ${this.readStringValue(input.formData.postPlanManejoProc)}, ${this.readStringValue(input.formData.postNombreAnestesiologoProc)},
+        ${this.readStringValue(input.formData.postCedulaAnestesiologoProc)}, NOW(), NOW()
+      )
+      ON CONFLICT ("procedureDocumentId") DO UPDATE SET
+        "anestheticMedicationsUsed" = EXCLUDED."anestheticMedicationsUsed",
+        "anesthesiaDuration" = EXCLUDED."anesthesiaDuration",
+        "bloodApplied" = EXCLUDED."bloodApplied",
+        "solutionsApplied" = EXCLUDED."solutionsApplied",
+        "anesthesiaIncidents" = EXCLUDED."anesthesiaIncidents",
+        "clinicalStatusAtRoomDischarge" = EXCLUDED."clinicalStatusAtRoomDischarge",
+        "postanestheticManagementPlan" = EXCLUDED."postanestheticManagementPlan",
+        "anesthesiologistName" = EXCLUDED."anesthesiologistName",
+        "anesthesiologistLicense" = EXCLUDED."anesthesiologistLicense",
+        "updatedAt" = NOW()
+    `;
   }
 
   private async syncAmbulatoryPreprocedureOneToOneChildren(
@@ -10741,6 +11348,29 @@ export class EncountersService {
       };
     }
 
+    if (
+      this.isAmbulatoryProcedureRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+    ) {
+      const pdfBuffer = this.buildAmbulatoryProcedurePdfDocument({
+        encounter: input.encounter,
+        recordTitle: input.record.title,
+        recordedAt: input.record.recordedAt,
+        formData,
+        downloadCount: input.downloadCount,
+      });
+
+      return {
+        fileName: `${this.sanitizeFileName(input.record.title)}.pdf`,
+        mimeType: 'application/pdf',
+        contentBase64: pdfBuffer.toString('base64'),
+        downloadCount: input.downloadCount,
+        preview: input.preview,
+      };
+    }
+
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
@@ -11073,6 +11703,92 @@ export class EncountersService {
       `Cédula: ${this.readStringValue(input.formData.profesionalCedulaPreproc)}`,
       `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadPreproc)}`,
       `Lugar: ${this.readStringValue(input.formData.lugarAtencionPreproc)}`,
+      `Descargas registradas: ${input.downloadCount}`,
+    ];
+
+    return this.renderSimplePdf(lines);
+  }
+
+  private buildAmbulatoryProcedurePdfDocument(input: {
+    encounter: TenantEncounterRecord;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    downloadCount: number;
+  }) {
+    const materialLines = this.readObjectArray(input.formData.materialesProc).map(
+      (item, index) =>
+        `${index + 1}. ${this.readStringValue(item.nombre)} ${this.readStringValue(item.cantidad)} ${this.readStringValue(item.loteSerie)}`.trim(),
+    );
+    const lines = [
+      input.recordTitle,
+      'Tipo: Procedimiento',
+      `Paciente: ${input.encounter.patient.fullName}`,
+      `Expediente: ${input.encounter.medicalRecord.recordNumber}`,
+      `Episodio: ${input.encounter.encounterNumber}`,
+      `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
+      `Hash: ${this.readStringValue(input.formData.hashProc)}`,
+      `Sello digital: ${this.readStringValue(input.formData.selloDigitalProc)}`,
+      'Equipo quirúrgico',
+      `Cirujano principal: ${this.readStringValue(input.formData.cirujanoPrincipalProc)} · Cédula ${this.readStringValue(input.formData.cedulaCirujanoProc)}`,
+      `Ayudantes: ${this.readStringValue(input.formData.primerAyudanteProc)} / ${this.readStringValue(input.formData.segundoAyudanteProc)}`,
+      `Anestesiólogo: ${this.readStringValue(input.formData.anestesiologoProc)} · Cédula ${this.readStringValue(input.formData.cedulaAnestesiologoProc)}`,
+      `Instrumentista / circulante: ${this.readStringValue(input.formData.instrumentistaProc)} / ${this.readStringValue(input.formData.enfermeriaCirculanteProc)}`,
+      'Time-Out',
+      `Paciente verificado: ${Boolean(input.formData.toPacienteVerificadoProc) ? 'Sí' : 'No'}`,
+      `Procedimiento confirmado: ${Boolean(input.formData.toProcedimientoConfirmadoProc) ? 'Sí' : 'No'}`,
+      `Sitio marcado: ${Boolean(input.formData.toSitioConfirmadoProc) ? 'Sí' : 'No'}`,
+      `Time-Out antes de incisión: ${Boolean(input.formData.toRealizadoAntesIncisionProc) ? 'Sí' : 'No'}`,
+      `Profilaxis/equipo/consentimiento/imágenes: ${Boolean(input.formData.toProfilaxisAntibioticaProc) ? 'Sí' : 'No'} / ${Boolean(input.formData.toEquipoInstrumentalProc) ? 'Sí' : 'No'} / ${Boolean(input.formData.toConsentimientoVerificadoProc) ? 'Sí' : 'No'} / ${Boolean(input.formData.toImagenesDisponiblesProc) ? 'Sí' : 'No'}`,
+      'Descripción',
+      `Fecha: ${this.readStringValue(input.formData.fechaProcedimientoProc)} ${this.readStringValue(input.formData.horaInicioRealProc)}-${this.readStringValue(input.formData.horaFinRealProc)}`,
+      `Duración: ${this.readStringValue(input.formData.duracionMinutosProc)} min`,
+      `Sala: ${this.readStringValue(input.formData.salaQuirofanoProc)}`,
+      `Código procedimiento: ${this.readStringValue(input.formData.codigoProcedimientoProc)}`,
+      `Diagnóstico preoperatorio: ${this.readStringValue(input.formData.diagnosticoPreoperatorioProc)} · ${this.readStringValue(input.formData.ciePreoperatorioProc)}`,
+      `Diagnóstico postoperatorio: ${this.readStringValue(input.formData.diagnosticoPostoperatorioProc)} · ${this.readStringValue(input.formData.ciePostoperatorioProc)}`,
+      `Procedimiento realizado: ${this.readStringValue(input.formData.procedimientoRealizadoProc)}`,
+      'Anestesia',
+      `Tipo: ${this.readStringValue(input.formData.tipoAnestesiaProc)}`,
+      `Medicamentos: ${this.readStringValue(input.formData.medicamentosAnestesicosProc)}`,
+      `Eventos: ${this.readStringValue(input.formData.eventosAnestesicosProc)}`,
+      `Alertas: ${this.readStringValue(input.formData.alertasAnestesiaProc)}`,
+      'Técnica y hallazgos',
+      `Técnica: ${this.readStringValue(input.formData.tecnicaQuirurgicaProc)}`,
+      `Hallazgos: ${this.readStringValue(input.formData.hallazgosTransoperatoriosProc)}`,
+      `Herida: ${this.readStringValue(input.formData.clasificacionHeridaProc)}`,
+      'Transoperatorio',
+      `Sangrado estimado: ${this.readStringValue(input.formData.sangradoEstimadoMlProc)} ml`,
+      `Líquidos IV: ${this.readStringValue(input.formData.liquidosIvProc)}`,
+      `Transfusiones: ${this.readStringValue(input.formData.transfusionesProc)}`,
+      `Drenajes: ${this.readStringValue(input.formData.drenajesColocadosProc)}`,
+      'Materiales:',
+      ...(materialLines.length > 0 ? materialLines : ['Sin materiales estructurados']),
+      `Implantes/dispositivos: ${this.readStringValue(input.formData.implantesDispositivosProc)}`,
+      `Lotes/series: ${this.readStringValue(input.formData.lotesSeriesProc)}`,
+      `Cuenta gasas/instrumental: ${this.readStringValue(input.formData.cuentaGasasInstrumentalProc)}`,
+      'Patología y complicaciones',
+      `Pieza quirúrgica: ${this.readStringValue(input.formData.descripcionPiezaProc)}`,
+      `Envío patología: ${this.readStringValue(input.formData.envioPatologiaProc)} · Folio ${this.readStringValue(input.formData.folioPatologiaProc)}`,
+      `Complicaciones: ${this.readStringValue(input.formData.huboComplicacionesProc)} · Conversión ${this.readStringValue(input.formData.conversionAbiertaProc)}`,
+      `Tipo/manejo: ${this.readStringValue(input.formData.tipoComplicacionProc)} / ${this.readStringValue(input.formData.manejoComplicacionProc)}`,
+      'Destino',
+      `Destino: ${this.readStringValue(input.formData.destinoPostprocedimientoProc)}`,
+      `Monitorización: ${this.readStringValue(input.formData.requiereMonitorizacionProc)}`,
+      `Indicaciones inmediatas: ${this.readStringValue(input.formData.indicacionesInmediatasProc)}`,
+      'Postanestesia',
+      `Medicamentos: ${this.readStringValue(input.formData.postMedicamentosAnestesicosProc)}`,
+      `Duración anestesia: ${this.readStringValue(input.formData.postDuracionAnestesiaProc)}`,
+      `Sangre/soluciones: ${this.readStringValue(input.formData.postSangreAplicadaProc)} / ${this.readStringValue(input.formData.postSolucionesAplicadasProc)}`,
+      `Incidentes: ${this.readStringValue(input.formData.postIncidentesAnestesiaProc)}`,
+      `Estado egreso sala: ${this.readStringValue(input.formData.postEstadoClinicoEgresoSalaProc)}`,
+      `Plan postanestésico: ${this.readStringValue(input.formData.postPlanManejoProc)}`,
+      `Anestesiólogo responsable: ${this.readStringValue(input.formData.postNombreAnestesiologoProc)} · ${this.readStringValue(input.formData.postCedulaAnestesiologoProc)}`,
+      'Datos legales',
+      `Profesional: ${this.readStringValue(input.formData.profesionalNombreProc)}`,
+      `Cédula: ${this.readStringValue(input.formData.profesionalCedulaProc)}`,
+      `Especialidad: ${this.readStringValue(input.formData.profesionalEspecialidadProc)}`,
+      `Lugar: ${this.readStringValue(input.formData.lugarAtencionProc)}`,
       `Descargas registradas: ${input.downloadCount}`,
     ];
 
@@ -11828,6 +12544,10 @@ export class EncountersService {
       this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
         ? this.resolveAmbulatoryPreprocedureRequiredFields(formData)
         : [];
+    const ambulatoryProcedureRequiredFields =
+      this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
+        ? this.resolveAmbulatoryProcedureRequiredFields(formData)
+        : [];
 
     const missingFields = [
       ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
@@ -11848,6 +12568,7 @@ export class EncountersService {
       ...hospitalDischargeRequiredFields,
       ...hospitalDocumentRequiredFields,
       ...ambulatoryPreprocedureRequiredFields,
+      ...ambulatoryProcedureRequiredFields,
     ].filter((fieldKey) => {
       const value = formData[fieldKey];
       return !this.hasCapturedValue(value);
@@ -11885,8 +12606,14 @@ export class EncountersService {
                                     ? 'Completa los campos obligatorios del documento hospitalario antes de firmarlo'
                                     : this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
                                       ? 'Completa los campos obligatorios de la valoración preprocedimiento antes de firmarla'
+                                      : this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
+                                        ? 'Completa los campos obligatorios del procedimiento antes de firmarlo'
                   : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
+    }
+
+    if (this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)) {
+      this.assertAmbulatoryProcedureReadyForSignature(formData);
     }
 
     if (this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)) {
@@ -12002,6 +12729,111 @@ export class EncountersService {
           ]
         : []),
     ];
+  }
+
+  private resolveAmbulatoryProcedureRequiredFields(
+    formData: Record<string, unknown>,
+  ) {
+    const baseRequiredFields = [
+      'cirujanoPrincipalProc',
+      'cedulaCirujanoProc',
+      'anestesiologoProc',
+      'cedulaAnestesiologoProc',
+      'fechaProcedimientoProc',
+      'horaInicioRealProc',
+      'horaFinRealProc',
+      'salaQuirofanoProc',
+      'diagnosticoPreoperatorioProc',
+      'ciePreoperatorioProc',
+      'diagnosticoPostoperatorioProc',
+      'ciePostoperatorioProc',
+      'procedimientoRealizadoProc',
+      'tipoAnestesiaProc',
+      'tecnicaQuirurgicaProc',
+      'hallazgosTransoperatoriosProc',
+      'clasificacionHeridaProc',
+      'sangradoEstimadoMlProc',
+      'cuentaGasasInstrumentalProc',
+      'huboComplicacionesProc',
+      'destinoPostprocedimientoProc',
+      'requiereMonitorizacionProc',
+      'indicacionesInmediatasProc',
+      'profesionalNombreProc',
+      'profesionalCedulaProc',
+      'profesionalEspecialidadProc',
+      'lugarAtencionProc',
+    ];
+    const hasComplications = this.readStringValue(formData.huboComplicacionesProc) === 'SI';
+    const hasAnesthesia = this.ambulatoryProcedureHasAnesthesia(formData);
+
+    return [
+      ...baseRequiredFields,
+      ...(hasComplications
+        ? ['tipoComplicacionProc', 'manejoComplicacionProc']
+        : []),
+      ...(hasAnesthesia
+        ? [
+            'postMedicamentosAnestesicosProc',
+            'postDuracionAnestesiaProc',
+            'postSolucionesAplicadasProc',
+            'postIncidentesAnestesiaProc',
+            'postEstadoClinicoEgresoSalaProc',
+            'postPlanManejoProc',
+            'postNombreAnestesiologoProc',
+            'postCedulaAnestesiologoProc',
+          ]
+        : []),
+    ];
+  }
+
+  private assertAmbulatoryProcedureReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const timeOutFields = [
+      'toPacienteVerificadoProc',
+      'toProcedimientoConfirmadoProc',
+      'toSitioConfirmadoProc',
+      'toRealizadoAntesIncisionProc',
+      'toProfilaxisAntibioticaProc',
+      'toEquipoInstrumentalProc',
+      'toConsentimientoVerificadoProc',
+      'toImagenesDisponiblesProc',
+    ];
+    if (timeOutFields.some((fieldKey) => !Boolean(formData[fieldKey]))) {
+      throw new BadRequestException(
+        'Completa todo el Time-Out antes de firmar el procedimiento',
+      );
+    }
+
+    if (this.readStringValue(formData.cuentaGasasInstrumentalProc) === 'INCOMPLETA') {
+      throw new BadRequestException(
+        'No se puede firmar con cuenta de gasas e instrumental incompleta',
+      );
+    }
+
+    if (
+      this.readStringValue(formData.huboComplicacionesProc) === 'SI' &&
+      (!this.hasCapturedValue(formData.tipoComplicacionProc) ||
+        !this.hasCapturedValue(formData.manejoComplicacionProc))
+    ) {
+      throw new BadRequestException(
+        'Documenta tipo y manejo de la complicación antes de firmar',
+      );
+    }
+
+    if (
+      this.readStringValue(formData.envioPatologiaProc) === 'SI' &&
+      !this.hasCapturedValue(formData.folioPatologiaProc)
+    ) {
+      throw new BadRequestException(
+        'Captura el folio de patología cuando se envíe pieza quirúrgica',
+      );
+    }
+  }
+
+  private ambulatoryProcedureHasAnesthesia(formData: Record<string, unknown>) {
+    const anesthesiaType = this.readStringValue(formData.tipoAnestesiaProc);
+    return anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
   }
 
   private assertAmbulatoryPreprocedureReadyForSignature(

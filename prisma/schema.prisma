@@ -1667,6 +1667,179 @@ model AmbulatoryPreprocedureInformedConsent {
   @@index([consentSignedDate])
 }
 
+/// Documento médico-legal del acto quirúrgico o procedimiento ambulatorio.
+/// Mantiene una proyección relacional consultable además del snapshot dinámico.
+model AmbulatoryProcedureDocument {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  preprocedureAssessmentId String?
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  procedureDate DateTime
+  realStartTime String
+  realEndTime String
+  durationMinutes Int?
+  operatingRoom String
+  procedureCode String?
+  preoperativeDiagnosis String
+  preoperativeCie10 String
+  postoperativeDiagnosis String
+  postoperativeCie10 String
+  performedProcedure String
+
+  anesthesiaType String
+  anesthesiaMedications String?
+  anesthesiaEvents String?
+  anesthesiaAlerts String?
+  hasAnesthesia Boolean @default(false)
+
+  surgicalTechnique String
+  transoperativeFindings String
+  woundClassification String
+
+  estimatedBleedingMl Decimal @db.Decimal(10, 2)
+  ivFluids String?
+  transfusions String?
+  drainsPlaced String?
+  implantsDevices String?
+  lotsSeries String?
+  spongeInstrumentCount String
+
+  surgicalSpecimenDescription String?
+  sentToPathology String?
+  pathologyFolio String?
+
+  hadComplications String
+  openConversion String?
+  complicationType String?
+  complicationManagement String?
+
+  postprocedureDestination String
+  requiresMonitoring String
+  immediatePostprocedureIndications String
+  destinationAlert String?
+  availableForDischarge Boolean @default(false)
+
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teamMembers AmbulatoryProcedureTeamMember[]
+  timeOutChecklist AmbulatoryProcedureTimeOutChecklist?
+  materials AmbulatoryProcedureMaterial[]
+  postanestheticNote AmbulatoryProcedurePostanestheticNote?
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([preprocedureAssessmentId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([procedureCode])
+  @@index([preoperativeCie10])
+  @@index([postoperativeCie10])
+  @@index([documentHash])
+}
+
+model AmbulatoryProcedureTeamMember {
+  id String @id @default(uuid())
+  procedureDocumentId String
+  role String
+  fullName String
+  professionalLicense String?
+  userId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([procedureDocumentId, role])
+  @@index([role])
+  @@index([userId])
+}
+
+model AmbulatoryProcedureTimeOutChecklist {
+  id String @id @default(uuid())
+  procedureDocumentId String @unique
+  patientVerified Boolean @default(false)
+  procedureConfirmed Boolean @default(false)
+  surgicalSiteConfirmed Boolean @default(false)
+  timeOutBeforeIncision Boolean @default(false)
+  antibioticProphylaxisAdministered Boolean @default(false)
+  equipmentInstrumentalVerified Boolean @default(false)
+  informedConsentVerified Boolean @default(false)
+  imagingAvailableInRoom Boolean @default(false)
+  completed Boolean @default(false)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+}
+
+model AmbulatoryProcedureMaterial {
+  id String @id @default(uuid())
+  procedureDocumentId String
+  name String
+  quantity String?
+  lotSerial String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([procedureDocumentId])
+  @@index([name])
+  @@index([lotSerial])
+}
+
+model AmbulatoryProcedurePostanestheticNote {
+  id String @id @default(uuid())
+  procedureDocumentId String @unique
+  anestheticMedicationsUsed String
+  anesthesiaDuration String
+  bloodApplied String?
+  solutionsApplied String
+  anesthesiaIncidents String
+  clinicalStatusAtRoomDischarge String
+  postanestheticManagementPlan String
+  anesthesiologistName String
+  anesthesiologistLicense String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([anesthesiologistName])
+  @@index([anesthesiologistLicense])
+}
+
 /// Evolución médica longitudinal dentro de un episodio de Urgencias.
 /// Mantiene datos normalizados para auditoría NOM-004, signos vitales por toma
 /// y diagnósticos que evolucionan sin sobrescribir registros previos.
