@@ -1387,6 +1387,1107 @@ model EncounterSectionRecord {
   @@index([authoredByUserId])
 }
 
+/// Valoración clínica integral previa a un procedimiento ambulatorio.
+/// Se sincroniza desde EncounterSectionRecord para conservar el snapshot editable
+/// y exponer datos normalizados para consulta clínica, auditoría y NOM-004/NOM-006.
+model AmbulatoryPreprocedureAssessment {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  preoperativeDiagnosis String
+  preoperativeCie10 String
+  indicatedProcedure String
+  procedureCode String?
+  procedureCodeSystem String?
+  clinicalIndication String
+  procedureType String
+  currentSymptoms String
+  illnessEvolution String
+  relevantHistoryDetail String?
+
+  physicalExam String
+  preoperativeStudies String
+
+  anesthesiaPlanned String
+  hasAnesthesia Boolean @default(false)
+
+  asaClassification String
+  surgicalRisk String
+  cardiovascularRisk String?
+  capriniThromboembolicRisk String?
+  informedProcedureRisks String
+  prognosis String
+  indicatedProphylaxis String?
+  clinicalAlerts String?
+
+  preoperativePreparation String
+  fastingHours Decimal? @db.Decimal(5, 2)
+  fastingConfirmed String
+  medicationSuspension String?
+  prophylacticAntibiotic String?
+  specialPreparation String?
+
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  procedureStageEnabled Boolean @default(false)
+
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  relevantHistories AmbulatoryPreprocedureRelevantHistory[]
+  comorbidities AmbulatoryPreprocedureComorbidity[]
+  allergies AmbulatoryPreprocedureAllergy[]
+  medications AmbulatoryPreprocedureMedication[]
+  vitalMeasurements AmbulatoryPreprocedureVitalMeasurement[]
+  preanestheticEvaluation AmbulatoryPreprocedurePreanestheticEvaluation?
+  riskAssessment AmbulatoryPreprocedureRiskAssessment?
+  safetyChecklist AmbulatoryPreprocedureSafetyChecklist?
+  informedConsent AmbulatoryPreprocedureInformedConsent?
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([preoperativeCie10])
+  @@index([procedureCode])
+  @@index([documentHash])
+}
+
+model AmbulatoryPreprocedureRelevantHistory {
+  id String @id @default(uuid())
+  assessmentId String
+  conditionKey String
+  label String
+  present Boolean @default(true)
+  detail String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, conditionKey])
+  @@index([conditionKey])
+}
+
+model AmbulatoryPreprocedureComorbidity {
+  id String @id @default(uuid())
+  assessmentId String
+  diagnosis String
+  cie10 String?
+  controlStatus String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([cie10])
+  @@index([controlStatus])
+}
+
+model AmbulatoryPreprocedureAllergy {
+  id String @id @default(uuid())
+  assessmentId String
+  substance String
+  reaction String?
+  severity String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([substance])
+  @@index([severity])
+}
+
+model AmbulatoryPreprocedureMedication {
+  id String @id @default(uuid())
+  assessmentId String
+  drugName String
+  dose String?
+  frequency String?
+  sourceFromRecord Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([drugName])
+}
+
+model AmbulatoryPreprocedureVitalMeasurement {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  weightKg Decimal @db.Decimal(8, 2)
+  heightCm Decimal @db.Decimal(8, 2)
+  bmi Decimal? @db.Decimal(8, 2)
+  bloodPressure String
+  heartRate Int
+  respiratoryRate Int
+  oxygenSaturation Decimal @db.Decimal(5, 2)
+  temperatureC Decimal @db.Decimal(4, 1)
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  measuredAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([measuredAt])
+}
+
+model AmbulatoryPreprocedurePreanestheticEvaluation {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  anesthesiaPlanned String
+  mallampati String?
+  mouthOpening String?
+  cervicalMobility String?
+  thyromentalDistance String?
+  anestheticRisk String
+  functionalCapacityMets String?
+  functionalLimitation String?
+  clinicalEvaluation String?
+  anestheticHistory String?
+  anesthesiaPlanType String?
+  anesthesiaSpecificRisk String?
+  anesthesiaRelevantAllergies String?
+  anesthesiaPlan String?
+  anesthesiologistName String?
+  anesthesiologistLicense String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([anesthesiaPlanned])
+  @@index([anestheticRisk])
+}
+
+model AmbulatoryPreprocedureRiskAssessment {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  asaClassification String
+  surgicalRisk String
+  cardiovascularRisk String?
+  capriniThromboembolicRisk String?
+  informedProcedureRisks String
+  prognosis String
+  indicatedProphylaxis String?
+  clinicalAlerts String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([asaClassification])
+  @@index([surgicalRisk])
+  @@index([cardiovascularRisk])
+  @@index([capriniThromboembolicRisk])
+}
+
+model AmbulatoryPreprocedureSafetyChecklist {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  patientIdentified Boolean @default(false)
+  procedureConfirmed Boolean @default(false)
+  surgicalSiteMarked Boolean @default(false)
+  consentSigned Boolean @default(false)
+  allergiesVerified Boolean @default(false)
+  studiesAvailable Boolean @default(false)
+  fastingVerified Boolean @default(false)
+  antibioticProphylaxisIndicated Boolean @default(false)
+  completed Boolean @default(false)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+}
+
+model AmbulatoryPreprocedureInformedConsent {
+  id String @id @default(uuid())
+  assessmentId String @unique
+  institutionName String
+  legalName String
+  documentTitle String
+  placeAndDate String
+  surgicalConsentStatus String
+  anesthesiaConsentStatus String?
+  consentSignedDate DateTime
+  explainingPhysician String
+  authorizedAct String
+  expectedRisks String
+  expectedBenefits String
+  contingencyAuthorization String
+  patientExplanation String
+  authorizerName String
+  relationshipToPatient String
+  witnessOneName String
+  witnessTwoName String
+  performerName String
+  patientUnderstands Boolean @default(false)
+  responsibleInformed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assessment AmbulatoryPreprocedureAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([surgicalConsentStatus])
+  @@index([anesthesiaConsentStatus])
+  @@index([consentSignedDate])
+}
+
+/// Documento médico-legal del acto quirúrgico o procedimiento ambulatorio.
+/// Mantiene una proyección relacional consultable además del snapshot dinámico.
+model AmbulatoryProcedureDocument {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  preprocedureAssessmentId String?
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  procedureDate DateTime
+  realStartTime String
+  realEndTime String
+  durationMinutes Int?
+  operatingRoom String
+  procedureCode String?
+  preoperativeDiagnosis String
+  preoperativeCie10 String
+  postoperativeDiagnosis String
+  postoperativeCie10 String
+  performedProcedure String
+
+  anesthesiaType String
+  anesthesiaMedications String?
+  anesthesiaEvents String?
+  anesthesiaAlerts String?
+  hasAnesthesia Boolean @default(false)
+
+  surgicalTechnique String
+  transoperativeFindings String
+  woundClassification String
+
+  estimatedBleedingMl Decimal @db.Decimal(10, 2)
+  ivFluids String?
+  transfusions String?
+  drainsPlaced String?
+  implantsDevices String?
+  lotsSeries String?
+  spongeInstrumentCount String
+
+  surgicalSpecimenDescription String?
+  sentToPathology String?
+  pathologyFolio String?
+
+  hadComplications String
+  openConversion String?
+  complicationType String?
+  complicationManagement String?
+
+  postprocedureDestination String
+  requiresMonitoring String
+  immediatePostprocedureIndications String
+  destinationAlert String?
+  availableForDischarge Boolean @default(false)
+
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  teamMembers AmbulatoryProcedureTeamMember[]
+  timeOutChecklist AmbulatoryProcedureTimeOutChecklist?
+  materials AmbulatoryProcedureMaterial[]
+  postanestheticNote AmbulatoryProcedurePostanestheticNote?
+  recoveryEvaluations AmbulatoryRecoveryEvaluation[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([preprocedureAssessmentId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([procedureCode])
+  @@index([preoperativeCie10])
+  @@index([postoperativeCie10])
+  @@index([documentHash])
+}
+
+model AmbulatoryProcedureTeamMember {
+  id String @id @default(uuid())
+  procedureDocumentId String
+  role String
+  fullName String
+  professionalLicense String?
+  userId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([procedureDocumentId, role])
+  @@index([role])
+  @@index([userId])
+}
+
+model AmbulatoryProcedureTimeOutChecklist {
+  id String @id @default(uuid())
+  procedureDocumentId String @unique
+  patientVerified Boolean @default(false)
+  procedureConfirmed Boolean @default(false)
+  surgicalSiteConfirmed Boolean @default(false)
+  timeOutBeforeIncision Boolean @default(false)
+  antibioticProphylaxisAdministered Boolean @default(false)
+  equipmentInstrumentalVerified Boolean @default(false)
+  informedConsentVerified Boolean @default(false)
+  imagingAvailableInRoom Boolean @default(false)
+  completed Boolean @default(false)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+}
+
+model AmbulatoryProcedureMaterial {
+  id String @id @default(uuid())
+  procedureDocumentId String
+  name String
+  quantity String?
+  lotSerial String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([procedureDocumentId])
+  @@index([name])
+  @@index([lotSerial])
+}
+
+model AmbulatoryProcedurePostanestheticNote {
+  id String @id @default(uuid())
+  procedureDocumentId String @unique
+  anestheticMedicationsUsed String
+  anesthesiaDuration String
+  bloodApplied String?
+  solutionsApplied String
+  anesthesiaIncidents String
+  clinicalStatusAtRoomDischarge String
+  postanestheticManagementPlan String
+  anesthesiologistName String
+  anesthesiologistLicense String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument @relation(fields: [procedureDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([anesthesiologistName])
+  @@index([anesthesiologistLicense])
+}
+
+model AmbulatoryProcedureSupportingDocument {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  documentType String
+  versionNumber Int
+  title String
+  folio String @unique
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  documentDate DateTime?
+  documentTime String?
+  patientName String
+  medicalRecordNumber String?
+  encounterFolio String
+  responsibleName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+  verificationCode String?
+  documentHash String?
+  digitalSeal String?
+  contentJson Json?
+  signerUserId String?
+  signedAt DateTime?
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  labStudies AmbulatoryProcedureDocumentLabStudy[]
+  labRequest AmbulatoryProcedureLabRequest?
+  imagingRequest AmbulatoryProcedureImagingRequest?
+  referralDocument AmbulatoryProcedureReferralDocument?
+  consentDocument AmbulatoryProcedureConsentDocument?
+  certificateDocument AmbulatoryProcedureCertificateDocument?
+
+  @@unique([encounterId, documentType, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([documentType])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signerUserId])
+  @@index([documentHash])
+}
+
+model AmbulatoryProcedureDocumentLabStudy {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  supportingDocumentId String
+  studyType String
+  clinicalIndication String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([supportingDocumentId])
+  @@index([studyType])
+}
+
+model AmbulatoryProcedureLabRequest {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  requestType String?
+  priority String?
+  diagnosis String?
+  cie10 String?
+  clinicalReason String?
+  fasting String?
+  preparation String?
+  additionalStudies String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([priority])
+  @@index([cie10])
+}
+
+model AmbulatoryProcedureImagingRequest {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  imageType String?
+  anatomicalRegion String?
+  clinicalReason String?
+  probableDiagnosis String?
+  cie10 String?
+  contrast String?
+  preparation String?
+  contrastAlert String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([imageType])
+  @@index([cie10])
+}
+
+model AmbulatoryProcedureReferralDocument {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  referralType String?
+  destinationHospital String?
+  destinationClinic String?
+  destinationPhysician String?
+  reason String?
+  diagnosis String?
+  performedProcedure String?
+  briefEvolution String?
+  currentTreatment String?
+  medication String?
+  planRecommendations String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([referralType])
+}
+
+model AmbulatoryProcedureConsentDocument {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  institutionName String?
+  legalName String?
+  procedureName String?
+  anesthesiaType String?
+  risks String?
+  benefits String?
+  alternatives String?
+  legalAuthorization String?
+  patientSignature String?
+  witnessOneSignature String?
+  witnessTwoSignature String?
+  physicianSignature String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([procedureName])
+}
+
+model AmbulatoryProcedureCertificateDocument {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  certificateType String?
+  incapacityDays Int?
+  incapacityType String?
+  certificateText String?
+  startDate DateTime?
+  endDate DateTime?
+  diagnosis String?
+  observations String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([certificateType])
+}
+
+/// Documento clínico de vigilancia postprocedimiento inmediata.
+/// Proyecta datos críticos de recuperación para auditoría, egreso seguro y NOM-004.
+model AmbulatoryRecoveryEvaluation {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  procedureDocumentId String?
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+
+  evaluationDate DateTime?
+  evaluationTime String?
+  postprocedureTime String?
+  monitoringFrequency String?
+  patientSymptoms String?
+  oralTolerance String?
+  ambulation String?
+  urination String?
+  consciousnessState String?
+  generalState String?
+  postprocedureExam String?
+  postprocedureComplications String?
+  complicationManagement String?
+
+  adverseEvent String?
+  adverseEventAction String?
+  surveillancePlan String?
+  recoveryTimeMinutes Int?
+  postRecoveryDestination String?
+  immediateChanges String?
+  alertsSummary String?
+  trafficLight String?
+  redAlertActive Boolean @default(false)
+  readyForDischarge Boolean @default(false)
+
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procedureDocument AmbulatoryProcedureDocument? @relation(fields: [procedureDocumentId], references: [id])
+  vitalMeasurement AmbulatoryRecoveryVitalMeasurement?
+  aldreteScore AmbulatoryRecoveryAldreteScore?
+  dischargeChecklist AmbulatoryRecoveryDischargeChecklist?
+  alerts AmbulatoryRecoveryAlert[]
+  nursingRecords AmbulatoryRecoveryNursingRecord[]
+  auxiliaryServices AmbulatoryRecoveryAuxiliaryService[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([procedureDocumentId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([trafficLight])
+  @@index([redAlertActive])
+  @@index([readyForDischarge])
+  @@index([documentHash])
+}
+
+model AmbulatoryRecoveryVitalMeasurement {
+  id String @id @default(uuid())
+  recoveryEvaluationId String @unique
+  systolicBloodPressure Int?
+  diastolicBloodPressure Int?
+  heartRate Int?
+  respiratoryRate Int?
+  oxygenSaturation Decimal? @db.Decimal(5, 2)
+  temperatureC Decimal? @db.Decimal(4, 1)
+  painEva Int?
+  glasgow Int?
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  measuredAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([measuredAt])
+  @@index([oxygenSaturation])
+  @@index([painEva])
+  @@index([glasgow])
+}
+
+model AmbulatoryRecoveryAldreteScore {
+  id String @id @default(uuid())
+  recoveryEvaluationId String @unique
+  motorActivity Int?
+  respiration Int?
+  circulation Int?
+  consciousness Int?
+  oxygenSaturation Int?
+  totalScore Int?
+  interpretation String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([totalScore])
+}
+
+model AmbulatoryRecoveryDischargeChecklist {
+  id String @id @default(uuid())
+  recoveryEvaluationId String @unique
+  oralToleranceWithoutNausea Boolean @default(false)
+  independentAmbulation Boolean @default(false)
+  spontaneousUrination Boolean @default(false)
+  controlledPain Boolean @default(false)
+  noNauseaVomiting Boolean @default(false)
+  stableVitalsOneHour Boolean @default(false)
+  woundsWithoutBleeding Boolean @default(false)
+  aldreteAtLeastNine Boolean @default(false)
+  responsibleCompanionPresent Boolean @default(false)
+  dischargeInstructionsDelivered Boolean @default(false)
+  completed Boolean @default(false)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+}
+
+model AmbulatoryRecoveryAlert {
+  id String @id @default(uuid())
+  recoveryEvaluationId String
+  severity String
+  code String
+  message String
+  sourceMetric String?
+  createdAt DateTime @default(now())
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([severity])
+  @@index([code])
+}
+
+model AmbulatoryRecoveryNursingRecord {
+  id String @id @default(uuid())
+  recoveryEvaluationId String
+  recordDate DateTime?
+  recordTime String?
+  shift String?
+  authorName String?
+  habitusExterior String?
+  medicationAdministration String?
+  nursingProcedures String?
+  painEva Int?
+  fallRisk String?
+  observations String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([recordDate])
+  @@index([shift])
+  @@index([authorName])
+  @@index([fallRisk])
+}
+
+model AmbulatoryRecoveryAuxiliaryService {
+  id String @id @default(uuid())
+  recoveryEvaluationId String
+  studyDateTime DateTime?
+  requestedStudy String?
+  clinicalProblem String?
+  incidentsOrAccidents String?
+  resultsDescription String?
+  treatingPhysicianInterpretation String?
+  physicianName String?
+  studyFolio String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recoveryEvaluation AmbulatoryRecoveryEvaluation @relation(fields: [recoveryEvaluationId], references: [id], onDelete: Cascade)
+
+  @@index([studyDateTime])
+  @@index([requestedStudy])
+  @@index([studyFolio])
+}
+
+model AmbulatoryDischargePrescription {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  prescriptionFolio String @unique
+  prescriptionType String?
+  issuedAt DateTime?
+  validity String?
+  issuerInstitution String
+  physicianRfc String
+  sanitaryLicense String
+  verificationQr String?
+  qrActive Boolean @default(false)
+  allergyAlerts String?
+  medicationValidationSummary String?
+  medicationTrafficLight String?
+  dietInstructions String?
+  physicalActivityLevel String?
+  physicalActivityDetail String?
+  woundCare String?
+  homeMonitoring String?
+  alarmSigns String?
+  followUpDate DateTime?
+  followUpType String?
+  followUpReason String?
+  patientEducation String?
+  patientUnderstands Boolean @default(false)
+  companionInformed Boolean @default(false)
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+  signerUserId String?
+  signedAt DateTime?
+  documentHash String
+  digitalSeal String
+  prescriptionPdfGeneratedAt DateTime?
+  completePdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  medications AmbulatoryDischargePrescriptionMedication[]
+  validations AmbulatoryDischargePrescriptionValidation[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([prescriptionFolio])
+  @@index([documentHash])
+}
+
+model AmbulatoryDischargePrescriptionMedication {
+  id String @id @default(uuid())
+  prescriptionId String
+  medicationName String
+  dose String?
+  route String?
+  frequency String?
+  duration String?
+  medicationType String?
+  indication String?
+  sourceCatalogId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prescription AmbulatoryDischargePrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([prescriptionId])
+  @@index([medicationName])
+  @@index([medicationType])
+  @@index([route])
+}
+
+model AmbulatoryDischargePrescriptionValidation {
+  id String @id @default(uuid())
+  prescriptionId String
+  severity String
+  validationType String
+  message String
+  blocking Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  prescription AmbulatoryDischargePrescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  @@index([severity])
+  @@index([validationType])
+  @@index([blocking])
+}
+
+model AmbulatoryDischargeSummary {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  linkedPrescriptionId String?
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  dischargeType String?
+  destination String?
+  dischargeDate DateTime?
+  dischargeTime String?
+  finalDiagnosis String?
+  finalCie10 String?
+  dischargeCondition String?
+  clinicalStatusAtDischarge String?
+  prognosis String?
+  procedureReason String?
+  performedProcedure String?
+  recoveryEvolution String?
+  statusSummaryAtDischarge String?
+  linkedPrescriptionPlan String?
+  linkedMedications String?
+  linkedPrescriptionFolio String?
+  followUp String?
+  disabilityDays Int?
+  disabilityType String?
+  patientEducation String?
+  patientUnderstands Boolean @default(false)
+  companionInformed Boolean @default(false)
+  responsiblePhysician String
+  responsiblePhysicianLicense String
+  professionalName String
+  professionalLicense String
+  professionalSpecialty String
+  careLocation String
+  closureWarning String?
+  signerUserId String?
+  signedAt DateTime?
+  closedEncounterAt DateTime?
+  documentHash String
+  digitalSeal String
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vitalSnapshot AmbulatoryDischargeVitalSnapshot?
+  dischargeCriteria AmbulatoryDischargeCriteria?
+  transferReference AmbulatoryDischargeTransferReference?
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([linkedPrescriptionId])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signedAt])
+  @@index([closedEncounterAt])
+  @@index([finalCie10])
+  @@index([documentHash])
+}
+
+model AmbulatoryDischargeVitalSnapshot {
+  id String @id @default(uuid())
+  dischargeSummaryId String @unique
+  bloodPressure String?
+  heartRate Int?
+  respiratoryRate Int?
+  temperatureC Decimal? @db.Decimal(4, 1)
+  oxygenSaturation Decimal? @db.Decimal(5, 2)
+  capillaryGlucose Decimal? @db.Decimal(8, 2)
+  painEva Int?
+  aldreteScore Int?
+  prognosis String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dischargeSummary AmbulatoryDischargeSummary @relation(fields: [dischargeSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([aldreteScore])
+  @@index([oxygenSaturation])
+}
+
+model AmbulatoryDischargeCriteria {
+  id String @id @default(uuid())
+  dischargeSummaryId String @unique
+  stableVitalsOneHour Boolean @default(false)
+  controlledPain Boolean @default(false)
+  oralTolerance Boolean @default(false)
+  independentAmbulation Boolean @default(false)
+  spontaneousUrination Boolean @default(false)
+  woundsWithoutBleeding Boolean @default(false)
+  aldreteAtLeastNine Boolean @default(false)
+  responsibleCompanion Boolean @default(false)
+  writtenInstructionsDelivered Boolean @default(false)
+  prescriptionDelivered Boolean @default(false)
+  meetsCriteria String?
+  finalAldrete Int?
+  completed Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dischargeSummary AmbulatoryDischargeSummary @relation(fields: [dischargeSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([completed])
+  @@index([finalAldrete])
+}
+
+model AmbulatoryDischargeTransferReference {
+  id String @id @default(uuid())
+  dischargeSummaryId String @unique
+  referenceDateTime DateTime?
+  referralReason String?
+  clinicalSummary String?
+  physicalExam String?
+  studyResults String?
+  diagnoses String?
+  previousTreatmentPlan String?
+  prognosis String?
+  sendingFacility String?
+  receivingFacility String?
+  receivingPhysician String?
+  transportMethod String?
+  transportConditions String?
+  transferVitalSigns String?
+  issuingPhysician String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dischargeSummary AmbulatoryDischargeSummary @relation(fields: [dischargeSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([referenceDateTime])
+  @@index([receivingFacility])
+}
+
 /// Evolución médica longitudinal dentro de un episodio de Urgencias.
 /// Mantiene datos normalizados para auditoría NOM-004, signos vitales por toma
 /// y diagnósticos que evolucionan sin sobrescribir registros previos.
