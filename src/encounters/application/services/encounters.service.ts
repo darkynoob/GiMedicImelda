@@ -1027,6 +1027,19 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryProcedureSupportingDocument({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
     await this.syncHospitalAdmissionRecord({
       tenantId,
       userId,
@@ -1513,6 +1526,19 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncAmbulatoryProcedureSupportingDocument({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
     await this.syncHospitalAdmissionRecord({
       tenantId,
       userId,
@@ -1849,6 +1875,32 @@ export class EncountersService {
         metadata: currentMetadata,
       });
     }
+    if (
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        currentRecord.encounterType,
+        currentRecord.tabKey,
+      )
+    ) {
+      const supportingFormData =
+        currentRecord.formDataJson &&
+        typeof currentRecord.formDataJson === 'object' &&
+        !Array.isArray(currentRecord.formDataJson)
+          ? (currentRecord.formDataJson as Record<string, unknown>)
+          : {};
+      await this.syncAmbulatoryProcedureSupportingDocument({
+        tenantId,
+        userId,
+        encounter,
+        sectionRecordId: currentRecord.id,
+        tabKey: currentRecord.tabKey,
+        noteType: currentRecord.noteType,
+        recordedAt: currentRecord.recordedAt,
+        title: currentRecord.title,
+        status: currentRecord.status,
+        formData: supportingFormData,
+        metadata: currentMetadata,
+      });
+    }
 
     const signedAt = new Date();
     const isHospitalConsultation = this.isHospitalConsultationRecord(
@@ -1863,6 +1915,11 @@ export class EncountersService {
       currentRecord.encounterType,
       currentRecord.tabKey,
     );
+    const isAmbulatoryProcedureSupportingDocument =
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        currentRecord.encounterType,
+        currentRecord.tabKey,
+      );
     const hospitalConsultationFormData =
       currentRecord.formDataJson &&
       typeof currentRecord.formDataJson === 'object' &&
@@ -1913,10 +1970,20 @@ export class EncountersService {
             documentoFechaFirma: signedAt.toISOString(),
           }
         : null;
+    const nextAmbulatoryProcedureSupportingDocumentFormData:
+      | Record<string, unknown>
+      | null = isAmbulatoryProcedureSupportingDocument
+      ? {
+          ...hospitalConsultationFormData,
+          documentoEstado: 'Firmado',
+          documentoFechaFirma: signedAt.toISOString(),
+        }
+      : null;
     const nextSignedFormData =
       nextHospitalConsultationFormData ??
       nextHospitalSurgicalDocumentFormData ??
-      nextHospitalDocumentFormData;
+      nextHospitalDocumentFormData ??
+      nextAmbulatoryProcedureSupportingDocumentFormData;
 
     await this.prisma.$transaction(async (transaction) => {
       await transaction.encounterSectionRecord.update({
@@ -2426,6 +2493,34 @@ export class EncountersService {
         });
       }
 
+      if (isAmbulatoryProcedureSupportingDocument) {
+        await transaction.$executeRaw`
+          UPDATE "AmbulatoryProcedureSupportingDocument"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "contentJson" = ${this.jsonbParameter(nextAmbulatoryProcedureSupportingDocumentFormData ?? {})}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${signedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(currentRecord.title)}.pdf`}), "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+
+        await transaction.auditLog.create({
+          data: {
+            tenantId,
+            userId,
+            action: AuditAction.SIGN,
+            entityType: 'AmbulatoryProcedureSupportingDocument',
+            entityId: currentRecord.id,
+            facilityId: encounter.facilityId,
+            patientId: encounter.patientId,
+            encounterId: encounter.id,
+            metadataJson: {
+              title: currentRecord.title,
+              tabKey: currentRecord.tabKey,
+              documentType: currentRecord.noteType,
+              signedAt: signedAt.toISOString(),
+              closesEncounter: false,
+            },
+          },
+        });
+      }
+
       if (
         this.isHospitalAdmissionRecord(
           currentRecord.encounterType,
@@ -2844,6 +2939,10 @@ export class EncountersService {
       !this.isAmbulatoryDischargeRecord(
         record.encounterType,
         record.tabKey,
+      ) &&
+      !this.isAmbulatoryProcedureSupportingDocumentRecord(
+        record.encounterType,
+        record.tabKey,
       )
     ) {
       throw new BadRequestException(
@@ -2903,6 +3002,19 @@ export class EncountersService {
       await this.prisma.$executeRaw`
         UPDATE "HospitalDocument"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
+        WHERE "sectionRecordId" = ${record.id}
+      `;
+    }
+
+    if (
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        record.encounterType,
+        record.tabKey,
+      )
+    ) {
+      await this.prisma.$executeRaw`
+        UPDATE "AmbulatoryProcedureSupportingDocument"
+        SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
         WHERE "sectionRecordId" = ${record.id}
       `;
     }
@@ -5459,6 +5571,19 @@ export class EncountersService {
           'Tipo de documento no permitido en Hospitalización',
         );
       }
+      if (
+        this.isAmbulatoryProcedureSupportingDocumentRecord(
+          input.encounter.encounterType,
+          input.input.tabKey,
+        ) &&
+        !this.isAllowedAmbulatoryProcedureSupportingDocumentType(
+          input.input.noteType,
+        )
+      ) {
+        throw new BadRequestException(
+          'Tipo de documento no permitido en Procedimiento ambulatorio',
+        );
+      }
       const currentRecordMetadata = this.extractRecordVersionMetadata(
         input.currentRecord?.metadataJson,
       );
@@ -5472,11 +5597,11 @@ export class EncountersService {
       const documentFolio =
         currentRecordMetadata.folio ??
         `${input.encounter.encounterNumber}-${this.sanitizeFileName(input.input.noteType).toUpperCase()}-${String(versionNumber).padStart(2, '0')}`;
-      const mergedFormData = this.isHospitalDocumentRecord(
+      const mergedFormData = this.isAmbulatoryProcedureSupportingDocumentRecord(
         input.encounter.encounterType,
         input.input.tabKey,
       )
-        ? this.buildHospitalDocumentFormData({
+        ? this.buildAmbulatoryProcedureSupportingDocumentFormData({
             encounter: input.encounter,
             currentRecordFormData: input.currentRecord?.formDataJson ?? null,
             incomingFormData: input.input.formData,
@@ -5487,13 +5612,28 @@ export class EncountersService {
             folio: documentFolio,
             verificationCode,
           })
-        : (this.buildConsultationDocumentFormData({
+        : this.isHospitalDocumentRecord(
+              input.encounter.encounterType,
+              input.input.tabKey,
+            )
+          ? this.buildHospitalDocumentFormData({
+            encounter: input.encounter,
+            currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+            incomingFormData: input.input.formData,
+            noteType: input.input.noteType,
+            recordedAt: input.recordedAt,
+            responsibleUser: input.responsibleUser,
+            versionNumber,
+            folio: documentFolio,
+            verificationCode,
+            })
+          : (this.buildConsultationDocumentFormData({
             encounter: input.encounter,
             currentRecordFormData: input.currentRecord?.formDataJson ?? null,
             incomingFormData: input.input.formData,
             noteType: input.input.noteType,
             responsibleUser: input.responsibleUser,
-          }) as Record<string, unknown>);
+            }) as Record<string, unknown>);
 
       return {
         tabKey: input.input.tabKey,
@@ -6000,6 +6140,16 @@ export class EncountersService {
     ].includes(noteType);
   }
 
+  private isAllowedAmbulatoryProcedureSupportingDocumentType(noteType: string) {
+    return [
+      'Solicitud de laboratorio',
+      'Solicitud de imagenología',
+      'Referencia / contrarreferencia',
+      'Consentimiento informado',
+      'Certificado / constancia',
+    ].includes(noteType);
+  }
+
   private buildHospitalDocumentFormData(input: {
     encounter: TenantEncounterRecord;
     currentRecordFormData: Prisma.JsonValue | null;
@@ -6132,6 +6282,192 @@ export class EncountersService {
       documentoEspecialidadProfesional:
         input.encounter.specialty?.name ?? 'Sin especialidad',
       documentoLugarAtencion: careLocation,
+    };
+  }
+
+  private buildAmbulatoryProcedureSupportingDocumentFormData(input: {
+    encounter: TenantEncounterRecord;
+    currentRecordFormData: Prisma.JsonValue | null;
+    incomingFormData: Record<string, unknown>;
+    noteType: string;
+    recordedAt: Date;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+    versionNumber: number;
+    folio: string;
+    verificationCode: string;
+  }) {
+    const currentFormData =
+      input.currentRecordFormData &&
+      typeof input.currentRecordFormData === 'object' &&
+      !Array.isArray(input.currentRecordFormData)
+        ? (input.currentRecordFormData as Record<string, unknown>)
+        : {};
+    const latestPreprocedure = this.findLatestSectionRecord(
+      input.encounter.sectionRecords,
+      'Valoración preprocedimiento',
+    );
+    const latestProcedure = this.findLatestSectionRecord(
+      input.encounter.sectionRecords,
+      'Procedimiento',
+    );
+    const latestRecovery =
+      this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Recuperación / Evaluación',
+      ) ??
+      this.findLatestSectionRecord(
+        input.encounter.sectionRecords,
+        'Recuperación / Evolución',
+      );
+    const latestDischarge = this.findLatestSectionRecord(
+      input.encounter.sectionRecords,
+      'Egreso',
+    );
+    const procedureFormData = latestProcedure?.formDataJson ?? null;
+    const preprocedureFormData = latestPreprocedure?.formDataJson ?? null;
+    const recoveryFormData = latestRecovery?.formDataJson ?? null;
+    const dischargeFormData = latestDischarge?.formDataJson ?? null;
+    const documentHash =
+      this.readStringValue(input.incomingFormData.documentoHash) ||
+      this.readStringValue(currentFormData.documentoHash) ||
+      randomUUID().replace(/-/g, '');
+    const digitalSeal =
+      this.readStringValue(input.incomingFormData.documentoSelloDigital) ||
+      this.readStringValue(currentFormData.documentoSelloDigital) ||
+      `${input.verificationCode}-${documentHash.slice(0, 16)}`;
+    const diagnosis =
+      this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
+      this.readStringValueFromJson(dischargeFormData, 'diagnosticoFinalEgresoAmb') ||
+      this.readStringValueFromJson(procedureFormData, 'diagnosticoPostoperatorioProc') ||
+      this.readStringValueFromJson(preprocedureFormData, 'diagnosticoPreoperatorioPreproc') ||
+      input.encounter.diagnoses[0]?.description ||
+      '';
+    const cie10 =
+      this.readStringValue(input.incomingFormData.documentoDiagnosticoCie10) ||
+      this.readStringValueFromJson(dischargeFormData, 'cie10EgresoAmb') ||
+      this.readStringValueFromJson(procedureFormData, 'cie10PostoperatorioProc') ||
+      this.readStringValueFromJson(preprocedureFormData, 'cie10Preproc') ||
+      input.encounter.diagnoses[0]?.code ||
+      '';
+    const procedureName =
+      this.readStringValue(input.incomingFormData.documentoProcedimientoNombre) ||
+      this.readStringValueFromJson(procedureFormData, 'procedimientoRealizadoProc') ||
+      this.readStringValueFromJson(preprocedureFormData, 'procedimientoIndicadoPreproc') ||
+      '';
+    const careLocation =
+      [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') ||
+      input.encounter.tenant.legalName ||
+      input.encounter.tenant.name;
+    const contrastAlert =
+      input.noteType === 'Solicitud de imagenología' &&
+      this.readStringValue(input.incomingFormData.documentoConContraste) ===
+        'Con contraste' &&
+      input.encounter.allergies.some((allergy) =>
+        allergy.substance.toLowerCase().includes('contraste'),
+      )
+        ? 'Alergia a contraste registrada: verificar antes de solicitar'
+        : '';
+
+    const suggestions =
+      input.noteType === 'Referencia / contrarreferencia'
+        ? {
+            documentoDiagnosticoPrincipal: diagnosis,
+            documentoProcedimientoRealizado: procedureName,
+            documentoEvolucionBreve:
+              this.readStringValueFromJson(
+                recoveryFormData,
+                'exploracionPostprocedimientoRecEval',
+              ) ||
+              this.readStringValueFromJson(recoveryFormData, 'planVigilanciaRecEval'),
+          }
+        : input.noteType === 'Consentimiento informado'
+          ? {
+              documentoProcedimientoNombre: procedureName,
+              documentoTipoAnestesia:
+                this.readStringValueFromJson(procedureFormData, 'tipoAnestesiaProc') ||
+                this.readStringValueFromJson(
+                  preprocedureFormData,
+                  'tipoAnestesiaPrevistaPreproc',
+                ),
+              documentoRiesgos:
+                this.readStringValueFromJson(
+                  preprocedureFormData,
+                  'riesgosInformadosPreproc',
+                ) || '',
+              documentoBeneficios:
+                this.readStringValueFromJson(
+                  preprocedureFormData,
+                  'beneficiosEsperadosPreproc',
+                ) || '',
+            }
+          : input.noteType === 'Certificado / constancia'
+            ? {
+                documentoDiagnosticoPrincipal: diagnosis,
+                documentoTextoConstancia: procedureName
+                  ? `Se realizó procedimiento ambulatorio: ${procedureName}.`
+                  : '',
+              }
+            : {
+                documentoDiagnosticoPrincipal: diagnosis,
+                documentoDiagnosticoCie10: cie10,
+              };
+
+    return {
+      ...suggestions,
+      ...input.incomingFormData,
+      tipoRegistro: input.noteType,
+      documentoTipoEpisodio: 'Procedimiento ambulatorio',
+      documentoPacienteNombre: input.encounter.patient.fullName,
+      documentoExpediente: input.encounter.medicalRecord.recordNumber,
+      documentoFolioEpisodio: input.encounter.encounterNumber,
+      documentoFolio: input.folio,
+      documentoVersion: `V${input.versionNumber}`,
+      documentoEstado:
+        this.readStringValue(currentFormData.documentoEstado) === 'Firmado'
+          ? 'Firmado'
+          : 'Borrador',
+      documentoCodigoVerificacion: input.verificationCode,
+      documentoHash: documentHash,
+      documentoSelloDigital: digitalSeal,
+      documentoFecha:
+        this.readStringValue(input.incomingFormData.documentoFecha) ||
+        this.readStringValue(currentFormData.documentoFecha) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      documentoHora:
+        this.readStringValue(input.incomingFormData.documentoHora) ||
+        this.readStringValue(currentFormData.documentoHora) ||
+        input.recordedAt.toISOString().slice(11, 16),
+      documentoInstitucionEmisora:
+        input.encounter.facility?.institutionName ??
+        input.encounter.facility?.legalName ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      documentoInstitucionNombre:
+        input.encounter.facility?.institutionName ??
+        input.encounter.tenant.name,
+      documentoRazonSocial:
+        input.encounter.facility?.legalName ??
+        input.encounter.tenant.legalName ??
+        input.encounter.tenant.name,
+      documentoRfcMedico: input.encounter.tenant.taxId ?? 'Sin dato disponible',
+      documentoLicenciaSanitaria:
+        input.encounter.facility?.legalName ?? 'Sin dato disponible',
+      documentoNombreProfesional:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      documentoCedulaProfesional:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      documentoEspecialidadProfesional:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
+      documentoLugarAtencion: careLocation,
+      documentoFirmaMedico:
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+      documentoAlertaContraste: contrastAlert,
     };
   }
 
@@ -8915,6 +9251,212 @@ export class EncountersService {
           ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${hospitalDocumentId},
           ${signer.signerType}, ${signerName}, ${this.readStringValue(signer.signatureLabel)}, ${index},
           NOW(), NOW()
+        )
+      `;
+    }
+  }
+
+  private async syncAmbulatoryProcedureSupportingDocument(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    noteType: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isAmbulatoryProcedureSupportingDocumentRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const folio =
+      this.readStringValue(input.metadata.folio) ||
+      this.readStringValue(input.formData.documentoFolio) ||
+      `${input.encounter.encounterNumber}-${this.sanitizeFileName(input.noteType).toUpperCase()}-${String(versionNumber).padStart(2, '0')}`;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const documentDate = this.parseOptionalDate(input.formData.documentoFecha);
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "AmbulatoryProcedureSupportingDocument" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "documentType", "versionNumber", "title", "folio", "status",
+        "recordedAt", "documentDate", "documentTime", "patientName",
+        "medicalRecordNumber", "encounterFolio", "responsibleName",
+        "professionalLicense", "professionalSpecialty", "careLocation",
+        "verificationCode", "documentHash", "digitalSeal", "contentJson",
+        "signerUserId", "signedAt", "pdfGeneratedAt", "pdfFileName",
+        "pdfDownloadCount", "pdfLastDownloadedAt",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${input.noteType}, ${versionNumber}, ${input.title}, ${folio}, ${input.status},
+        ${input.recordedAt}, ${documentDate}, ${this.readStringValue(input.formData.documentoHora)}, ${this.readStringValue(input.formData.documentoPacienteNombre) || input.encounter.patient.fullName},
+        ${this.readStringValue(input.formData.documentoExpediente) || input.encounter.medicalRecord.recordNumber}, ${this.readStringValue(input.formData.documentoFolioEpisodio) || input.encounter.encounterNumber},
+        ${this.readStringValue(input.formData.documentoNombreProfesional) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.documentoCedulaProfesional)}, ${this.readStringValue(input.formData.documentoEspecialidadProfesional)},
+        ${this.readStringValue(input.formData.documentoLugarAtencion)}, ${this.readStringValue(input.formData.documentoCodigoVerificacion)}, ${this.readStringValue(input.formData.documentoHash)}, ${this.readStringValue(input.formData.documentoSelloDigital)}, ${this.jsonbParameter(input.formData)},
+        ${signedAt ? input.userId : null}, ${signedAt}, ${signedAt}, ${input.status === EncounterRecordStatus.SIGNED ? `${this.sanitizeFileName(input.title)}.pdf` : null},
+        ${this.readNumericValue(input.metadata.pdfDownloadCount) ?? 0}, ${this.parseOptionalDate(input.metadata.pdfLastDownloadedAt)},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "documentType" = EXCLUDED."documentType",
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "folio" = EXCLUDED."folio",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "documentDate" = EXCLUDED."documentDate",
+        "documentTime" = EXCLUDED."documentTime",
+        "patientName" = EXCLUDED."patientName",
+        "medicalRecordNumber" = EXCLUDED."medicalRecordNumber",
+        "encounterFolio" = EXCLUDED."encounterFolio",
+        "responsibleName" = EXCLUDED."responsibleName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "professionalSpecialty" = EXCLUDED."professionalSpecialty",
+        "careLocation" = EXCLUDED."careLocation",
+        "verificationCode" = EXCLUDED."verificationCode",
+        "documentHash" = EXCLUDED."documentHash",
+        "digitalSeal" = EXCLUDED."digitalSeal",
+        "contentJson" = EXCLUDED."contentJson",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "pdfGeneratedAt" = EXCLUDED."pdfGeneratedAt",
+        "pdfFileName" = EXCLUDED."pdfFileName",
+        "pdfDownloadCount" = EXCLUDED."pdfDownloadCount",
+        "pdfLastDownloadedAt" = EXCLUDED."pdfLastDownloadedAt",
+        "updatedAt" = NOW()
+    `;
+
+    const storedRows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "AmbulatoryProcedureSupportingDocument" WHERE "sectionRecordId" = ${input.sectionRecordId} LIMIT 1
+    `;
+    const supportingDocumentId = storedRows[0]?.id;
+    if (!supportingDocumentId) return;
+
+    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureDocumentLabStudy" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+
+    if (input.noteType === 'Solicitud de laboratorio') {
+      const labStudies = this.readObjectArray(
+        input.formData.documentoEstudiosLaboratorio,
+      );
+      for (const [index, study] of labStudies.entries()) {
+        const studyType = this.readStringValue(study.tipoEstudio);
+        if (!studyType) continue;
+
+        await this.prisma.$executeRaw`
+          INSERT INTO "AmbulatoryProcedureDocumentLabStudy" (
+            "id", "tenantId", "encounterId", "patientId", "supportingDocumentId",
+            "studyType", "clinicalIndication", "sortOrder", "createdAt", "updatedAt"
+          )
+          VALUES (
+            ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${supportingDocumentId},
+            ${studyType}, ${this.readStringValue(study.indicacionClinica)}, ${index}, NOW(), NOW()
+          )
+        `;
+      }
+    }
+
+    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureLabRequest" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureImagingRequest" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureReferralDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureConsentDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureCertificateDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+
+    if (input.noteType === 'Solicitud de laboratorio') {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureLabRequest" (
+          "id", "supportingDocumentId", "tenantId", "encounterId", "patientId",
+          "requestType", "priority", "diagnosis", "cie10", "clinicalReason",
+          "fasting", "preparation", "additionalStudies", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${supportingDocumentId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId},
+          ${this.readStringValue(input.formData.documentoTipoSolicitud)}, ${this.readStringValue(input.formData.documentoPrioridad)}, ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}, ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}, ${this.readStringValue(input.formData.documentoMotivoSolicitud)},
+          ${this.readStringValue(input.formData.documentoAyuno)}, ${this.readStringValue(input.formData.documentoPreparacionEspecifica)}, ${this.readStringValue(input.formData.documentoEstudiosSolicitados)}, NOW(), NOW()
+        )
+      `;
+      return;
+    }
+
+    if (input.noteType === 'Solicitud de imagenología') {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureImagingRequest" (
+          "id", "supportingDocumentId", "tenantId", "encounterId", "patientId",
+          "imageType", "anatomicalRegion", "clinicalReason", "probableDiagnosis",
+          "cie10", "contrast", "preparation", "contrastAlert", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${supportingDocumentId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId},
+          ${this.readStringValue(input.formData.documentoTipoImagen)}, ${this.readStringValue(input.formData.documentoRegionAnatomica)}, ${this.readStringValue(input.formData.documentoMotivoSolicitud)}, ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)},
+          ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}, ${this.readStringValue(input.formData.documentoConContraste)}, ${this.readStringValue(input.formData.documentoPreparacionEspecifica)}, ${this.readStringValue(input.formData.documentoAlertaContraste)}, NOW(), NOW()
+        )
+      `;
+      return;
+    }
+
+    if (input.noteType === 'Referencia / contrarreferencia') {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureReferralDocument" (
+          "id", "supportingDocumentId", "tenantId", "encounterId", "patientId",
+          "referralType", "destinationHospital", "destinationClinic",
+          "destinationPhysician", "reason", "diagnosis", "performedProcedure",
+          "briefEvolution", "currentTreatment", "medication", "planRecommendations",
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${supportingDocumentId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId},
+          ${this.readStringValue(input.formData.documentoTipoReferencia)}, ${this.readStringValue(input.formData.documentoHospitalDestino)}, ${this.readStringValue(input.formData.documentoClinicaDestino)},
+          ${this.readStringValue(input.formData.documentoMedicoDestino)}, ${this.readStringValue(input.formData.documentoMotivoEnvio)}, ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}, ${this.readStringValue(input.formData.documentoProcedimientoRealizado)},
+          ${this.readStringValue(input.formData.documentoEvolucionBreve)}, ${this.readStringValue(input.formData.documentoTratamientoActual)}, ${this.readStringValue(input.formData.documentoMedicacion)}, ${this.readStringValue(input.formData.documentoPlanRecomendaciones)},
+          NOW(), NOW()
+        )
+      `;
+      return;
+    }
+
+    if (input.noteType === 'Consentimiento informado') {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureConsentDocument" (
+          "id", "supportingDocumentId", "tenantId", "encounterId", "patientId",
+          "institutionName", "legalName", "procedureName", "anesthesiaType",
+          "risks", "benefits", "alternatives", "legalAuthorization",
+          "patientSignature", "witnessOneSignature", "witnessTwoSignature",
+          "physicianSignature", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${supportingDocumentId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId},
+          ${this.readStringValue(input.formData.documentoInstitucionNombre)}, ${this.readStringValue(input.formData.documentoRazonSocial)}, ${this.readStringValue(input.formData.documentoProcedimientoNombre)}, ${this.readStringValue(input.formData.documentoTipoAnestesia)},
+          ${this.readStringValue(input.formData.documentoRiesgos)}, ${this.readStringValue(input.formData.documentoBeneficios)}, ${this.readStringValue(input.formData.documentoAlternativas)}, ${this.readStringValue(input.formData.documentoAutorizacionLegal)},
+          ${this.readStringValue(input.formData.documentoFirmaPaciente)}, ${this.readStringValue(input.formData.documentoFirmaTestigo1)}, ${this.readStringValue(input.formData.documentoFirmaTestigo2)},
+          ${this.readStringValue(input.formData.documentoFirmaMedico)}, NOW(), NOW()
+        )
+      `;
+      return;
+    }
+
+    if (input.noteType === 'Certificado / constancia') {
+      await this.prisma.$executeRaw`
+        INSERT INTO "AmbulatoryProcedureCertificateDocument" (
+          "id", "supportingDocumentId", "tenantId", "encounterId", "patientId",
+          "certificateType", "incapacityDays", "incapacityType", "certificateText",
+          "startDate", "endDate", "diagnosis", "observations", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${supportingDocumentId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId},
+          ${this.readStringValue(input.formData.documentoTipoCertificado)}, ${this.readNumericValue(input.formData.documentoDiasIncapacidad)}, ${this.readStringValue(input.formData.documentoTipoIncapacidad)}, ${this.readStringValue(input.formData.documentoTextoConstancia)},
+          ${this.parseOptionalDate(input.formData.documentoReposoInicio)}, ${this.parseOptionalDate(input.formData.documentoReposoFin)}, ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}, ${this.readStringValue(input.formData.documentoObservaciones)}, NOW(), NOW()
         )
       `;
     }
@@ -11780,13 +12322,21 @@ export class EncountersService {
     return (
       (encounterType === EncounterType.OUTPATIENT ||
         encounterType === EncounterType.EMERGENCY ||
-        encounterType === EncounterType.HOSPITALIZATION) &&
+        encounterType === EncounterType.HOSPITALIZATION ||
+        encounterType === EncounterType.SURGERY) &&
       tabKey === 'Documentos'
     );
   }
 
   private isHospitalDocumentRecord(encounterType: EncounterType, tabKey: string) {
     return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Documentos';
+  }
+
+  private isAmbulatoryProcedureSupportingDocumentRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.SURGERY && tabKey === 'Documentos';
   }
 
   private isConsultationClosureDocument(
@@ -12224,7 +12774,8 @@ export class EncountersService {
         !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalDischargeRecord(record.encounterType, record.tabKey) &&
         !this.isAmbulatoryDischargePrescriptionRecord(record.encounterType, record.tabKey) &&
-        !this.isAmbulatoryDischargeRecord(record.encounterType, record.tabKey))
+        !this.isAmbulatoryDischargeRecord(record.encounterType, record.tabKey) &&
+        !this.isAmbulatoryProcedureSupportingDocumentRecord(record.encounterType, record.tabKey))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -14398,6 +14949,17 @@ export class EncountersService {
         'Tipo de documento no permitido en Hospitalización',
       );
     }
+    if (
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        input.encounterType,
+        input.tabKey,
+      ) &&
+      !this.isAllowedAmbulatoryProcedureSupportingDocumentType(input.noteType)
+    ) {
+      throw new BadRequestException(
+        'Tipo de documento no permitido en Procedimiento ambulatorio',
+      );
+    }
 
     const formData =
       input.formDataJson &&
@@ -14632,6 +15194,15 @@ export class EncountersService {
     )
       ? this.resolveHospitalDocumentRequiredFields(input.noteType)
       : [];
+    const ambulatorySupportingDocumentRequiredFields =
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+        ? this.resolveAmbulatoryProcedureSupportingDocumentRequiredFields(
+            input.noteType,
+          )
+        : [];
     const ambulatoryPreprocedureRequiredFields =
       this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
         ? this.resolveAmbulatoryPreprocedureRequiredFields(formData)
@@ -14654,7 +15225,11 @@ export class EncountersService {
         : [];
 
     const missingFields = [
-      ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
+      ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey) ||
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        input.encounterType,
+        input.tabKey,
+      )
         ? []
         : (requiredFieldsByNoteType[input.noteType] ?? [])),
       ...triageRequiredFields,
@@ -14671,6 +15246,7 @@ export class EncountersService {
       ...hospitalNursingRequiredFields,
       ...hospitalDischargeRequiredFields,
       ...hospitalDocumentRequiredFields,
+      ...ambulatorySupportingDocumentRequiredFields,
       ...ambulatoryPreprocedureRequiredFields,
       ...ambulatoryProcedureRequiredFields,
       ...ambulatoryRecoveryEvaluationRequiredFields,
@@ -14711,7 +15287,9 @@ export class EncountersService {
                                   ? 'Completa los campos obligatorios del egreso antes de firmarlo'
                                   : this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
                                     ? 'Completa los campos obligatorios del documento hospitalario antes de firmarlo'
-                                    : this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
+                                    : this.isAmbulatoryProcedureSupportingDocumentRecord(input.encounterType, input.tabKey)
+                                      ? 'Completa los campos obligatorios del documento ambulatorio antes de firmarlo'
+                                      : this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
                                       ? 'Completa los campos obligatorios de la valoración preprocedimiento antes de firmarla'
                                       : this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
                                         ? 'Completa los campos obligatorios del procedimiento antes de firmarlo'
@@ -14747,6 +15325,18 @@ export class EncountersService {
 
     if (this.isHospitalDocumentRecord(input.encounterType, input.tabKey)) {
       this.assertHospitalDocumentReadyForSignature(input.noteType, formData);
+    }
+
+    if (
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+    ) {
+      this.assertAmbulatoryProcedureSupportingDocumentReadyForSignature(
+        input.noteType,
+        formData,
+      );
     }
 
     if (this.isHospitalDischargeRecord(input.encounterType, input.tabKey)) {
@@ -15470,6 +16060,99 @@ export class EncountersService {
       throw new BadRequestException(
         'Registra el aviso institucional cuando la muerte sea accidental o violenta',
       );
+    }
+  }
+
+  private resolveAmbulatoryProcedureSupportingDocumentRequiredFields(
+    noteType: string,
+  ) {
+    if (noteType === 'Solicitud de laboratorio') {
+      return ['documentoTipoSolicitud', 'documentoPrioridad', 'documentoMotivoSolicitud'];
+    }
+
+    if (noteType === 'Solicitud de imagenología') {
+      return ['documentoTipoImagen', 'documentoRegionAnatomica', 'documentoMotivoSolicitud'];
+    }
+
+    if (noteType === 'Referencia / contrarreferencia') {
+      return [
+        'documentoTipoReferencia',
+        'documentoMotivoEnvio',
+        'documentoDiagnosticoPrincipal',
+        'documentoProcedimientoRealizado',
+        'documentoPlanRecomendaciones',
+      ];
+    }
+
+    if (noteType === 'Consentimiento informado') {
+      return [
+        'documentoProcedimientoNombre',
+        'documentoRiesgos',
+        'documentoBeneficios',
+        'documentoAutorizacionLegal',
+        'documentoFirmaPaciente',
+      ];
+    }
+
+    if (noteType === 'Certificado / constancia') {
+      return ['documentoTipoCertificado'];
+    }
+
+    return [];
+  }
+
+  private assertAmbulatoryProcedureSupportingDocumentReadyForSignature(
+    noteType: string,
+    formData: Record<string, unknown>,
+  ) {
+    if (noteType === 'Nota de cierre') {
+      throw new BadRequestException(
+        'Procedimiento ambulatorio no utiliza Nota de cierre en Documentos',
+      );
+    }
+
+    if (noteType === 'Solicitud de laboratorio') {
+      const studies = this.readObjectArray(formData.documentoEstudiosLaboratorio);
+      if (
+        studies.length === 0 &&
+        !this.hasCapturedValue(formData.documentoEstudiosSolicitados)
+      ) {
+        throw new BadRequestException(
+          'Agrega al menos un estudio de laboratorio o un estudio adicional',
+        );
+      }
+    }
+
+    if (
+      noteType === 'Solicitud de imagenología' &&
+      this.readStringValue(formData.documentoConContraste) === 'Con contraste' &&
+      this.hasCapturedValue(formData.documentoAlertaContraste)
+    ) {
+      throw new BadRequestException(
+        'Existe alerta por contraste. Verifica alergias o contraindicaciones antes de firmar',
+      );
+    }
+
+    if (noteType === 'Certificado / constancia') {
+      const certificateType = this.readStringValue(formData.documentoTipoCertificado);
+      if (
+        certificateType === 'Incapacidad' &&
+        (!this.hasCapturedValue(formData.documentoDiasIncapacidad) ||
+          !this.hasCapturedValue(formData.documentoReposoInicio) ||
+          !this.hasCapturedValue(formData.documentoReposoFin))
+      ) {
+        throw new BadRequestException(
+          'La incapacidad debe incluir días e intervalo de fechas',
+        );
+      }
+      if (
+        certificateType === 'Constancia médica' &&
+        !this.hasCapturedValue(formData.documentoTextoConstancia)
+      ) {
+        throw new BadRequestException(
+          'La constancia médica debe incluir texto estructurado',
+        );
+      }
     }
   }
 

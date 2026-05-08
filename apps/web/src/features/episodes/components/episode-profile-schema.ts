@@ -4504,6 +4504,14 @@ const hospitalDocumentTypeNames = [
   'Defunción',
 ];
 
+const ambulatoryProcedureDocumentTypeNames = [
+  'Solicitud de laboratorio',
+  'Solicitud de imagenología',
+  'Referencia / contrarreferencia',
+  'Consentimiento informado',
+  'Certificado / constancia',
+];
+
 const hospitalDocumentHeaderSection: EpisodeSectionDefinition = {
   key: 'documento_hospitalario_header',
   title: 'Header institucional',
@@ -4515,6 +4523,148 @@ const hospitalDocumentHeaderSection: EpisodeSectionDefinition = {
     { key: 'documentoExpediente', label: 'Expediente', type: 'readonly', inheritanceMode: 'system' },
     { key: 'documentoFolioEpisodio', label: 'Folio episodio', type: 'readonly', inheritanceMode: 'system' },
     { key: 'documentoTipoEpisodio', label: 'Tipo de episodio', type: 'readonly', inheritanceMode: 'system' },
+  ],
+};
+
+const ambulatoryProcedureDocumentHeaderSection: EpisodeSectionDefinition = {
+  key: 'documento_ambulatorio_header',
+  title: 'Documento complementario ambulatorio',
+  description:
+    'Documentos independientes: no cierran el episodio y no sustituyen recuperación, egreso ni receta.',
+  fields: [
+    { key: 'documentoTipoEpisodio', label: 'Tipo de episodio', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoPacienteNombre', label: 'Paciente', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoExpediente', label: 'Expediente', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoFolioEpisodio', label: 'Folio episodio', type: 'readonly', inheritanceMode: 'system' },
+  ],
+};
+
+const ambulatoryProcedureDocumentSectionDefinitions: Record<string, EpisodeSectionDefinition[]> = {
+  'Solicitud de laboratorio': [
+    {
+      key: 'documento_lab_ambulatorio',
+      title: 'Solicitud de laboratorio',
+      fields: [
+        { key: 'documentoFecha', label: 'Fecha de solicitud', type: 'date' },
+        { key: 'documentoHora', label: 'Hora de solicitud', type: 'time' },
+        { key: 'documentoTipoSolicitud', label: 'Tipo de solicitud', type: 'select', options: [
+          { value: 'Preoperatoria', label: 'Preoperatoria' },
+          { value: 'Control', label: 'Control' },
+        ] },
+        { key: 'documentoPrioridad', label: 'Prioridad', type: 'select', options: [
+          { value: 'Rutina', label: 'Rutina' },
+          { value: 'Urgente', label: 'Urgente' },
+        ] },
+        {
+          key: 'documentoEstudiosLaboratorio',
+          label: 'Estudios solicitados',
+          type: 'object-array',
+          itemAddLabel: 'Agregar estudio',
+          itemFields: [
+            { key: 'tipoEstudio', label: 'Estudio', type: 'select', options: [
+              { value: 'BH', label: 'BH' },
+              { value: 'QS', label: 'QS' },
+              { value: 'TP/TTP', label: 'TP/TTP' },
+              { value: 'PFH', label: 'PFH' },
+              { value: 'Otro', label: 'Otro' },
+            ] },
+            { key: 'indicacionClinica', label: 'Indicación', type: 'text' },
+          ],
+        },
+        { key: 'documentoEstudiosSolicitados', label: 'Campo libre adicional', type: 'textarea' },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico relacionado', type: 'text' },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        { key: 'documentoMotivoSolicitud', label: 'Motivo clínico', type: 'textarea' },
+        { key: 'documentoAyuno', label: 'Ayuno', type: 'text' },
+        { key: 'documentoPreparacionEspecifica', label: 'Preparación específica', type: 'textarea' },
+      ],
+    },
+  ],
+  'Solicitud de imagenología': [
+    {
+      key: 'documento_imagen_ambulatorio',
+      title: 'Solicitud de imagenología',
+      fields: [
+        { key: 'documentoFecha', label: 'Fecha', type: 'date' },
+        { key: 'documentoTipoImagen', label: 'Tipo', type: 'select', options: [
+          { value: 'USG', label: 'USG' },
+          { value: 'Rx', label: 'Rx' },
+          { value: 'TAC', label: 'TAC' },
+          { value: 'RM', label: 'RM' },
+        ] },
+        { key: 'documentoRegionAnatomica', label: 'Región anatómica', type: 'text' },
+        { key: 'documentoMotivoSolicitud', label: 'Motivo del estudio', type: 'textarea' },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico probable', type: 'text' },
+        { key: 'documentoDiagnosticoCie10', label: 'CIE-10', type: 'text' },
+        { key: 'documentoConContraste', label: 'Contraste', type: 'select', options: [
+          { value: 'Sin contraste', label: 'Sin contraste' },
+          { value: 'Con contraste', label: 'Con contraste' },
+        ] },
+        { key: 'documentoPreparacionEspecifica', label: 'Preparación', type: 'textarea' },
+        { key: 'documentoAlertaContraste', label: 'Alerta por contraste', type: 'readonly', inheritanceMode: 'system' },
+      ],
+    },
+  ],
+  'Referencia / contrarreferencia': [
+    {
+      key: 'documento_referencia_ambulatorio',
+      title: 'Referencia / contrarreferencia',
+      fields: [
+        { key: 'documentoTipoReferencia', label: 'Tipo', type: 'select', options: referralTypeOptions },
+        { key: 'documentoHospitalDestino', label: 'Hospital destino', type: 'text' },
+        { key: 'documentoClinicaDestino', label: 'Clínica destino', type: 'text' },
+        { key: 'documentoMedicoDestino', label: 'Médico destino', type: 'text' },
+        { key: 'documentoMotivoEnvio', label: 'Motivo', type: 'textarea' },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico', type: 'text' },
+        { key: 'documentoProcedimientoRealizado', label: 'Procedimiento realizado', type: 'textarea' },
+        { key: 'documentoEvolucionBreve', label: 'Evolución breve', type: 'textarea' },
+        { key: 'documentoTratamientoActual', label: 'Tratamiento actual', type: 'textarea' },
+        { key: 'documentoMedicacion', label: 'Medicación', type: 'textarea' },
+        { key: 'documentoPlanRecomendaciones', label: 'Plan y recomendaciones', type: 'textarea' },
+      ],
+    },
+  ],
+  'Consentimiento informado': [
+    {
+      key: 'documento_consentimiento_ambulatorio',
+      title: 'Consentimiento informado',
+      fields: [
+        { key: 'documentoInstitucionNombre', label: 'Nombre institución', type: 'readonly', inheritanceMode: 'system' },
+        { key: 'documentoRazonSocial', label: 'Razón social', type: 'readonly', inheritanceMode: 'system' },
+        { key: 'documentoProcedimientoNombre', label: 'Nombre del procedimiento', type: 'text' },
+        { key: 'documentoTipoAnestesia', label: 'Tipo de anestesia', type: 'text' },
+        { key: 'documentoRiesgos', label: 'Riesgos', type: 'textarea' },
+        { key: 'documentoBeneficios', label: 'Beneficios', type: 'textarea' },
+        { key: 'documentoAlternativas', label: 'Alternativas', type: 'textarea' },
+        { key: 'documentoAutorizacionLegal', label: 'Texto legal de autorización', type: 'textarea' },
+        { key: 'documentoFirmaPaciente', label: 'Firma paciente', type: 'text' },
+        { key: 'documentoFirmaTestigo1', label: 'Firma testigo 1', type: 'text' },
+        { key: 'documentoFirmaTestigo2', label: 'Firma testigo 2', type: 'text' },
+        { key: 'documentoFirmaMedico', label: 'Firma médico', type: 'readonly', inheritanceMode: 'system' },
+      ],
+    },
+  ],
+  'Certificado / constancia': [
+    {
+      key: 'documento_certificado_ambulatorio',
+      title: 'Certificado / constancia',
+      fields: [
+        { key: 'documentoTipoCertificado', label: 'Tipo', type: 'select', options: [
+          { value: 'Incapacidad', label: 'Incapacidad' },
+          { value: 'Constancia médica', label: 'Constancia médica' },
+        ] },
+        { key: 'documentoDiasIncapacidad', label: 'Días de incapacidad', type: 'number' },
+        { key: 'documentoTipoIncapacidad', label: 'Tipo de incapacidad', type: 'select', options: [
+          { value: 'Laboral', label: 'Laboral' },
+          { value: 'General', label: 'General' },
+        ] },
+        { key: 'documentoTextoConstancia', label: 'Texto de constancia', type: 'textarea' },
+        { key: 'documentoReposoInicio', label: 'Inicio', type: 'date' },
+        { key: 'documentoReposoFin', label: 'Fin', type: 'date' },
+        { key: 'documentoDiagnosticoPrincipal', label: 'Diagnóstico', type: 'text' },
+        { key: 'documentoObservaciones', label: 'Observaciones', type: 'textarea' },
+      ],
+    },
   ],
 };
 
@@ -4781,6 +4931,10 @@ export function getEpisodeDocumentTypes(encounterType: string) {
     return hospitalDocumentTypeNames;
   }
 
+  if (encounterType === 'SURGERY') {
+    return ambulatoryProcedureDocumentTypeNames;
+  }
+
   return getConsultationDocumentTypes();
 }
 
@@ -4811,6 +4965,23 @@ export function getHospitalDocumentTabDefinition(
       hospitalDocumentHeaderSection,
       ...(hospitalDocumentSectionDefinitions[noteType] ??
         hospitalDocumentSectionDefinitions['Solicitud de laboratorio']),
+      ...consultationDocumentSharedSections,
+    ],
+  };
+}
+
+export function getAmbulatoryProcedureDocumentTabDefinition(
+  noteType: string,
+): EpisodeTabDefinition {
+  return {
+    key: 'Documentos',
+    title: 'Documentos',
+    description:
+      'Documentos complementarios independientes del procedimiento ambulatorio.',
+    sections: [
+      ambulatoryProcedureDocumentHeaderSection,
+      ...(ambulatoryProcedureDocumentSectionDefinitions[noteType] ??
+        ambulatoryProcedureDocumentSectionDefinitions['Solicitud de laboratorio']),
       ...consultationDocumentSharedSections,
     ],
   };

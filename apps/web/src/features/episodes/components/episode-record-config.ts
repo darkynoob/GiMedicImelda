@@ -194,9 +194,9 @@ const surgeryConfig: Record<string, EpisodeRecordPanelConfig> = {
     noteTypes: [
       'Solicitud de laboratorio',
       'Solicitud de imagenología',
+      'Referencia / contrarreferencia',
       'Consentimiento informado',
-      'Nota de complicaciones',
-      'Nota de alta ambulatoria',
+      'Certificado / constancia',
     ],
   },
 };

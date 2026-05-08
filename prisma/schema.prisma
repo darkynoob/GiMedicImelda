@@ -1841,6 +1841,201 @@ model AmbulatoryProcedurePostanestheticNote {
   @@index([anesthesiologistLicense])
 }
 
+model AmbulatoryProcedureSupportingDocument {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  documentType String
+  versionNumber Int
+  title String
+  folio String @unique
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  documentDate DateTime?
+  documentTime String?
+  patientName String
+  medicalRecordNumber String?
+  encounterFolio String
+  responsibleName String
+  professionalLicense String?
+  professionalSpecialty String?
+  careLocation String?
+  verificationCode String?
+  documentHash String?
+  digitalSeal String?
+  contentJson Json?
+  signerUserId String?
+  signedAt DateTime?
+  pdfGeneratedAt DateTime?
+  pdfFileName String?
+  pdfDownloadCount Int @default(0)
+  pdfLastDownloadedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  labStudies AmbulatoryProcedureDocumentLabStudy[]
+  labRequest AmbulatoryProcedureLabRequest?
+  imagingRequest AmbulatoryProcedureImagingRequest?
+  referralDocument AmbulatoryProcedureReferralDocument?
+  consentDocument AmbulatoryProcedureConsentDocument?
+  certificateDocument AmbulatoryProcedureCertificateDocument?
+
+  @@unique([encounterId, documentType, versionNumber])
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([documentType])
+  @@index([status])
+  @@index([recordedAt])
+  @@index([signerUserId])
+  @@index([documentHash])
+}
+
+model AmbulatoryProcedureDocumentLabStudy {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  supportingDocumentId String
+  studyType String
+  clinicalIndication String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([supportingDocumentId])
+  @@index([studyType])
+}
+
+model AmbulatoryProcedureLabRequest {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  requestType String?
+  priority String?
+  diagnosis String?
+  cie10 String?
+  clinicalReason String?
+  fasting String?
+  preparation String?
+  additionalStudies String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([priority])
+  @@index([cie10])
+}
+
+model AmbulatoryProcedureImagingRequest {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  imageType String?
+  anatomicalRegion String?
+  clinicalReason String?
+  probableDiagnosis String?
+  cie10 String?
+  contrast String?
+  preparation String?
+  contrastAlert String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([imageType])
+  @@index([cie10])
+}
+
+model AmbulatoryProcedureReferralDocument {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  referralType String?
+  destinationHospital String?
+  destinationClinic String?
+  destinationPhysician String?
+  reason String?
+  diagnosis String?
+  performedProcedure String?
+  briefEvolution String?
+  currentTreatment String?
+  medication String?
+  planRecommendations String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([referralType])
+}
+
+model AmbulatoryProcedureConsentDocument {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  institutionName String?
+  legalName String?
+  procedureName String?
+  anesthesiaType String?
+  risks String?
+  benefits String?
+  alternatives String?
+  legalAuthorization String?
+  patientSignature String?
+  witnessOneSignature String?
+  witnessTwoSignature String?
+  physicianSignature String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([procedureName])
+}
+
+model AmbulatoryProcedureCertificateDocument {
+  id String @id @default(uuid())
+  supportingDocumentId String @unique
+  tenantId String
+  encounterId String
+  patientId String
+  certificateType String?
+  incapacityDays Int?
+  incapacityType String?
+  certificateText String?
+  startDate DateTime?
+  endDate DateTime?
+  diagnosis String?
+  observations String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supportingDocument AmbulatoryProcedureSupportingDocument @relation(fields: [supportingDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId])
+  @@index([certificateType])
+}
+
 /// Documento clínico de vigilancia postprocedimiento inmediata.
 /// Proyecta datos críticos de recuperación para auditoría, egreso seguro y NOM-004.
 model AmbulatoryRecoveryEvaluation {

@@ -52,6 +52,7 @@ import {
 } from './episode-helpers';
 import {
   buildDefaultFieldValue,
+  getAmbulatoryProcedureDocumentTabDefinition,
   getConsultationDocumentTabDefinition,
   getEpisodeDocumentTypes,
   getHospitalDocumentTabDefinition,
@@ -158,7 +159,8 @@ function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
   return (
     (encounterType === 'OUTPATIENT' ||
       encounterType === 'EMERGENCY' ||
-      encounterType === 'HOSPITALIZATION') &&
+      encounterType === 'HOSPITALIZATION' ||
+      encounterType === 'SURGERY') &&
     tabTitle === 'Documentos'
   );
 }
@@ -2630,6 +2632,8 @@ function buildDocumentLegalSnapshot(
     documentoTipoEpisodio:
       detail.encounterType === 'HOSPITALIZATION'
         ? 'Hospitalización'
+        : detail.encounterType === 'SURGERY'
+          ? 'Procedimiento ambulatorio'
         : detail.encounterType,
     documentoInstitucionEmisora:
       detail.legalContext.facilityInstitutionName ??
@@ -2678,6 +2682,81 @@ function buildDocumentSuggestionSnapshot(
 ): Record<string, RecordFieldValue> {
   if (detail.encounterType === 'HOSPITALIZATION') {
     return buildHospitalDocumentSuggestionSnapshot(detail, noteType);
+  }
+
+  if (detail.encounterType === 'SURGERY') {
+    const latestPreprocedure = getLatestRecordByTab(
+      detail.sectionRecords,
+      'Valoración preprocedimiento',
+    );
+    const latestProcedure = getLatestRecordByTab(detail.sectionRecords, 'Procedimiento');
+    const latestRecovery =
+      getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evaluación') ??
+      getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evolución');
+    const latestDischarge = getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+    const diagnosis =
+      (latestDischarge?.formData.diagnosticoFinalEgresoAmb as string | undefined) ??
+      (latestProcedure?.formData.diagnosticoPostoperatorioProc as string | undefined) ??
+      (latestPreprocedure?.formData.diagnosticoPreoperatorioPreproc as string | undefined) ??
+      '';
+    const cie10 =
+      (latestDischarge?.formData.cie10EgresoAmb as string | undefined) ??
+      (latestProcedure?.formData.cie10PostoperatorioProc as string | undefined) ??
+      (latestPreprocedure?.formData.cie10Preproc as string | undefined) ??
+      '';
+    const procedure =
+      (latestProcedure?.formData.procedimientoRealizadoProc as string | undefined) ??
+      (latestPreprocedure?.formData.procedimientoIndicadoPreproc as string | undefined) ??
+      '';
+    const recoverySummary =
+      (latestRecovery?.formData.exploracionPostprocedimientoRecEval as string | undefined) ??
+      (latestRecovery?.formData.planVigilanciaRecEval as string | undefined) ??
+      '';
+
+    if (noteType === 'Solicitud de laboratorio' || noteType === 'Solicitud de imagenología') {
+      return {
+        documentoDiagnosticoPrincipal: diagnosis,
+        documentoDiagnosticoCie10: cie10,
+      };
+    }
+
+    if (noteType === 'Referencia / contrarreferencia') {
+      return {
+        documentoDiagnosticoPrincipal: diagnosis,
+        documentoProcedimientoRealizado: procedure,
+        documentoEvolucionBreve: recoverySummary,
+        documentoTratamientoActual:
+          (latestDischarge?.formData.planEgresoVinculadoRecetaAmb as string | undefined) ??
+          '',
+      };
+    }
+
+    if (noteType === 'Consentimiento informado') {
+      return {
+        documentoProcedimientoNombre: procedure,
+        documentoTipoAnestesia:
+          (latestProcedure?.formData.tipoAnestesiaProc as string | undefined) ??
+          (latestPreprocedure?.formData.tipoAnestesiaPrevistaPreproc as string | undefined) ??
+          '',
+        documentoRiesgos:
+          (latestPreprocedure?.formData.riesgosInformadosPreproc as string | undefined) ??
+          '',
+        documentoBeneficios:
+          (latestPreprocedure?.formData.beneficiosEsperadosPreproc as string | undefined) ??
+          '',
+      };
+    }
+
+    if (noteType === 'Certificado / constancia') {
+      return {
+        documentoDiagnosticoPrincipal: diagnosis,
+        documentoTextoConstancia: procedure
+          ? `Se realizó procedimiento ambulatorio: ${procedure}.`
+          : '',
+      };
+    }
+
+    return {};
   }
 
   const latestConsultationRecord =
@@ -3018,7 +3097,9 @@ function buildDocumentVersionPrefill(args: {
   } | null;
 }) {
   const tabDefinition =
-    args.detail.encounterType === 'HOSPITALIZATION'
+    args.detail.encounterType === 'SURGERY'
+      ? getAmbulatoryProcedureDocumentTabDefinition(args.noteType)
+      : args.detail.encounterType === 'HOSPITALIZATION'
       ? getHospitalDocumentTabDefinition(args.noteType)
       : getConsultationDocumentTabDefinition(args.noteType);
   const nextFormData = normalizeRecordFormData(tabDefinition, undefined);
@@ -4675,7 +4756,9 @@ export function EpisodeDetailPage() {
     activeTabPanelConfig?.noteTypes?.[0] ??
     getEpisodeDocumentTypes(detail.encounterType)[0];
   const documentWorkspaceDefinition = isConsultationDocumentsSection
-    ? detail.encounterType === 'HOSPITALIZATION'
+    ? detail.encounterType === 'SURGERY'
+      ? getAmbulatoryProcedureDocumentTabDefinition(selectedDocumentNoteType)
+      : detail.encounterType === 'HOSPITALIZATION'
       ? getHospitalDocumentTabDefinition(selectedDocumentNoteType)
       : getConsultationDocumentTabDefinition(selectedDocumentNoteType)
     : undefined;
@@ -5100,7 +5183,9 @@ export function EpisodeDetailPage() {
         activeTabPanelConfig?.noteTypes?.[0] ??
         getEpisodeDocumentTypes(detail.encounterType)[0];
       const nextTabDefinition =
-        detail.encounterType === 'HOSPITALIZATION'
+        detail.encounterType === 'SURGERY'
+          ? getAmbulatoryProcedureDocumentTabDefinition(nextNoteType)
+          : detail.encounterType === 'HOSPITALIZATION'
           ? getHospitalDocumentTabDefinition(nextNoteType)
           : getConsultationDocumentTabDefinition(nextNoteType);
 
@@ -5567,7 +5652,9 @@ export function EpisodeDetailPage() {
       buildRecordFormState({
         tabDefinition:
           isConsultationDocumentsSection
-            ? detail.encounterType === 'HOSPITALIZATION'
+            ? detail.encounterType === 'SURGERY'
+              ? getAmbulatoryProcedureDocumentTabDefinition(record.noteType)
+              : detail.encounterType === 'HOSPITALIZATION'
               ? getHospitalDocumentTabDefinition(record.noteType)
               : getConsultationDocumentTabDefinition(record.noteType)
             : workspaceTabDefinition,
@@ -5986,7 +6073,9 @@ export function EpisodeDetailPage() {
     }
 
     const nextTabDefinition =
-      detail.encounterType === 'HOSPITALIZATION'
+      detail.encounterType === 'SURGERY'
+        ? getAmbulatoryProcedureDocumentTabDefinition(nextNoteType)
+        : detail.encounterType === 'HOSPITALIZATION'
         ? getHospitalDocumentTabDefinition(nextNoteType)
         : getConsultationDocumentTabDefinition(nextNoteType);
     const nextVersionForType =
