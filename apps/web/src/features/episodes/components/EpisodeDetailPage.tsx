@@ -29,7 +29,8 @@ import {
   PanelRight,
   History,
   Info,
-  LayoutDashboard
+  LayoutDashboard,
+  Paperclip
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../../../components/layout/AppLayout';
@@ -8995,20 +8996,25 @@ export function EpisodeDetailPage() {
                             <p className="text-sm font-semibold text-slate-900">
                               Archivos del episodio
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Esta sección ya soporta el flujo vacío, carga de archivos y
-                              listado persistente por episodio.
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              Adjunta documentos, estudios y archivos relacionados con el episodio clínico.
                             </p>
                           </div>
                           <div className="flex flex-col gap-2 sm:flex-row">
-                            <Input
-                              disabled={isEpisodeClosed}
-                              multiple
-                              onChange={(event) =>
-                                setPendingFiles(Array.from(event.target.files ?? []))
-                              }
-                              type="file"
-                            />
+                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                              <Paperclip className="h-4 w-4" />
+                              Seleccionar archivos
+
+                              <input
+                                className="hidden"
+                                disabled={isEpisodeClosed}
+                                multiple
+                                onChange={(event) =>
+                                  setPendingFiles(Array.from(event.target.files ?? []))
+                                }
+                                type="file"
+                              />
+                            </label>
                             <Button
                               className="gap-2"
                               disabled={uploadAttachmentsMutation.isPending || isEpisodeClosed}

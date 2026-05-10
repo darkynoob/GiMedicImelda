@@ -7,6 +7,9 @@ import {
   Stethoscope,
   UserRound,
   X,
+  IdCard,
+  ShieldAlert,
+  FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/ui/button';
@@ -173,37 +176,45 @@ export function CreateEpisodeModal({
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/55 p-4 md:p-6"
+      className="fixed inset-0 z-50 flex items-start justify-end bg-slate-950/55 p-4 md:p-6"
       role="dialog"
     >
-      <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">
-              Nuevo episodio
-            </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-900">
-              Apertura de episodio clinico
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Selecciona el paciente y captura los datos base para continuar en la
-              pantalla detallada.
-            </p>
+      <div className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border-slate-200 bg-slate-100 shadow-2xl">
+        <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 border border-white/15">
+                <UserRound className="h-5 w-5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                  Nuevo episodio
+                </p>
+                <h2 className="truncate text-lg font-semibold text-white">
+                  Apertura de episodio clinico
+                </h2>
+                <p className="text-xs text-white/60 truncate">
+                  Selecciona al paciente e ingresa los datos iniciales del episodio clínico.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-lg border border-white/15 bg-white/10 p-2 text-white/70 hover:bg-white/20 hover:text-white transition"
+                onClick={onClose}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-          <button
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-            onClick={onClose}
-            type="button"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         <div className="max-h-[calc(100vh-6rem)] overflow-y-auto px-6 py-6">
-          <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
-            <section className="space-y-6">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center gap-2">
+          <div className="grid gap-6 lg:grid-cols-[1.5fr_0.7fr]">
+            <section className="space-y-7">
+              <div className="rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
+                <div className="flex items-center gap-3">
                   <div className="rounded-xl bg-primary/10 p-2 text-primary">
                     <UserRound className="h-4 w-4" />
                   </div>
@@ -221,9 +232,9 @@ export function CreateEpisodeModal({
                 {!selectedPatient ? (
                   <div className="mt-4 space-y-3">
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <Input
-                        className="pl-9"
+                        className="h-11 rounded-2xl border-slate-200 bg-white pl-10 shadow-sm focus-visible:ring-primary/20"
                         onChange={(event) => setPatientSearch(event.target.value)}
                         placeholder="Buscar paciente por nombre o CURP..."
                         value={patientSearch}
@@ -232,7 +243,7 @@ export function CreateEpisodeModal({
                     <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
                       {visiblePatients.map((patient) => (
                         <button
-                          className="w-full rounded-2xl border border-transparent bg-white px-4 py-3 text-left transition hover:border-primary/30 hover:bg-primary/5"
+                          className="w-full rounded-2xl border border-transparent bg-white px-4 py-3 text-left transition hover:border-primary/30 hover:bg-primary/5 hover:shadow-sm transition-all duration-200"
                           key={patient.id}
                           onClick={() =>
                             setForm((currentValue) => ({
@@ -258,7 +269,7 @@ export function CreateEpisodeModal({
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/[0.03] p-4">
+                  <div className="mt-4 rounded-2xl border border-primary/15 bg-gradient-to-br from-primary/[0.04] to-primary/[0.01] p-4 ">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">
@@ -268,6 +279,9 @@ export function CreateEpisodeModal({
                           {selectedPatient.curp ?? 'Sin CURP'} ·{' '}
                           {selectedPatient.medicalUnit ?? 'Sin unidad medica'}
                         </p>
+                        <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600">
+                          Paciente seleccionado
+                        </span>
                       </div>
                       <Button
                         onClick={() =>
@@ -287,8 +301,8 @@ export function CreateEpisodeModal({
                 )}
               </div>
 
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-center gap-2">
+              <div className="rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
+                <div className="flex items-center gap-3">
                   <div className="rounded-xl bg-primary/10 p-2 text-primary">
                     <Stethoscope className="h-4 w-4" />
                   </div>
@@ -297,13 +311,12 @@ export function CreateEpisodeModal({
                       Tipo de episodio
                     </h3>
                     <p className="text-xs text-muted-foreground">
-                      Usa la estructura de Nexus como referencia funcional, pero con
-                      el flujo y look & feel de gi medic.
+                      Selecciona el tipo de atención clínica que deseas registrar.
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {supportedEncounterTypes.map((value) => {
                     const config = encounterTypeConfig[value];
                     const Icon = config.icon;
@@ -311,9 +324,9 @@ export function CreateEpisodeModal({
 
                     return (
                       <button
-                        className={`rounded-2xl border px-4 py-4 text-left transition ${
+                        className={`rounded-2xl border px-4 py-4 text-left transition border-slate-200 bg-white hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-md ${
                           isSelected
-                            ? 'border-primary bg-primary/5 shadow-sm'
+                            ? 'border-primary/30 bg-primary/[0.04] shadow-[0_8px_24px_rgba(59,130,246,0.12)]'
                             : 'border-slate-200 bg-slate-50 hover:border-primary/30 hover:bg-primary/[0.03]'
                         }`}
                         key={value}
@@ -328,7 +341,7 @@ export function CreateEpisodeModal({
                         <div
                           className={`inline-flex rounded-xl border px-2 py-2 ${config.className}`}
                         >
-                          <Icon className="h-4 w-4" />
+                          <Icon className="h-5 w-5" />
                         </div>
                         <p className="mt-3 text-sm font-semibold text-slate-900">
                           {config.label}
@@ -338,13 +351,19 @@ export function CreateEpisodeModal({
                   })}
                 </div>
               </div>
-            </section>
 
-            <section className="space-y-6">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Datos de apertura
-                </h3>
+              <div className="rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div>
+                     <h3 className="text-sm font-semibold text-slate-900">
+                      Datos de apertura
+                    </h3>
+                  </div>
+                </div>
+               
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span className="font-medium text-slate-900">Sede</span>
@@ -413,7 +432,12 @@ export function CreateEpisodeModal({
 
                   <label className="space-y-2 text-sm">
                     <span className="font-medium text-slate-900">Estado inicial</span>
-                    <Input disabled readOnly value="Abierto" />
+                    <Input
+                      disabled
+                      readOnly
+                      value="Abierto"
+                      className="cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500 opacity-100"
+                    />
                   </label>
                 </div>
 
@@ -459,41 +483,67 @@ export function CreateEpisodeModal({
                   />
                 </label>
               </div>
+            </section>
 
-              <div className="rounded-3xl border border-slate-200 bg-slate-900 p-5 text-white shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
-                  Resumen
-                </p>
+            <section className="space-y-7">
+              <div className="rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_1px_2px_rgba(15,23,42,0.04)] p-5">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                    <IdCard className="h-4 w-4" />
+                  </div>
+                  <div>
+                     <h3 className="text-sm font-semibold text-slate-900">
+                      Resumen
+                    </h3>
+                  </div>
+                </div>
                 <div className="mt-3 space-y-2 text-sm">
-                  <p>
-                    <span className="text-white/60">Paciente:</span>{' '}
-                    {selectedPatient?.fullName ?? 'Sin seleccionar'}
-                  </p>
-                  <p>
-                    <span className="text-white/60">Tipo:</span>{' '}
-                    {encounterTypeConfig[form.encounterType]?.label ?? 'Sin definir'}
-                  </p>
-                  <p>
-                    <span className="text-white/60">Sede:</span>{' '}
-                    {meta?.facilities.find((facility) => facility.id === form.facilityId)
+                  <div className="rounded-lg bg-muted/30 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Paciente
+                    </p>
+                    <p className="mt-1 text-base font-semibold">
+                      {selectedPatient?.fullName ?? 'Sin seleccionar'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <span>Tipo:</span>{' '}
+                      {encounterTypeConfig[form.encounterType]?.label ?? 'Sin definir'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <span>Sede:</span>{' '}
+                      {meta?.facilities.find((facility) => facility.id === form.facilityId)
                       ?.name ?? 'Sin definir'}
-                  </p>
+                    </p>
+                  </div>
                 </div>
                 {errorMessage ? (
                   <div className="mt-4 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                     {errorMessage}
                   </div>
                 ) : null}
-                <div className="mt-5 flex flex-wrap justify-end gap-3">
-                  <Button onClick={onClose} type="button" variant="outline">
-                    Cancelar
-                  </Button>
-                  <Button
-                    className="bg-white text-slate-900 hover:bg-slate-100"
+                
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur px-5 py-3">
+          <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={onClose}
+                type="button"
+                variant="ghost"
+                className="text-sm"
+              >
+                Cancelar
+              </Button>
+              <Button
+                    className="text-sm"
                     disabled={createMutation.isPending}
                     onClick={submitForm}
                     type="button"
-                  >
+              >
                     {createMutation.isPending ? (
                       <>
                         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -501,14 +551,11 @@ export function CreateEpisodeModal({
                       </>
                     ) : (
                       <>
-                        <Plus className="h-4 w-4" />
                         Crear episodio
                       </>
                     )}
-                  </Button>
-                </div>
-              </div>
-            </section>
+              </Button>
+            </div>
           </div>
         </div>
       </div>
