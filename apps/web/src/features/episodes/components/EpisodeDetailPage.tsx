@@ -64,6 +64,7 @@ import {
 } from './episode-helpers';
 import {
   buildDefaultFieldValue,
+  getAmbulatoryProcedureDocumentTabDefinition,
   getConsultationDocumentTabDefinition,
   getEpisodeDocumentTypes,
   getHospitalDocumentTabDefinition,
@@ -170,7 +171,8 @@ function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
   return (
     (encounterType === 'OUTPATIENT' ||
       encounterType === 'EMERGENCY' ||
-      encounterType === 'HOSPITALIZATION') &&
+      encounterType === 'HOSPITALIZATION' ||
+      encounterType === 'SURGERY') &&
     tabTitle === 'Documentos'
   );
 }
@@ -275,6 +277,636 @@ function isHospitalDischargeTab(encounterType: string, tabTitle: string) {
 
 function buildHospitalDischargeTitle() {
   return 'Egreso V1';
+}
+
+function isAmbulatoryPreprocedureTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'SURGERY' && tabTitle === 'Valoración preprocedimiento';
+}
+
+function isAmbulatoryProcedureTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'SURGERY' && tabTitle === 'Procedimiento';
+}
+
+function isAmbulatoryRecoveryEvaluationTab(
+  encounterType: string,
+  tabTitle: string,
+) {
+  return (
+    encounterType === 'SURGERY' &&
+    (tabTitle === 'Recuperación / Evaluación' ||
+      tabTitle === 'Recuperación / Evolución')
+  );
+}
+
+function isAmbulatoryDischargePrescriptionTab(
+  encounterType: string,
+  tabTitle: string,
+) {
+  return (
+    encounterType === 'SURGERY' &&
+    (tabTitle === 'Receta e indicaciones de egreso' ||
+      tabTitle === 'Indicaciones / Receta')
+  );
+}
+
+function isAmbulatoryDischargeTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'SURGERY' && tabTitle === 'Egreso';
+}
+
+function buildAmbulatoryProcedureTitle(versionNumber: number) {
+  return `Procedimiento V${versionNumber}`;
+}
+
+function buildAmbulatoryDischargePrescriptionTitle(versionNumber: number) {
+  return `Receta e indicaciones de egreso V${versionNumber}`;
+}
+
+function buildAmbulatoryDischargeTitle(versionNumber: number) {
+  return `Egreso V${versionNumber}`;
+}
+
+function buildAmbulatoryRecoveryEvaluationTitle(versionNumber: number) {
+  return `Recuperación / Evaluación V${versionNumber}`;
+}
+
+function buildAmbulatoryPreprocedureTitle(versionNumber: number) {
+  return `Valoración preprocedimiento V${versionNumber}`;
+}
+
+function calculateDurationMinutes(date: string, startTime: string, endTime: string) {
+  if (!date || !startTime || !endTime) {
+    return '';
+  }
+
+  const start = new Date(`${date}T${startTime}`);
+  let end = new Date(`${date}T${endTime}`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return '';
+  }
+  if (end < start) {
+    end = new Date(end.getTime() + 86_400_000);
+  }
+  return String(Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000)));
+}
+
+function buildAmbulatoryProcedureSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  preprocedureRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const currentFormData = args.currentFormData ?? {};
+  const preprocedureFormData = args.preprocedureRecord?.formData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const keep = (key: string, fallback: string) => readString(currentFormData[key]) || fallback;
+  const date = keep('fechaProcedimientoProc', args.recordedAt.slice(0, 10));
+  const startTime = keep('horaInicioRealProc', args.recordedAt.slice(11, 16));
+  const endTime = readString(currentFormData.horaFinRealProc);
+  const anesthesiaType = keep(
+    'tipoAnestesiaProc',
+    readString(preprocedureFormData.tipoAnestesiaPrevistaPreproc) || 'NO_APLICA',
+  );
+  const hasAnesthesia = anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
+  const allergyWarning =
+    Boolean(preprocedureFormData.antAlergiasMedicamentosasPreproc) &&
+    (readString(currentFormData.medicamentosAnestesicosProc) ||
+      readString(currentFormData.postMedicamentosAnestesicosProc))
+      ? 'Verificar alergias medicamentosas antes de cerrar anestesia.'
+      : '';
+  const destinationWarning =
+    readString(currentFormData.destinoPostprocedimientoProc) === 'HOSPITALIZACION'
+      ? 'Destino hospitalización: preparar enlace a episodio hospitalario.'
+      : 'Sin alerta de destino.';
+
+  return {
+    tipoRegistroProcedimiento: 'Procedimiento',
+    cirujanoPrincipalProc:
+      keep('cirujanoPrincipalProc', args.detail.attendingClinician?.fullName ?? '') ||
+      'Sin profesional responsable',
+    cedulaCirujanoProc:
+      keep('cedulaCirujanoProc', args.detail.attendingClinician?.professionalLicense ?? '') ||
+      'Sin cédula',
+    anestesiologoProc:
+      keep('anestesiologoProc', readString(preprocedureFormData.nombreAnestesiologoPreproc)) ||
+      'Sin anestesiólogo asignado',
+    cedulaAnestesiologoProc:
+      keep('cedulaAnestesiologoProc', readString(preprocedureFormData.cedulaAnestesiologoPreproc)) ||
+      'Sin cédula',
+    fechaProcedimientoProc: date,
+    horaInicioRealProc: startTime,
+    duracionMinutosProc:
+      readString(currentFormData.duracionMinutosProc) ||
+      calculateDurationMinutes(date, startTime, endTime),
+    codigoProcedimientoProc:
+      keep('codigoProcedimientoProc', readString(preprocedureFormData.codigoProcedimientoPreproc)),
+    diagnosticoPreoperatorioProc:
+      keep(
+        'diagnosticoPreoperatorioProc',
+        readString(preprocedureFormData.diagnosticoPreoperatorioPreproc),
+      ),
+    ciePreoperatorioProc:
+      keep('ciePreoperatorioProc', readString(preprocedureFormData.cie10Preproc)),
+    procedimientoRealizadoProc:
+      keep('procedimientoRealizadoProc', readString(preprocedureFormData.procedimientoIndicadoPreproc)),
+    tipoAnestesiaProc: anesthesiaType,
+    alertasAnestesiaProc: allergyWarning || 'Sin alertas anestésicas',
+    postNombreAnestesiologoProc:
+      keep('postNombreAnestesiologoProc', readString(currentFormData.anestesiologoProc)) ||
+      'Sin anestesiólogo asignado',
+    postCedulaAnestesiologoProc:
+      keep('postCedulaAnestesiologoProc', readString(currentFormData.cedulaAnestesiologoProc)) ||
+      'Sin cédula',
+    alertaDestinoProc: destinationWarning,
+    profesionalNombreProc:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaProc:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadProc: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionProc: args.detail.facility?.name ?? 'Sin sede',
+    hashProc:
+      readString(currentFormData.hashProc) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}-PROC`,
+    huboAnestesiaProc: hasAnesthesia ? 'SI' : 'NO',
+  };
+}
+
+function readNumericRecordValue(value: unknown) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function calculateAldreteTotal(formData: Record<string, RecordFieldValue>) {
+  const values = [
+    formData.aldreteActividadRecEval,
+    formData.aldreteRespiracionRecEval,
+    formData.aldreteCirculacionRecEval,
+    formData.aldreteConcienciaRecEval,
+    formData.aldreteSpo2RecEval,
+  ].map(readNumericRecordValue);
+
+  if (values.some((value) => value === null)) {
+    return null;
+  }
+
+  return values.reduce<number>((total, value) => total + (value ?? 0), 0);
+}
+
+function buildRecoveryEvaluationAlerts(formData: Record<string, RecordFieldValue>) {
+  const alerts: Array<{ severity: 'VERDE' | 'AMARILLO' | 'ROJO'; message: string }> = [];
+  const systolic = readNumericRecordValue(formData.taSistolicaRecEval);
+  const diastolic = readNumericRecordValue(formData.taDiastolicaRecEval);
+  const heartRate = readNumericRecordValue(formData.fcRecEval);
+  const spo2 = readNumericRecordValue(formData.spo2RecEval);
+  const temperature = readNumericRecordValue(formData.temperaturaRecEval);
+  const painEva = readNumericRecordValue(formData.dolorEvaRecEval);
+  const glasgow = readNumericRecordValue(formData.glasgowRecEval);
+  const aldreteTotal = calculateAldreteTotal(formData);
+
+  if (spo2 !== null && spo2 < 92) {
+    alerts.push({ severity: 'ROJO', message: 'SpO2 < 92%: bloqueo de alta.' });
+  }
+  if (
+    (systolic !== null && (systolic < 90 || systolic > 180)) ||
+    (diastolic !== null && (diastolic < 50 || diastolic > 110))
+  ) {
+    alerts.push({ severity: 'ROJO', message: 'Tensión arterial fuera de rango seguro.' });
+  }
+  if (painEva !== null && painEva > 6) {
+    alerts.push({ severity: 'AMARILLO', message: 'Dolor EVA > 6: continuar vigilancia.' });
+  }
+  if (glasgow !== null && glasgow < 15) {
+    alerts.push({ severity: 'ROJO', message: 'Glasgow < 15: no permitir alta.' });
+  }
+  if (heartRate !== null && (heartRate < 50 || heartRate > 120)) {
+    alerts.push({ severity: 'AMARILLO', message: 'FC fuera de rango de vigilancia.' });
+  }
+  if (temperature !== null && (temperature < 35.5 || temperature >= 38)) {
+    alerts.push({ severity: 'AMARILLO', message: 'Temperatura fuera de rango esperado.' });
+  }
+  if (aldreteTotal !== null && aldreteTotal < 9) {
+    alerts.push({ severity: 'AMARILLO', message: 'Aldrete < 9: continuar vigilancia.' });
+  }
+
+  return alerts;
+}
+
+function calculatePostprocedureTimeLabel(args: {
+  recordedAt: string;
+  procedureRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+}) {
+  const procedureFormData = args.procedureRecord?.formData ?? {};
+  const date =
+    typeof procedureFormData.fechaProcedimientoProc === 'string'
+      ? procedureFormData.fechaProcedimientoProc
+      : '';
+  const endTime =
+    typeof procedureFormData.horaFinRealProc === 'string'
+      ? procedureFormData.horaFinRealProc
+      : '';
+  if (!date || !endTime) {
+    return '';
+  }
+  const procedureEndedAt = new Date(`${date}T${endTime}`);
+  const recoveryRecordedAt = new Date(args.recordedAt);
+  if (
+    Number.isNaN(procedureEndedAt.getTime()) ||
+    Number.isNaN(recoveryRecordedAt.getTime()) ||
+    recoveryRecordedAt < procedureEndedAt
+  ) {
+    return '';
+  }
+  const elapsedMinutes = Math.round(
+    (recoveryRecordedAt.getTime() - procedureEndedAt.getTime()) / 60_000,
+  );
+  const hours = Math.floor(elapsedMinutes / 60);
+  const minutes = elapsedMinutes % 60;
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
+}
+
+function buildAmbulatoryRecoveryEvaluationSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  procedureRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const currentFormData = args.currentFormData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const aldreteTotal = calculateAldreteTotal(currentFormData);
+  const alerts = buildRecoveryEvaluationAlerts(currentFormData);
+  const hasRedAlert = alerts.some((alert) => alert.severity === 'ROJO');
+  const trafficLight = hasRedAlert
+    ? 'Rojo - crítico'
+    : alerts.length > 0
+      ? 'Amarillo - vigilancia'
+      : 'Verde - normal';
+  const aldreteInterpretation =
+    aldreteTotal === null
+      ? 'Aldrete pendiente de cálculo'
+      : `Aldrete ${aldreteTotal}/10 — ${aldreteTotal >= 9 ? 'Cumple criterios de alta' : 'No cumple criterios de alta'}`;
+
+  return {
+    tipoRegistroRecEval: 'Recuperación / Evaluación',
+    fechaRecEval: readString(currentFormData.fechaRecEval) || args.recordedAt.slice(0, 10),
+    horaValoracionRecEval:
+      readString(currentFormData.horaValoracionRecEval) || args.recordedAt.slice(11, 16),
+    tiempoPostprocedimientoRecEval:
+      calculatePostprocedureTimeLabel({
+        recordedAt: args.recordedAt,
+        procedureRecord: args.procedureRecord,
+      }) || readString(currentFormData.tiempoPostprocedimientoRecEval),
+    aldreteTotalRecEval: aldreteTotal === null ? '' : String(aldreteTotal),
+    aldreteInterpretacionRecEval: aldreteInterpretation,
+    altaAldreteMayorIgual9RecEval:
+      aldreteTotal === null ? Boolean(currentFormData.altaAldreteMayorIgual9RecEval) : aldreteTotal >= 9,
+    semaforoRecEval: trafficLight,
+    alertasAutomaticasRecEval:
+      alerts.length > 0
+        ? alerts.map((alert) => `${alert.severity}: ${alert.message}`).join('\n')
+        : 'Sin alertas activas',
+    profesionalNombreRecEval:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaRecEval:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadRecEval: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionRecEval: args.detail.facility?.name ?? 'Sin sede',
+    hashRecEval:
+      readString(currentFormData.hashRecEval) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}-REC-EVAL`,
+  };
+}
+
+function buildAmbulatoryDischargePrescriptionAlerts(
+  formData: Record<string, RecordFieldValue>,
+) {
+  const medications = Array.isArray(formData.medicamentosRecetaEgreso)
+    ? formData.medicamentosRecetaEgreso
+    : [];
+  const normalized = medications
+    .map((item) =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof item.medicamento === 'string'
+        ? item.medicamento.trim().toLowerCase()
+        : '',
+    )
+    .filter(Boolean);
+  const alerts: Array<{ severity: 'VERDE' | 'AMARILLO' | 'ROJO'; message: string }> = [];
+  const duplicates = normalized.filter(
+    (name, index) => normalized.indexOf(name) !== index,
+  );
+  if (duplicates.length > 0) {
+    alerts.push({
+      severity: 'AMARILLO',
+      message: `Duplicidad terapéutica posible: ${[...new Set(duplicates)].join(', ')}`,
+    });
+  }
+  const hasWarfarin = normalized.some((name) => name.includes('warfarina'));
+  const hasIbuprofen = normalized.some((name) => name.includes('ibuprofeno'));
+  if (hasWarfarin && hasIbuprofen) {
+    alerts.push({
+      severity: 'ROJO',
+      message: 'Interacción grave: warfarina con ibuprofeno aumenta riesgo de sangrado.',
+    });
+  }
+  const hasPenicillin = normalized.some((name) =>
+    ['penicilina', 'amoxicilina', 'ampicilina'].some((keyword) =>
+      name.includes(keyword),
+    ),
+  );
+  if (hasPenicillin) {
+    alerts.push({
+      severity: 'AMARILLO',
+      message: 'Si hay alergia a penicilina, verificar antes de prescribir.',
+    });
+  }
+  return alerts;
+}
+
+function buildAmbulatoryDischargePrescriptionSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+  versionNumber: number;
+}) {
+  const currentFormData = args.currentFormData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const alerts = buildAmbulatoryDischargePrescriptionAlerts(currentFormData);
+  const hasRedAlert = alerts.some((alert) => alert.severity === 'ROJO');
+  const folio =
+    readString(currentFormData.folioRecetaEgreso) ||
+    `${args.detail.encounterNumber}-RA${String(args.versionNumber).padStart(2, '0')}`;
+
+  return {
+    tipoRegistroRecetaEgreso: 'Receta e indicaciones de egreso',
+    folioRecetaEgreso: folio,
+    fechaEmisionRecetaEgreso:
+      readString(currentFormData.fechaEmisionRecetaEgreso) ||
+      args.recordedAt.slice(0, 10),
+    vigenciaRecetaEgreso: readString(currentFormData.vigenciaRecetaEgreso) || '7 días',
+    institucionEmisoraRecetaEgreso:
+      args.detail.legalContext.facilityInstitutionName ||
+      args.detail.legalContext.tenantLegalName ||
+      args.detail.legalContext.tenantName,
+    rfcMedicoRecetaEgreso:
+      args.detail.legalContext.tenantTaxId || 'RFC no configurado',
+    licenciaSanitariaRecetaEgreso:
+      args.detail.legalContext.facilityLegalName || 'Licencia no configurada',
+    qrVerificacionRecetaEgreso:
+      readString(currentFormData.qrVerificacionRecetaEgreso) || 'Se activará al firmar',
+    alertasAlergiasRecetaEgreso:
+      alerts.some((alert) => alert.message.toLowerCase().includes('alergia'))
+        ? alerts
+            .filter((alert) => alert.message.toLowerCase().includes('alergia'))
+            .map((alert) => alert.message)
+            .join('\n')
+        : 'Sin alergias conflictivas detectadas automáticamente',
+    validacionesMedicamentosRecetaEgreso:
+      alerts.length > 0
+        ? alerts.map((alert) => `${alert.severity}: ${alert.message}`).join('\n')
+        : 'VERDE: sin problemas detectados',
+    semaforoMedicamentosRecetaEgreso: hasRedAlert
+      ? 'Rojo - bloqueo'
+      : alerts.length > 0
+        ? 'Amarillo - precaución'
+        : 'Verde - sin problemas',
+    profesionalNombreRecetaEgreso:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaRecetaEgreso:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadRecetaEgreso:
+      args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionRecetaEgreso: args.detail.facility?.name ?? 'Sin sede',
+    hashRecetaEgreso:
+      readString(currentFormData.hashRecetaEgreso) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}-RECETA-EGRESO`,
+  };
+}
+
+function summarizeMedicationList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return '';
+  }
+  return value
+    .map((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return '';
+      }
+      const medication = typeof item.medicamento === 'string' ? item.medicamento : '';
+      const dose = typeof item.dosis === 'string' ? item.dosis : '';
+      const frequency = typeof item.frecuencia === 'string' ? item.frecuencia : '';
+      return `${index + 1}. ${[medication, dose, frequency].filter(Boolean).join(' · ')}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function buildAmbulatoryDischargeSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  procedureRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  recoveryRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  prescriptionRecord?: EncounterDetailResponse['sectionRecords'][number] | null;
+  currentFormData?: Record<string, RecordFieldValue>;
+  versionNumber: number;
+}): Record<string, RecordFieldValue> {
+  const currentFormData = args.currentFormData ?? {};
+  const procedureFormData = args.procedureRecord?.formData ?? {};
+  const recoveryFormData = args.recoveryRecord?.formData ?? {};
+  const prescriptionFormData = args.prescriptionRecord?.formData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const readPrimitive = (value: unknown): RecordFieldValue =>
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value === null
+      ? value
+      : '';
+  const keep = (key: string, fallback: string) => readString(currentFormData[key]) || fallback;
+  const aldrete =
+    readString(currentFormData.aldreteEgresoAmb) ||
+    readString(recoveryFormData.aldreteTotalRecEval);
+  const recipeFolio = readString(prescriptionFormData.folioRecetaEgreso);
+
+  return {
+    tipoRegistroEgresoAmb: 'Egreso',
+    versionEgresoAmb: args.versionNumber,
+    tipoEgresoAmb: keep('tipoEgresoAmb', 'ALTA_MEDICA'),
+    destinoEgresoAmb: keep('destinoEgresoAmb', 'DOMICILIO'),
+    fechaEgresoAmb: keep('fechaEgresoAmb', args.recordedAt.slice(0, 10)),
+    horaEgresoAmb: keep('horaEgresoAmb', args.recordedAt.slice(11, 16)),
+    diagnosticoFinalEgresoAmb: keep(
+      'diagnosticoFinalEgresoAmb',
+      readString(procedureFormData.diagnosticoPostoperatorioProc) ||
+        args.detail.diagnoses[0]?.description ||
+        '',
+    ),
+    cie10EgresoAmb: keep(
+      'cie10EgresoAmb',
+      readString(procedureFormData.ciePostoperatorioProc) ||
+        args.detail.diagnoses[0]?.code ||
+        '',
+    ),
+    taEgresoAmb: keep(
+      'taEgresoAmb',
+      readString(recoveryFormData.taSistolicaRecEval) && readString(recoveryFormData.taDiastolicaRecEval)
+        ? `${readString(recoveryFormData.taSistolicaRecEval)}/${readString(recoveryFormData.taDiastolicaRecEval)}`
+        : '',
+    ),
+    fcEgresoAmb: currentFormData.fcEgresoAmb || readPrimitive(recoveryFormData.fcRecEval),
+    frEgresoAmb: currentFormData.frEgresoAmb || readPrimitive(recoveryFormData.frRecEval),
+    temperaturaEgresoAmb:
+      currentFormData.temperaturaEgresoAmb || readPrimitive(recoveryFormData.temperaturaRecEval),
+    spo2EgresoAmb: currentFormData.spo2EgresoAmb || readPrimitive(recoveryFormData.spo2RecEval),
+    evaDolorEgresoAmb:
+      currentFormData.evaDolorEgresoAmb || readPrimitive(recoveryFormData.dolorEvaRecEval),
+    aldreteEgresoAmb: aldrete,
+    aldreteFinalEgresoAmb: currentFormData.aldreteFinalEgresoAmb || aldrete,
+    motivoProcedimientoEgresoAmb: keep(
+      'motivoProcedimientoEgresoAmb',
+      readString(procedureFormData.diagnosticoPreoperatorioProc),
+    ),
+    procedimientoRealizadoEgresoAmb: keep(
+      'procedimientoRealizadoEgresoAmb',
+      readString(procedureFormData.procedimientoRealizadoProc),
+    ),
+    evolucionRecuperacionEgresoAmb: keep(
+      'evolucionRecuperacionEgresoAmb',
+      readString(recoveryFormData.planVigilanciaRecEval) ||
+        readString(recoveryFormData.aldreteInterpretacionRecEval),
+    ),
+    estadoAlEgresoResumenAmb: keep(
+      'estadoAlEgresoResumenAmb',
+      readString(recoveryFormData.estadoGeneralRecEval),
+    ),
+    planVinculadoRecetaEgresoAmb:
+      readString(prescriptionFormData.dietaIndicacionesEgreso) ||
+      readString(currentFormData.planVinculadoRecetaEgresoAmb) ||
+      'Sin receta vinculada',
+    medicamentosRecetaEgresoAmb:
+      summarizeMedicationList(prescriptionFormData.medicamentosRecetaEgreso) ||
+      readString(currentFormData.medicamentosRecetaEgresoAmb) ||
+      'Sin medicamentos vinculados',
+    recetaIdEgresoAmb: recipeFolio || readString(currentFormData.recetaIdEgresoAmb),
+    seguimientoEgresoAmb:
+      readString(prescriptionFormData.fechaCitaSeguimientoEgreso) ||
+      readString(currentFormData.seguimientoEgresoAmb),
+    recetaRelacionadaEgresoAmb:
+      recipeFolio || readString(currentFormData.recetaRelacionadaEgresoAmb),
+    educacionPacienteEgresoAmb:
+      readString(currentFormData.educacionPacienteEgresoAmb) ||
+      readString(prescriptionFormData.educacionOtorgadaEgreso),
+    pacienteComprendeEgresoAmb:
+      Boolean(currentFormData.pacienteComprendeEgresoAmb) ||
+      Boolean(prescriptionFormData.pacienteComprendeIndicacionesEgreso),
+    familiarInformadoEgresoAmb:
+      Boolean(currentFormData.familiarInformadoEgresoAmb) ||
+      Boolean(prescriptionFormData.familiarInformadoEgreso),
+    referenciaEstablecimientoEnviaEgresoAmb:
+      args.detail.facility?.name ?? 'Sin sede',
+    referenciaMedicoEmisorEgresoAmb:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    medicoAutorizaEgresoAmb:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    cedulaAutorizaEgresoAmb:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    alertaCierreEgresoAmb:
+      'Al firmar esta nota de egreso, el episodio se marcará como cerrado, todo el expediente quedará en solo lectura, se generará sello digital y hash, y se registrará en auditoría.',
+    profesionalNombreEgresoAmb:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaEgresoAmb:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadEgresoAmb:
+      args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionEgresoAmb: args.detail.facility?.name ?? 'Sin sede',
+    hashEgresoAmb:
+      readString(currentFormData.hashEgresoAmb) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}-EGRESO`,
+  };
+}
+
+function buildAmbulatoryPreprocedureSnapshot(args: {
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+  currentFormData?: Record<string, RecordFieldValue>;
+}) {
+  const currentFormData = args.currentFormData ?? {};
+  const readString = (value: unknown) => (typeof value === 'string' ? value : '');
+  const readNumber = (value: unknown) => {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+  };
+  const weight = readNumber(currentFormData.pesoKgPreproc);
+  const height = readNumber(currentFormData.tallaCmPreproc);
+  const heightMeters = height ? height / 100 : null;
+  const imc =
+    weight && heightMeters && heightMeters > 0
+      ? (weight / (heightMeters * heightMeters)).toFixed(1)
+      : '';
+  const hasAnesthesia =
+    readString(currentFormData.tipoAnestesiaPrevistaPreproc) !== '' &&
+    readString(currentFormData.tipoAnestesiaPrevistaPreproc) !== 'NO_APLICA';
+  const alerts = [
+    ['ASA_III', 'ASA_IV', 'ASA_V'].includes(
+      readString(currentFormData.clasificacionAsaPreproc),
+    )
+      ? 'ASA alto: requiere revisión de factibilidad ambulatoria.'
+      : '',
+    readString(currentFormData.riesgoQuirurgicoPreproc) === 'ALTO'
+      ? 'Riesgo quirúrgico alto.'
+      : '',
+    readString(currentFormData.riesgoCardiovascularPreproc) === 'ALTO'
+      ? 'Riesgo cardiovascular alto.'
+      : '',
+    readString(currentFormData.riesgoTromboembolicoCapriniPreproc) === 'ALTO'
+      ? 'Riesgo tromboembólico alto.'
+      : '',
+    readString(currentFormData.ayunoConfirmadoPreproc) === 'NO'
+      ? 'Ayuno no confirmado.'
+      : '',
+    Boolean(currentFormData.antAlergiasMedicamentosasPreproc) &&
+    readString(currentFormData.atbProfilacticoPreproc)
+      ? 'Verificar alergias antes de ATB profiláctico.'
+      : '',
+  ].filter(Boolean);
+
+  return {
+    tipoRegistroPreproc: 'Valoración preprocedimiento',
+    tituloDocumentoConsentimientoPreproc: 'Consentimiento informado NOM-004',
+    institucionConsentimientoPreproc:
+      readString(currentFormData.institucionConsentimientoPreproc) ||
+      args.detail.legalContext.facilityInstitutionName ||
+      args.detail.legalContext.tenantName,
+    razonSocialConsentimientoPreproc:
+      readString(currentFormData.razonSocialConsentimientoPreproc) ||
+      args.detail.legalContext.tenantLegalName ||
+      args.detail.legalContext.tenantName,
+    lugarFechaConsentimientoPreproc:
+      readString(currentFormData.lugarFechaConsentimientoPreproc) ||
+      `${args.detail.facility?.name ?? 'Lugar no configurado'} · ${args.recordedAt.slice(0, 10)}`,
+    medicoExplicaPreproc:
+      readString(currentFormData.medicoExplicaPreproc) ||
+      args.detail.attendingClinician?.fullName ||
+      'Sin profesional responsable',
+    nombreRealizaActoPreproc:
+      readString(currentFormData.nombreRealizaActoPreproc) ||
+      args.detail.attendingClinician?.fullName ||
+      'Sin profesional responsable',
+    profesionalNombrePreproc:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    profesionalCedulaPreproc:
+      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalEspecialidadPreproc: args.detail.specialty?.name ?? 'Sin especialidad',
+    lugarAtencionPreproc: args.detail.facility?.name ?? 'Sin sede',
+    imcPreproc: imc,
+    consentimientoAnestesicoPreproc: hasAnesthesia
+      ? readString(currentFormData.consentimientoAnestesicoPreproc)
+      : 'NO_APLICA',
+    alertasClinicasPreproc: alerts.length > 0 ? alerts.join('\n') : 'Sin alertas críticas',
+    hashPreproc:
+      readString(currentFormData.hashPreproc) ||
+      `PENDIENTE-FIRMA-${args.detail.encounterNumber}`,
+  };
 }
 
 function buildTriageTitle(versionNumber: number) {
@@ -2012,6 +2644,8 @@ function buildDocumentLegalSnapshot(
     documentoTipoEpisodio:
       detail.encounterType === 'HOSPITALIZATION'
         ? 'Hospitalización'
+        : detail.encounterType === 'SURGERY'
+          ? 'Procedimiento ambulatorio'
         : detail.encounterType,
     documentoInstitucionEmisora:
       detail.legalContext.facilityInstitutionName ??
@@ -2060,6 +2694,81 @@ function buildDocumentSuggestionSnapshot(
 ): Record<string, RecordFieldValue> {
   if (detail.encounterType === 'HOSPITALIZATION') {
     return buildHospitalDocumentSuggestionSnapshot(detail, noteType);
+  }
+
+  if (detail.encounterType === 'SURGERY') {
+    const latestPreprocedure = getLatestRecordByTab(
+      detail.sectionRecords,
+      'Valoración preprocedimiento',
+    );
+    const latestProcedure = getLatestRecordByTab(detail.sectionRecords, 'Procedimiento');
+    const latestRecovery =
+      getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evaluación') ??
+      getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evolución');
+    const latestDischarge = getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+    const diagnosis =
+      (latestDischarge?.formData.diagnosticoFinalEgresoAmb as string | undefined) ??
+      (latestProcedure?.formData.diagnosticoPostoperatorioProc as string | undefined) ??
+      (latestPreprocedure?.formData.diagnosticoPreoperatorioPreproc as string | undefined) ??
+      '';
+    const cie10 =
+      (latestDischarge?.formData.cie10EgresoAmb as string | undefined) ??
+      (latestProcedure?.formData.cie10PostoperatorioProc as string | undefined) ??
+      (latestPreprocedure?.formData.cie10Preproc as string | undefined) ??
+      '';
+    const procedure =
+      (latestProcedure?.formData.procedimientoRealizadoProc as string | undefined) ??
+      (latestPreprocedure?.formData.procedimientoIndicadoPreproc as string | undefined) ??
+      '';
+    const recoverySummary =
+      (latestRecovery?.formData.exploracionPostprocedimientoRecEval as string | undefined) ??
+      (latestRecovery?.formData.planVigilanciaRecEval as string | undefined) ??
+      '';
+
+    if (noteType === 'Solicitud de laboratorio' || noteType === 'Solicitud de imagenología') {
+      return {
+        documentoDiagnosticoPrincipal: diagnosis,
+        documentoDiagnosticoCie10: cie10,
+      };
+    }
+
+    if (noteType === 'Referencia / contrarreferencia') {
+      return {
+        documentoDiagnosticoPrincipal: diagnosis,
+        documentoProcedimientoRealizado: procedure,
+        documentoEvolucionBreve: recoverySummary,
+        documentoTratamientoActual:
+          (latestDischarge?.formData.planEgresoVinculadoRecetaAmb as string | undefined) ??
+          '',
+      };
+    }
+
+    if (noteType === 'Consentimiento informado') {
+      return {
+        documentoProcedimientoNombre: procedure,
+        documentoTipoAnestesia:
+          (latestProcedure?.formData.tipoAnestesiaProc as string | undefined) ??
+          (latestPreprocedure?.formData.tipoAnestesiaPrevistaPreproc as string | undefined) ??
+          '',
+        documentoRiesgos:
+          (latestPreprocedure?.formData.riesgosInformadosPreproc as string | undefined) ??
+          '',
+        documentoBeneficios:
+          (latestPreprocedure?.formData.beneficiosEsperadosPreproc as string | undefined) ??
+          '',
+      };
+    }
+
+    if (noteType === 'Certificado / constancia') {
+      return {
+        documentoDiagnosticoPrincipal: diagnosis,
+        documentoTextoConstancia: procedure
+          ? `Se realizó procedimiento ambulatorio: ${procedure}.`
+          : '',
+      };
+    }
+
+    return {};
   }
 
   const latestConsultationRecord =
@@ -2400,7 +3109,9 @@ function buildDocumentVersionPrefill(args: {
   } | null;
 }) {
   const tabDefinition =
-    args.detail.encounterType === 'HOSPITALIZATION'
+    args.detail.encounterType === 'SURGERY'
+      ? getAmbulatoryProcedureDocumentTabDefinition(args.noteType)
+      : args.detail.encounterType === 'HOSPITALIZATION'
       ? getHospitalDocumentTabDefinition(args.noteType)
       : getConsultationDocumentTabDefinition(args.noteType);
   const nextFormData = normalizeRecordFormData(tabDefinition, undefined);
@@ -3566,6 +4277,259 @@ export function EpisodeDetailPage() {
     );
   }, [activeTab, detail, recordForm]);
 
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const synchronizedSystemFields = buildAmbulatoryPreprocedureSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      currentFormData: recordForm.formData,
+    });
+    const hasChanges = Object.entries(synchronizedSystemFields).some(
+      ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+    );
+
+    if (!hasChanges && recordForm.noteType === 'Valoración preprocedimiento') {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            noteType: 'Valoración preprocedimiento',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryProcedureTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const signedPreprocedureRecord =
+      getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
+    const synchronizedSystemFields = buildAmbulatoryProcedureSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      preprocedureRecord:
+        signedPreprocedureRecord?.status === 'SIGNED'
+          ? signedPreprocedureRecord
+          : null,
+      currentFormData: recordForm.formData,
+    });
+    const nextTitle =
+      recordForm.title && recordForm.title.startsWith('Procedimiento V')
+        ? recordForm.title
+        : buildAmbulatoryProcedureTitle(1);
+    const hasChanges =
+      recordForm.title !== nextTitle ||
+      recordForm.noteType !== 'Procedimiento' ||
+      Object.entries(synchronizedSystemFields).some(
+        ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+      );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            title: nextTitle,
+            noteType: 'Procedimiento',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+      : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryRecoveryEvaluationTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const signedProcedureRecord = getLatestRecordByTab(
+      detail.sectionRecords,
+      'Procedimiento',
+    );
+    const synchronizedSystemFields = buildAmbulatoryRecoveryEvaluationSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      procedureRecord:
+        signedProcedureRecord?.status === 'SIGNED' ? signedProcedureRecord : null,
+      currentFormData: recordForm.formData,
+    });
+    const nextTitle =
+      recordForm.title &&
+      recordForm.title.startsWith('Recuperación / Evaluación V')
+        ? recordForm.title
+        : buildAmbulatoryRecoveryEvaluationTitle(1);
+    const hasChanges =
+      recordForm.title !== nextTitle ||
+      recordForm.noteType !== 'Recuperación / Evaluación' ||
+      Object.entries(synchronizedSystemFields).some(
+        ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+      );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            title: nextTitle,
+            noteType: 'Recuperación / Evaluación',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+      : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryDischargePrescriptionTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const versionNumber =
+      (typeof recordForm.formData.versionRecetaEgreso === 'number'
+        ? recordForm.formData.versionRecetaEgreso
+        : Number(recordForm.formData.versionRecetaEgreso)) ||
+      1;
+    const synchronizedSystemFields = buildAmbulatoryDischargePrescriptionSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      currentFormData: recordForm.formData,
+      versionNumber,
+    });
+    const nextTitle =
+      recordForm.title &&
+      recordForm.title.startsWith('Receta e indicaciones de egreso V')
+        ? recordForm.title
+        : buildAmbulatoryDischargePrescriptionTitle(versionNumber);
+    const hasChanges =
+      recordForm.title !== nextTitle ||
+      recordForm.noteType !== 'Receta e indicaciones de egreso' ||
+      Object.entries(synchronizedSystemFields).some(
+        ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+      );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            title: nextTitle,
+            noteType: 'Receta e indicaciones de egreso',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+        : currentValue,
+    );
+  }, [
+    activeTab,
+    detail,
+    recordForm,
+  ]);
+
+  useEffect(() => {
+    if (
+      !recordForm ||
+      !detail ||
+      !isAmbulatoryDischargeTab(detail.encounterType, activeTab)
+    ) {
+      return;
+    }
+
+    const latestProcedure = getLatestRecordByTab(detail.sectionRecords, 'Procedimiento');
+    const latestRecovery =
+      getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evaluación') ??
+      getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evolución');
+    const latestPrescription =
+      getLatestRecordByTab(detail.sectionRecords, 'Receta e indicaciones de egreso') ??
+      getLatestRecordByTab(detail.sectionRecords, 'Indicaciones / Receta');
+    const versionNumber =
+      (typeof recordForm.formData.versionEgresoAmb === 'number'
+        ? recordForm.formData.versionEgresoAmb
+        : Number(recordForm.formData.versionEgresoAmb)) ||
+      1;
+    const synchronizedSystemFields = buildAmbulatoryDischargeSnapshot({
+      detail,
+      recordedAt: recordForm.recordedAt,
+      currentFormData: recordForm.formData,
+      procedureRecord: latestProcedure?.status === 'SIGNED' ? latestProcedure : null,
+      recoveryRecord: latestRecovery?.status === 'SIGNED' ? latestRecovery : null,
+      prescriptionRecord:
+        latestPrescription?.status === 'SIGNED' ? latestPrescription : null,
+      versionNumber,
+    });
+    const nextTitle =
+      recordForm.title && recordForm.title.startsWith('Egreso V')
+        ? recordForm.title
+        : buildAmbulatoryDischargeTitle(versionNumber);
+    const hasChanges =
+      recordForm.title !== nextTitle ||
+      recordForm.noteType !== 'Egreso' ||
+      Object.entries(synchronizedSystemFields).some(
+        ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
+      );
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setRecordForm((currentValue) =>
+      currentValue
+        ? {
+            ...currentValue,
+            title: nextTitle,
+            noteType: 'Egreso',
+            formData: {
+              ...currentValue.formData,
+              ...synchronizedSystemFields,
+            },
+          }
+        : currentValue,
+    );
+  }, [activeTab, detail, recordForm]);
+
   if (!detail || !form) {
     return (
       <AppLayout>
@@ -3630,9 +4594,28 @@ export function EpisodeDetailPage() {
                   ? 'Enfermería'
                   : isHospitalDischargeTab(detail.encounterType, activeTab)
                     ? 'Egreso'
-            : activeTab;
+                    : isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
+                      ? 'Valoración preprocedimiento'
+                      : isAmbulatoryRecoveryEvaluationTab(
+                            detail.encounterType,
+                            activeTab,
+                          )
+                        ? 'Recuperación / Evaluación'
+                        : isAmbulatoryDischargePrescriptionTab(
+                              detail.encounterType,
+                              activeTab,
+                            )
+                          ? 'Receta e indicaciones de egreso'
+                          : isAmbulatoryDischargeTab(detail.encounterType, activeTab)
+                            ? 'Egreso'
+                      : activeTab;
   const activeTabRecords = detail.sectionRecords.filter(
-    (record) => record.tabKey === activeRecordTabKey,
+    (record) =>
+      record.tabKey === activeRecordTabKey ||
+      (activeRecordTabKey === 'Recuperación / Evaluación' &&
+        record.tabKey === 'Recuperación / Evolución') ||
+      (activeRecordTabKey === 'Receta e indicaciones de egreso' &&
+        record.tabKey === 'Indicaciones / Receta'),
   );
   const isConsultationHistorySection = isConsultationHistoryTab(
     detail.encounterType,
@@ -3703,6 +4686,22 @@ export function EpisodeDetailPage() {
     activeTab,
   );
   const isHospitalDischargeSection = isHospitalDischargeTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isAmbulatoryPreprocedureSection = isAmbulatoryPreprocedureTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isAmbulatoryProcedureSection = isAmbulatoryProcedureTab(
+    detail.encounterType,
+    activeTab,
+  );
+  const isAmbulatoryRecoveryEvaluationSection =
+    isAmbulatoryRecoveryEvaluationTab(detail.encounterType, activeTab);
+  const isAmbulatoryDischargePrescriptionSection =
+    isAmbulatoryDischargePrescriptionTab(detail.encounterType, activeTab);
+  const isAmbulatoryDischargeSection = isAmbulatoryDischargeTab(
     detail.encounterType,
     activeTab,
   );
@@ -3779,7 +4778,9 @@ export function EpisodeDetailPage() {
     activeTabPanelConfig?.noteTypes?.[0] ??
     getEpisodeDocumentTypes(detail.encounterType)[0];
   const documentWorkspaceDefinition = isConsultationDocumentsSection
-    ? detail.encounterType === 'HOSPITALIZATION'
+    ? detail.encounterType === 'SURGERY'
+      ? getAmbulatoryProcedureDocumentTabDefinition(selectedDocumentNoteType)
+      : detail.encounterType === 'HOSPITALIZATION'
       ? getHospitalDocumentTabDefinition(selectedDocumentNoteType)
       : getConsultationDocumentTabDefinition(selectedDocumentNoteType)
     : undefined;
@@ -3852,6 +4853,37 @@ export function EpisodeDetailPage() {
   const latestHospitalDischargeRecord = isHospitalDischargeSection
     ? getLatestRecordByTab(activeTabRecords, 'Egreso')
     : getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+  const latestAmbulatoryPreprocedureRecord = isAmbulatoryPreprocedureSection
+    ? getLatestRecordByTab(activeTabRecords, 'Valoración preprocedimiento')
+    : getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
+  const nextAmbulatoryPreprocedureVersionNumber =
+    (latestAmbulatoryPreprocedureRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestAmbulatoryProcedureRecord = isAmbulatoryProcedureSection
+    ? getLatestRecordByTab(activeTabRecords, 'Procedimiento')
+    : getLatestRecordByTab(detail.sectionRecords, 'Procedimiento');
+  const nextAmbulatoryProcedureVersionNumber =
+    (latestAmbulatoryProcedureRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestAmbulatoryRecoveryEvaluationRecord =
+    isAmbulatoryRecoveryEvaluationSection
+      ? getLatestRecordByTab(activeTabRecords, 'Recuperación / Evaluación') ??
+        getLatestRecordByTab(activeTabRecords, 'Recuperación / Evolución')
+      : getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evaluación') ??
+        getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evolución');
+  const nextAmbulatoryRecoveryEvaluationVersionNumber =
+    (latestAmbulatoryRecoveryEvaluationRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestAmbulatoryDischargePrescriptionRecord =
+    isAmbulatoryDischargePrescriptionSection
+      ? getLatestRecordByTab(activeTabRecords, 'Receta e indicaciones de egreso') ??
+        getLatestRecordByTab(activeTabRecords, 'Indicaciones / Receta')
+      : getLatestRecordByTab(detail.sectionRecords, 'Receta e indicaciones de egreso') ??
+        getLatestRecordByTab(detail.sectionRecords, 'Indicaciones / Receta');
+  const nextAmbulatoryDischargePrescriptionVersionNumber =
+    (latestAmbulatoryDischargePrescriptionRecord?.metadata.versionNumber ?? 0) + 1;
+  const latestAmbulatoryDischargeRecord = isAmbulatoryDischargeSection
+    ? getLatestRecordByTab(activeTabRecords, 'Egreso')
+    : getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+  const nextAmbulatoryDischargeVersionNumber =
+    (latestAmbulatoryDischargeRecord?.metadata.versionNumber ?? 0) + 1;
   const isShowingRecordForm = isCreatingRecord || Boolean(selectedRecord);
   const isEpisodeClosed = detail.status === 'CLOSED';
 
@@ -3864,6 +4896,197 @@ export function EpisodeDetailPage() {
     }
 
     const nextRecordedAt = new Date().toISOString().slice(0, 16);
+
+    if (
+      isAmbulatoryProcedureSection &&
+      !detail.sectionRecords.some(
+        (record) =>
+          record.tabKey === 'Valoración preprocedimiento' &&
+          record.status === 'SIGNED',
+      )
+    ) {
+      setFeedback(
+        'Firma la valoración preprocedimiento antes de avanzar a Procedimiento.',
+      );
+      return;
+    }
+
+    if (
+      isAmbulatoryRecoveryEvaluationSection &&
+      !detail.sectionRecords.some(
+        (record) =>
+          record.tabKey === 'Procedimiento' && record.status === 'SIGNED',
+      )
+    ) {
+      setFeedback(
+        'Firma el procedimiento antes de iniciar Recuperación / Evaluación.',
+      );
+      return;
+    }
+
+    if (isAmbulatoryProcedureSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      const signedPreprocedureRecord =
+        getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
+          ?.status === 'SIGNED'
+          ? getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
+          : null;
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Procedimiento',
+          title: buildAmbulatoryProcedureTitle(nextAmbulatoryProcedureVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryProcedureSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            preprocedureRecord: signedPreprocedureRecord,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)
+              .Procedimiento as Record<string, RecordFieldValue>,
+          }),
+        }),
+      );
+      return;
+    }
+
+    if (isAmbulatoryRecoveryEvaluationSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      const signedProcedureRecord =
+        getLatestRecordByTab(detail.sectionRecords, 'Procedimiento')?.status ===
+        'SIGNED'
+          ? getLatestRecordByTab(detail.sectionRecords, 'Procedimiento')
+          : null;
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Recuperación / Evaluación',
+          title: buildAmbulatoryRecoveryEvaluationTitle(
+            nextAmbulatoryRecoveryEvaluationVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryRecoveryEvaluationSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            procedureRecord: signedProcedureRecord,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)[
+              'Recuperación / Evaluación'
+            ] as Record<string, RecordFieldValue>,
+          }),
+        }),
+      );
+      return;
+    }
+
+    if (isAmbulatoryDischargePrescriptionSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Receta e indicaciones de egreso',
+          title: buildAmbulatoryDischargePrescriptionTitle(
+            nextAmbulatoryDischargePrescriptionVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryDischargePrescriptionSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            versionNumber: nextAmbulatoryDischargePrescriptionVersionNumber,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)[
+              'Receta e indicaciones de egreso'
+            ] as Record<string, RecordFieldValue>,
+          }),
+        }),
+      );
+      return;
+    }
+
+    if (isAmbulatoryDischargeSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      const latestProcedure = getLatestRecordByTab(detail.sectionRecords, 'Procedimiento');
+      const latestRecovery =
+        getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evaluación') ??
+        getLatestRecordByTab(detail.sectionRecords, 'Recuperación / Evolución');
+      const latestPrescription =
+        getLatestRecordByTab(detail.sectionRecords, 'Receta e indicaciones de egreso') ??
+        getLatestRecordByTab(detail.sectionRecords, 'Indicaciones / Receta');
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Egreso',
+          title: buildAmbulatoryDischargeTitle(nextAmbulatoryDischargeVersionNumber),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryDischargeSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            procedureRecord: latestProcedure?.status === 'SIGNED' ? latestProcedure : null,
+            recoveryRecord: latestRecovery?.status === 'SIGNED' ? latestRecovery : null,
+            prescriptionRecord:
+              latestPrescription?.status === 'SIGNED' ? latestPrescription : null,
+            versionNumber: nextAmbulatoryDischargeVersionNumber,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)
+              .Egreso as Record<string, RecordFieldValue>,
+          }),
+        }),
+      );
+      return;
+    }
+
+    if (isAmbulatoryPreprocedureSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Valoración preprocedimiento',
+          title: buildAmbulatoryPreprocedureTitle(
+            nextAmbulatoryPreprocedureVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildAmbulatoryPreprocedureSnapshot({
+            detail,
+            recordedAt: nextRecordedAt,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)[
+              'Valoración preprocedimiento'
+            ] as Record<string, RecordFieldValue>,
+          }),
+        }),
+      );
+      return;
+    }
 
     if (isConsultationHistorySection) {
       if (!activeTabDefinition) {
@@ -3982,7 +5205,9 @@ export function EpisodeDetailPage() {
         activeTabPanelConfig?.noteTypes?.[0] ??
         getEpisodeDocumentTypes(detail.encounterType)[0];
       const nextTabDefinition =
-        detail.encounterType === 'HOSPITALIZATION'
+        detail.encounterType === 'SURGERY'
+          ? getAmbulatoryProcedureDocumentTabDefinition(nextNoteType)
+          : detail.encounterType === 'HOSPITALIZATION'
           ? getHospitalDocumentTabDefinition(nextNoteType)
           : getConsultationDocumentTabDefinition(nextNoteType);
 
@@ -4449,7 +5674,9 @@ export function EpisodeDetailPage() {
       buildRecordFormState({
         tabDefinition:
           isConsultationDocumentsSection
-            ? detail.encounterType === 'HOSPITALIZATION'
+            ? detail.encounterType === 'SURGERY'
+              ? getAmbulatoryProcedureDocumentTabDefinition(record.noteType)
+              : detail.encounterType === 'HOSPITALIZATION'
               ? getHospitalDocumentTabDefinition(record.noteType)
               : getConsultationDocumentTabDefinition(record.noteType)
             : workspaceTabDefinition,
@@ -4708,6 +5935,135 @@ export function EpisodeDetailPage() {
                                                     >,
                                                 }),
                                               }
+                                            : isAmbulatoryPreprocedureSection
+                                              ? {
+                                                  ...(record.formData as Record<
+                                                    string,
+                                                    RecordFieldValue
+                                                  >),
+                                                  ...buildAmbulatoryPreprocedureSnapshot({
+                                                    detail,
+                                                    recordedAt: record.recordedAt.slice(0, 16),
+                                                    currentFormData:
+                                                      record.formData as Record<
+                                                        string,
+                                                        RecordFieldValue
+                                                      >,
+                                                  }),
+                                                }
+                                              : isAmbulatoryProcedureSection
+                                                ? {
+                                                    ...(record.formData as Record<
+                                                      string,
+                                                      RecordFieldValue
+                                                    >),
+                                                    ...buildAmbulatoryProcedureSnapshot({
+                                                      detail,
+                                                      recordedAt: record.recordedAt.slice(0, 16),
+                                                      preprocedureRecord:
+                                                        getLatestRecordByTab(
+                                                          detail.sectionRecords,
+                                                          'Valoración preprocedimiento',
+                                                        )?.status === 'SIGNED'
+                                                          ? getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Valoración preprocedimiento',
+                                                            )
+                                                          : null,
+                                                      currentFormData:
+                                                        record.formData as Record<
+                                                          string,
+                                                          RecordFieldValue
+                                                      >,
+                                                    }),
+                                                  }
+                                                : isAmbulatoryRecoveryEvaluationSection
+                                                  ? {
+                                                      ...(record.formData as Record<
+                                                        string,
+                                                        RecordFieldValue
+                                                      >),
+                                                      ...buildAmbulatoryRecoveryEvaluationSnapshot({
+                                                        detail,
+                                                        recordedAt: record.recordedAt.slice(0, 16),
+                                                        procedureRecord:
+                                                          getLatestRecordByTab(
+                                                            detail.sectionRecords,
+                                                            'Procedimiento',
+                                                          )?.status === 'SIGNED'
+                                                            ? getLatestRecordByTab(
+                                                                detail.sectionRecords,
+                                                                'Procedimiento',
+                                                              )
+                                                            : null,
+                                                        currentFormData:
+                                                          record.formData as Record<
+                                                            string,
+                                                            RecordFieldValue
+                                                          >,
+                                                      }),
+                                                    }
+                                                  : isAmbulatoryDischargePrescriptionSection
+                                                    ? {
+                                                        ...(record.formData as Record<
+                                                          string,
+                                                          RecordFieldValue
+                                                        >),
+                                                        ...buildAmbulatoryDischargePrescriptionSnapshot({
+                                                          detail,
+                                                          recordedAt: record.recordedAt.slice(0, 16),
+                                                          currentFormData:
+                                                            record.formData as Record<
+                                                              string,
+                                                              RecordFieldValue
+                                                            >,
+                                                          versionNumber:
+                                                            record.metadata.versionNumber ??
+                                                            1,
+                                                        }),
+                                                      }
+                                                    : isAmbulatoryDischargeSection
+                                                      ? {
+                                                          ...(record.formData as Record<
+                                                            string,
+                                                            RecordFieldValue
+                                                          >),
+                                                          ...buildAmbulatoryDischargeSnapshot({
+                                                            detail,
+                                                            recordedAt: record.recordedAt.slice(0, 16),
+                                                            currentFormData:
+                                                              record.formData as Record<
+                                                                string,
+                                                                RecordFieldValue
+                                                              >,
+                                                            procedureRecord:
+                                                              getLatestRecordByTab(
+                                                                detail.sectionRecords,
+                                                                'Procedimiento',
+                                                              ),
+                                                            recoveryRecord:
+                                                              getLatestRecordByTab(
+                                                                detail.sectionRecords,
+                                                                'Recuperación / Evaluación',
+                                                              ) ??
+                                                              getLatestRecordByTab(
+                                                                detail.sectionRecords,
+                                                                'Recuperación / Evolución',
+                                                              ),
+                                                            prescriptionRecord:
+                                                              getLatestRecordByTab(
+                                                                detail.sectionRecords,
+                                                                'Receta e indicaciones de egreso',
+                                                              ) ??
+                                                              getLatestRecordByTab(
+                                                                detail.sectionRecords,
+                                                                'Indicaciones / Receta',
+                                                              ),
+                                                            versionNumber:
+                                                              record.metadata.versionNumber ??
+                                                              1,
+                                                          }),
+                                                        }
                     : record.formData,
       }),
     );
@@ -4739,7 +6095,9 @@ export function EpisodeDetailPage() {
     }
 
     const nextTabDefinition =
-      detail.encounterType === 'HOSPITALIZATION'
+      detail.encounterType === 'SURGERY'
+        ? getAmbulatoryProcedureDocumentTabDefinition(nextNoteType)
+        : detail.encounterType === 'HOSPITALIZATION'
         ? getHospitalDocumentTabDefinition(nextNoteType)
         : getConsultationDocumentTabDefinition(nextNoteType);
     const nextVersionForType =
@@ -4804,6 +6162,25 @@ export function EpisodeDetailPage() {
                 intake !== null || output !== null
                   ? String((intake ?? 0) - (output ?? 0))
                   : '';
+            }
+            if (
+              isAmbulatoryProcedureSection &&
+              (fieldKey === 'fechaProcedimientoProc' ||
+                fieldKey === 'horaInicioRealProc' ||
+                fieldKey === 'horaFinRealProc')
+            ) {
+              const nextDuration = calculateDurationMinutes(
+                typeof nextFormData.fechaProcedimientoProc === 'string'
+                  ? nextFormData.fechaProcedimientoProc
+                  : '',
+                typeof nextFormData.horaInicioRealProc === 'string'
+                  ? nextFormData.horaInicioRealProc
+                  : '',
+                typeof nextFormData.horaFinRealProc === 'string'
+                  ? nextFormData.horaFinRealProc
+                  : '',
+              );
+              nextFormData.duracionMinutosProc = nextDuration;
             }
             return {
               ...currentValue,
@@ -4997,7 +6374,106 @@ export function EpisodeDetailPage() {
                                                 currentFormData: recordForm.formData,
                                               }),
                                             }
-                  : recordForm.formData,
+                                          : isAmbulatoryPreprocedureSection
+                                            ? {
+                                                ...recordForm.formData,
+                                                ...buildAmbulatoryPreprocedureSnapshot({
+                                                  detail,
+                                                  recordedAt: recordForm.recordedAt,
+                                                  currentFormData: recordForm.formData,
+                                                }),
+                                              }
+                                            : isAmbulatoryProcedureSection
+                                              ? {
+                                                  ...recordForm.formData,
+                                                  ...buildAmbulatoryProcedureSnapshot({
+                                                    detail,
+                                                    recordedAt: recordForm.recordedAt,
+                                                    preprocedureRecord:
+                                                      getLatestRecordByTab(
+                                                        detail.sectionRecords,
+                                                        'Valoración preprocedimiento',
+                                                      )?.status === 'SIGNED'
+                                                        ? getLatestRecordByTab(
+                                                            detail.sectionRecords,
+                                                            'Valoración preprocedimiento',
+                                                          )
+                                                        : null,
+                                                    currentFormData: recordForm.formData,
+                                                  }),
+                                                }
+                                              : isAmbulatoryRecoveryEvaluationSection
+                                                ? {
+                                                    ...recordForm.formData,
+                                                    ...buildAmbulatoryRecoveryEvaluationSnapshot({
+                                                      detail,
+                                                      recordedAt: recordForm.recordedAt,
+                                                      procedureRecord:
+                                                        getLatestRecordByTab(
+                                                          detail.sectionRecords,
+                                                          'Procedimiento',
+                                                        )?.status === 'SIGNED'
+                                                          ? getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Procedimiento',
+                                                            )
+                                                          : null,
+                                                      currentFormData:
+                                                        recordForm.formData,
+                                                    }),
+                                                  }
+                                                : isAmbulatoryDischargePrescriptionSection
+                                                  ? {
+                                                      ...recordForm.formData,
+                                                      ...buildAmbulatoryDischargePrescriptionSnapshot({
+                                                        detail,
+                                                        recordedAt: recordForm.recordedAt,
+                                                        currentFormData:
+                                                          recordForm.formData,
+                                                        versionNumber:
+                                                          selectedRecord?.metadata
+                                                            .versionNumber ??
+                                                          nextAmbulatoryDischargePrescriptionVersionNumber,
+                                                      }),
+                                                    }
+                                                  : isAmbulatoryDischargeSection
+                                                    ? {
+                                                        ...recordForm.formData,
+                                                        ...buildAmbulatoryDischargeSnapshot({
+                                                          detail,
+                                                          recordedAt: recordForm.recordedAt,
+                                                          currentFormData:
+                                                            recordForm.formData,
+                                                          procedureRecord:
+                                                            getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Procedimiento',
+                                                            ),
+                                                          recoveryRecord:
+                                                            getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Recuperación / Evaluación',
+                                                            ) ??
+                                                            getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Recuperación / Evolución',
+                                                            ),
+                                                          prescriptionRecord:
+                                                            getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Receta e indicaciones de egreso',
+                                                            ) ??
+                                                            getLatestRecordByTab(
+                                                              detail.sectionRecords,
+                                                              'Indicaciones / Receta',
+                                                            ),
+                                                          versionNumber:
+                                                            selectedRecord?.metadata
+                                                              .versionNumber ??
+                                                            nextAmbulatoryDischargeVersionNumber,
+                                                        }),
+                                                      }
+                                          : recordForm.formData,
     };
 
     if (selectedRecord) {
@@ -6382,6 +7858,126 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isAmbulatoryPreprocedureSection ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Valoración preprocedimiento
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
+                          ) : isAmbulatoryProcedureSection ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Procedimiento
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
+                          ) : isAmbulatoryRecoveryEvaluationSection ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Recuperación / Evaluación
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
+                          ) : isAmbulatoryDischargePrescriptionSection ? (
+                            <div className="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Receta e indicaciones de egreso
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
+                          ) : isAmbulatoryDischargeSection ? (
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    {recordForm.title}
+                                  </p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    Tipo de registro: Egreso. Al firmar cerrará el episodio.
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).badgeVariant
+                                  }
+                                >
+                                  {
+                                    (encounterRecordStatusConfig[recordForm.status] ??
+                                      encounterRecordStatusConfig.DRAFT).label
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -6438,7 +8034,13 @@ export function EpisodeDetailPage() {
                             </label>
                           ) : null}
 
-                          {isConsultationPrescriptionSection || isConsultationDocumentsSection ? (
+                          {isConsultationPrescriptionSection ||
+                          isConsultationDocumentsSection ||
+                          isAmbulatoryPreprocedureSection ||
+                          isAmbulatoryProcedureSection ||
+                          isAmbulatoryRecoveryEvaluationSection ||
+                          isAmbulatoryDischargePrescriptionSection ||
+                          isAmbulatoryDischargeSection ? (
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Estado</span>
                               <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
@@ -6487,7 +8089,12 @@ export function EpisodeDetailPage() {
                           isHospitalConsultationSection ||
                           isHospitalSurgicalSection ||
                           isHospitalNursingSection ||
-                          isHospitalDischargeSection ? null : (
+                          isHospitalDischargeSection ||
+                          isAmbulatoryPreprocedureSection ||
+                          isAmbulatoryProcedureSection ||
+                          isAmbulatoryRecoveryEvaluationSection ||
+                          isAmbulatoryDischargePrescriptionSection ||
+                          isAmbulatoryDischargeSection ? null : (
                             <label className="space-y-2 text-sm md:col-span-2">
                               <span className="font-medium text-slate-900">Título</span>
                               <Input
