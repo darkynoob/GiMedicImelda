@@ -1,3 +1,20 @@
+import type { LucideIcon } from 'lucide-react';
+import {
+  FileText,
+  Stethoscope,
+  Activity,
+  Pill,
+  Siren,
+  FilePlus,
+  ClipboardList,
+  MessagesSquare,
+  FileCheck,
+  Hospital,
+  Scissors,
+  HeartPulse,
+  ClipboardCheck
+} from 'lucide-react';
+
 export type EpisodeFieldOption = {
   value: string;
   label: string;
@@ -39,6 +56,7 @@ export type EpisodeSectionDefinition = {
 export type EpisodeTabDefinition = {
   key: string;
   title: string;
+  icon: LucideIcon;
   description: string;
   sections: EpisodeSectionDefinition[];
 };
@@ -484,6 +502,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Historia clínica',
       title: 'Historia clínica',
       description: 'Campos estructurados inspirados en la historia clínica de Nexus.',
+      icon: FileText,
       sections: [
         {
           key: 'tipo_historia',
@@ -709,6 +728,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Consulta actual',
       title: 'Consulta actual',
       description: 'Captura estructurada del evento clínico del día.',
+      icon: Stethoscope,
       sections: [
         {
           key: 'tipo_consulta',
@@ -924,6 +944,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Evolución',
       title: 'Evolución',
       description: 'SOAP y continuidad terapéutica del episodio ambulatorio.',
+      icon: Activity,
       sections: [
         {
           key: 'estado_general',
@@ -1100,6 +1121,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Receta / Indicaciones',
       title: 'Receta e indicaciones',
       description: 'Prescripción, seguridad y seguimiento.',
+      icon: Pill,
       sections: [
         {
           key: 'encabezado_receta',
@@ -1365,6 +1387,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       title: 'Documentos',
       description:
         'Documentos clínicos del episodio con firma, PDF y control documental.',
+      icon: FileText,
       sections: [
         {
           key: 'resumen_documental',
@@ -1391,6 +1414,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Triage',
       title: 'Triage',
       description: 'Ingreso, prioridad, tiempos y estado inicial.',
+      icon: Siren,
       sections: [
         {
           key: 'triage_tipo',
@@ -1556,6 +1580,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Nota inicial',
       title: 'Nota inicial',
       description: 'Subjetivo, objetivo, análisis, plan y resolución inicial.',
+      icon: FilePlus,
       sections: [
         {
           key: 'nota_inicial_tipo',
@@ -1703,6 +1728,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Evolución',
       title: 'Evolución en urgencias',
       description: 'Seguimiento clínico, órdenes, estudios y eventos.',
+      icon: Activity,
       sections: [
         {
           key: 'evolucion_urg_tipo',
@@ -1843,6 +1869,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Órdenes / Indicaciones',
       title: 'Órdenes e indicaciones',
       description: 'Tratamiento, medicamentos, estudios y trazabilidad.',
+      icon: ClipboardList,
       sections: [
         {
           key: 'ordenes_urg_tipo',
@@ -1965,6 +1992,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Interconsultas',
       title: 'Interconsultas',
       description: 'Solicitud, respuesta y auditoría de tiempos.',
+      icon: MessagesSquare,
       sections: [
         {
           key: 'interconsulta_tipo',
@@ -2051,6 +2079,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Egreso',
       title: 'Egreso de urgencias',
       description: 'Resumen clínico, indicaciones, educación y eventos legales si aplican.',
+      icon: FileCheck,
       sections: [
         {
           key: 'egreso_urg_tipo',
@@ -2183,6 +2212,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Documentos',
       title: 'Documentos',
       description: 'Resumen y control documental.',
+      icon: FileText,
       sections: [
         {
           key: 'documentos_urg',
@@ -2204,6 +2234,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Ingreso',
       title: 'Ingreso hospitalario',
       description: 'Admisión, datos administrativos, historia y plan inicial.',
+      icon: Hospital,
       sections: [
         {
           key: 'datos_ingreso',
@@ -2483,6 +2514,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Evolución',
       title: 'Evolución hospitalaria',
       description: 'Seguimiento clínico intrahospitalario.',
+      icon: Activity,
       sections: [
         {
           key: 'subjetivo_evol_hosp',
@@ -2634,6 +2666,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Indicaciones médicas',
       title: 'Indicaciones médicas',
       description: 'Medicamentos, cuidados, estudios e interconsultas.',
+      icon: ClipboardList,
       sections: [
         {
           key: 'medicamentos_indicaciones_hosp',
@@ -2770,6 +2803,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Interconsultas',
       title: 'Interconsultas',
       description: 'Solicitud, respuesta y trazabilidad.',
+      icon: MessagesSquare,
       sections: [
         {
           key: 'datos_solicitud_inter_hosp',
@@ -2878,6 +2912,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Procedimientos / Cirugía',
       title: 'Procedimientos y cirugía',
       description: 'Contenedor de subdocumentos quirúrgicos independientes.',
+      icon: Scissors,
       sections: [
         {
           key: 'quir_common_header',
@@ -3144,6 +3179,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Enfermería',
       title: 'Enfermería',
       description: 'Registros de enfermería por turno.',
+      icon: HeartPulse,
       sections: [
         {
           key: 'enf_encabezado',
@@ -3249,6 +3285,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Egreso',
       title: 'Egreso hospitalario',
       description: 'Documento final de cierre de hospitalización.',
+      icon: FileCheck,
       sections: [
         {
           key: 'egreso_hosp_tipo_destino',
@@ -3356,6 +3393,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Documentos',
       title: 'Documentos',
       description: 'Resumen y observaciones documentales.',
+      icon: FileText,
       sections: [
         {
           key: 'documentos_hosp',
@@ -3377,6 +3415,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Valoración preprocedimiento',
       title: 'Valoración preprocedimiento',
       description: 'Motivo, antecedentes, evaluación de riesgo y preparación.',
+      icon: ClipboardCheck,
       sections: [
         {
           key: 'valoracion_preproc',
@@ -3415,6 +3454,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Procedimiento',
       title: 'Procedimiento',
       description: 'Acto quirúrgico o procedimiento ambulatorio.',
+      icon: Scissors,
       sections: [
         {
           key: 'procedimiento_central',
@@ -3455,6 +3495,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Recuperación / Evolución',
       title: 'Recuperación y evolución',
       description: 'Recuperación, criterios de alta intermedia y vigilancia.',
+      icon: Activity,
       sections: [
         {
           key: 'recuperacion_preproc',
@@ -3498,6 +3539,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Indicaciones / Receta',
       title: 'Indicaciones y receta',
       description: 'Receta electrónica, medicamentos y educación.',
+      icon: Pill,
       sections: [
         {
           key: 'indicaciones_preproc',
@@ -3527,6 +3569,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Egreso',
       title: 'Egreso',
       description: 'Alta ambulatoria, criterios y responsable.',
+      icon: FileCheck,
       sections: [
         {
           key: 'egreso_preproc',
@@ -3571,6 +3614,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       key: 'Documentos',
       title: 'Documentos',
       description: 'Resumen documental y pendientes.',
+      icon: FileText,
       sections: [
         {
           key: 'documentos_preproc',
@@ -4238,6 +4282,7 @@ export function getConsultationDocumentTabDefinition(
   return {
     key: 'Documentos',
     title: 'Documentos',
+    icon: FileText,
     description: 'Documentos clínicos del episodio con captura independiente.',
     sections: [
       ...(consultationDocumentSectionDefinitions[noteType] ??
@@ -4253,6 +4298,7 @@ export function getHospitalDocumentTabDefinition(
   return {
     key: 'Documentos',
     title: 'Documentos',
+    icon: FileText,
     description:
       'Documentos hospitalarios complementarios con firma, PDF, hash y trazabilidad.',
     sections: [

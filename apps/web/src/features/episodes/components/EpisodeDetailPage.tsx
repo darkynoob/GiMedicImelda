@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity,
+  FileCheck,
   ArrowLeft,
   CalendarDays,
   ClipboardList,
@@ -17,7 +17,19 @@ import {
   ShieldAlert,
   Stethoscope,
   Trash2,
-  UserRound,
+  FolderOpen,
+  ClipboardPen,
+  Pill,
+  FileSignature,
+  Siren,
+  Activity,
+  MessagesSquare,
+  BedDouble,
+  Scissors,
+  PanelRight,
+  History,
+  Info,
+  LayoutDashboard
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../../../components/layout/AppLayout';
@@ -2883,21 +2895,31 @@ function buildEvolutionVersionPrefill(args: {
 }
 
 function SectionCard({
+  icon: Icon,
   title,
   description,
   children,
 }: {
+  icon: ComponentType<{ className?: string }>;
   title: string;
   description?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        {description ? (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        ) : null}
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+            {description ? (
+              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+            ) : null}
+          </div>
+        </div>
       </div>
       {children}
     </div>
@@ -5229,8 +5251,9 @@ export function EpisodeDetailPage() {
             {activeTab === 'Resumen' ? (
               <>
                 <SectionCard
-                  description="Datos base del episodio editables sin salir del resumen."
-                  title="Datos base del episodio"
+                  description="Consulta y edita la información principal del episodio clínico."
+                  title="Información general"
+                  icon={LayoutDashboard}
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
@@ -5412,83 +5435,97 @@ export function EpisodeDetailPage() {
                 </SectionCard>
 
                 <SectionCard
-                  description="Resumen operativo y clinico del episodio alineado con el dominio actual."
+                  description="Resumen clínico y operativo del episodio según el contexto actual."
                   title="Vista general"
+                  icon={FolderOpen}
                 >
                   <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Paciente
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {detail.patient.fullName}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {detail.patient.phone ?? 'Sin telefono'} ·{' '}
-                        {detail.patient.email ?? 'Sin correo'}
-                      </p>
+                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Paciente
+                        </p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {detail.patient.fullName}
+                        </p>
+                        <p className="text-sm leading-relaxed text-slate-500">
+                          {detail.patient.phone ?? 'Sin teléfono'} ·{' '}
+                          {detail.patient.email ?? 'Sin correo'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Episodio
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {typeConfig?.label ?? detail.encounterType}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {detail.facility?.name ?? 'Sin sede'} ·{' '}
-                        {detail.serviceArea?.name ??
-                          detail.specialty?.name ??
-                          'Sin area'}
-                      </p>
+                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Episodio
+                        </p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {typeConfig?.label ?? detail.encounterType}
+                        </p>
+                        <p className="text-sm leading-relaxed text-slate-500">
+                          {detail.facility?.name ?? 'Sin sede'} ·{' '}
+                          {detail.serviceArea?.name ??
+                            detail.specialty?.name ??
+                            'Sin área'}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </SectionCard>
 
                 <SectionCard
-                  description="Indicadores existentes del episodio y sus relaciones clinicas."
-                  title="Actividad ligada"
+                  description="Contadores e indicadores vinculados al episodio clínico."
+                  title="Actividad relacionada"
+                  icon={Activity}
                 >
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {[
                       ['Documentos', detail.metrics.documents],
-                      ['Diagnosticos', detail.metrics.diagnoses],
+                      ['Diagnósticos', detail.metrics.diagnoses],
                       ['Labs', detail.metrics.labs],
-                      ['Imagen', detail.metrics.imaging],
+                      ['Imágenes', detail.metrics.imaging],
                     ].map(([label, value]) => (
                       <div
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                        className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-5 py-4 transition-colors hover:border-slate-300 hover:bg-white shadow-sm"
                         key={label}
                       >
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {label}
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-slate-900">
-                          {value}
-                        </p>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {label}
+                          </p>
+
+                          <p className="text-2xl font-bold tracking-tight text-slate-900">
+                            {value}
+                          </p>
+                        </div>
                       </div>
                     ))}
                   </div>
                 </SectionCard>
 
                 <SectionCard
-                  description="Ultimo bloque de signos vitales asociado al episodio."
+                  description="Información más reciente de monitoreo clínico del episodio."
                   title="Signos vitales"
+                  icon={HeartPulse}
                 >
                   {detail.latestVitalSigns.length > 0 ? (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {detail.latestVitalSigns.map((item) => (
                         <div
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
                           key={item.label}
                         >
                           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             {item.label}
                           </p>
-                          <p className="mt-2 text-xl font-semibold text-slate-900">
-                            {item.value}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{item.unit}</p>
+                          <div className="flex items-end gap-1.5">
+                            <p className="mt-2 text-xl font-semibold text-slate-900">
+                              {item.value}
+                            </p>
+                            <span className="pb-1 text-xs font-medium text-slate-500">
+                              {item.unit}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -5506,24 +5543,35 @@ export function EpisodeDetailPage() {
                 <SectionCard
                   description={activeTabDefinition.description}
                   title={activeTabDefinition.title}
+                  icon={activeTabDefinition.icon}
                 >
                   <div className="space-y-5">
                     {isEpisodeClosed ? (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        Este episodio ya está cerrado. Todo el contenido queda en modo
-                        consulta y no permite nuevas capturas, firmas ni adjuntos.
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-xl bg-amber-100 p-2">
+                            <ShieldAlert className="h-4 w-4 text-amber-600" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-amber-900">
+                              Episodio cerrado
+                            </p>
+                            <p className="text-sm leading-relaxed text-amber-700">
+                              El episodio permanece disponible solo en modo consulta y ya no permite
+                              nuevas capturas, firmas ni adjuntos.
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     ) : null}
-
-                    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
-                      <div>
+                    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-5 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-1">
                         <p className="text-sm font-semibold text-slate-900">
                           {activeTabPanelConfig?.contextLabel ?? 'Registros de la sección'}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Antes de capturar se muestra el estado vacío; cuando ya
-                          existen registros puedes retomarlos o crear uno nuevo,
-                          como en Nexus.
+                        <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
+                          Crea nuevos registros o continúa capturas existentes dentro de esta
+                          sección clínica.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -5537,19 +5585,22 @@ export function EpisodeDetailPage() {
                             ]
                         ).map((noteType) => (
                           <Button
-                            className="gap-2"
+                            className="gap-2 shadow-sm"
                             disabled={isEpisodeClosed}
                             key={noteType}
                             onClick={() => startCreatingRecord(noteType)}
                             type="button"
                             variant={
-                              activeTabPanelConfig?.noteTypes?.length ? 'outline' : 'default'
+                              activeTabPanelConfig?.noteTypes?.length
+                                ? 'outline'
+                                : 'default'
                             }
                           >
                             <Plus className="h-4 w-4" />
                             {activeTabPanelConfig?.noteTypes?.length
                               ? noteType
-                              : activeTabPanelConfig?.defaultActionLabel ?? 'Nuevo registro'}
+                              : activeTabPanelConfig?.defaultActionLabel ??
+                                'Nuevo registro'}
                           </Button>
                         ))}
                       </div>
@@ -5565,13 +5616,13 @@ export function EpisodeDetailPage() {
 
                             return (
                               <button
-                                className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-primary/30 hover:bg-slate-50"
+                                className="group w-full rounded-2xl border border-slate-200/80 bg-white p-5 text-left transition-all hover:border-primary/30 hover:bg-slate-50/70 hover:shadow-sm"
                                 key={record.id}
                                 onClick={() => openExistingRecord(record.id)}
                                 type="button"
                               >
-                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                  <div className="min-w-0">
+                                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                  <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <p className="text-sm font-semibold text-slate-900">
                                         {record.title}
@@ -5583,17 +5634,19 @@ export function EpisodeDetailPage() {
                                         {recordStatusConfig.label}
                                       </Badge>
                                     </div>
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                      {record.authorName ?? 'Sin autor'} ·{' '}
-                                      {formatDateTime(record.recordedAt)} · última
-                                      actualización {formatDateTime(record.updatedAt)}
-                                    </p>
+                                    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                                      <span>{record.authorName ?? 'Sin autor'}</span>
+                                      <span className="text-slate-300">•</span>
+                                      <span>{formatDateTime(record.recordedAt)}</span>
+                                      <span className="text-slate-300">•</span>
+                                      <span>
+                                        Actualizado {formatDateTime(record.updatedAt)}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2 text-primary">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-primary transition-transform group-hover:translate-x-0.5">
                                     <PencilLine className="h-4 w-4" />
-                                    <span className="text-xs font-medium">
-                                      Ver o continuar captura
-                                    </span>
+                                    <span>Continuar captura</span>
                                   </div>
                                 </div>
                               </button>
@@ -5601,31 +5654,35 @@ export function EpisodeDetailPage() {
                           })}
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-10 text-center">
-                          <FileText className="mx-auto h-8 w-8 text-slate-400" />
-                          <p className="mt-3 text-sm font-medium text-slate-900">
-                            Esta subsección todavía no tiene registros
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Usa el botón superior para crear la primera captura de{' '}
-                            {activeTab.toLowerCase()}.
-                          </p>
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-6 py-12 text-center">
+                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                            <FileText className="h-7 w-7 text-slate-400" />
+                          </div>
+                          <div className="mt-4 space-y-1">
+                            <p className="text-sm font-semibold text-slate-900">
+                              Aún no hay registros disponibles
+                            </p>
+                            <p className="mx-auto max-w-sm text-sm leading-relaxed text-slate-500">
+                              Usa la acción superior para crear el primer registro de{' '}
+                              {activeTab.toLowerCase()}.
+                            </p>
+                          </div>
                         </div>
                       )
                     ) : recordForm ? (
                       <div className="space-y-5">
-                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
-                          <div>
+                        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 md:flex-row md:items-center md:justify-between">
+                          <div className="space-y-1">
                             <p className="text-sm font-semibold text-slate-900">
                               {selectedRecord ? 'Editar registro' : 'Nuevo registro'}
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
                               {selectedRecord
-                                ? 'Puedes continuar la captura, ajustar campos y guardar la nueva versión operativa del registro.'
-                                : 'Se abrió la captura contextual de la subsección siguiendo el flujo esperado por tipo de episodio.'}
+                                ? 'Continúa la captura y actualiza la información clínica del registro.'
+                                : 'Completa la captura clínica correspondiente a esta sección del episodio.'}
                             </p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <Button
                               onClick={closeRecordWorkspace}
                               type="button"
@@ -5634,7 +5691,7 @@ export function EpisodeDetailPage() {
                               Cancelar
                             </Button>
                             <Button
-                              className="gap-2"
+                              className="gap-2 shadow-sm"
                               disabled={
                                 createRecordMutation.isPending ||
                                 updateRecordMutation.isPending ||
@@ -5655,70 +5712,97 @@ export function EpisodeDetailPage() {
 
                         <div className="grid gap-4 md:grid-cols-2">
                           {isConsultationHistorySection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Historia clínica versión ${historyVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    El título y el tipo se generan automáticamente para
-                                    conservar el histórico clínico del episodio.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <FileCheck className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Historia clínica · versión ${historyVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    El registro conserva el versionado clínico del episodio y mantiene la
+                                    trazabilidad histórica de la atención.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">{historyTypeLabel}</Badge>
+                                  <Badge variant="secondary">
+                                    {historyTypeLabel}
+                                  </Badge>
                                   {inheritedFromLabel ? (
-                                    <Badge variant="success">{inheritedFromLabel}</Badge>
+                                    <Badge variant="success">
+                                      {inheritedFromLabel}
+                                    </Badge>
                                   ) : null}
                                 </div>
                               </div>
                             </div>
                           ) : isConsultationCurrentSection ? (
-                            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Consulta versión ${consultationVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    La consulta actual registra el evento clínico del día y
-                                    mantiene su propio histórico por episodio.
+                            <div className="rounded-2xl border border-sky-200/80 bg-sky-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-sky-100 p-2">
+                                      <Stethoscope className="h-4 w-4 text-sky-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Consulta · versión ${consultationVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-sky-800">
+                                    La consulta conserva el seguimiento clínico y el histórico operativo
+                                    asociado al episodio.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">{consultationTypeLabel}</Badge>
+                                  <Badge variant="secondary">
+                                    {consultationTypeLabel}
+                                  </Badge>
                                 </div>
                               </div>
                             </div>
                           ) : isConsultationEvolutionSection ? (
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Evolución V${evolutionVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Cada evolución documenta el seguimiento clínico del
-                                    episodio sin sobrescribir evoluciones previas.
+                            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-amber-100 p-2">
+                                      <ClipboardPen className="h-4 w-4 text-amber-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Evolución · versión ${evolutionVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-amber-800">
+                                    Cada evolución conserva el seguimiento clínico del episodio y mantiene
+                                    el histórico progresivo de atención.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">SOAP</Badge>
+                                  <Badge variant="secondary">
+                                    SOAP
+                                  </Badge>
                                 </div>
                               </div>
                             </div>
                           ) : isConsultationPrescriptionSection ? (
-                            <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Receta B${prescriptionVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Cada receta es independiente, se guarda como borrador
-                                    y solo se bloquea cuando se firma con validación de
-                                    contraseña.
+                            <div className="rounded-2xl border border-violet-200/80 bg-violet-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-violet-100 p-2">
+                                      <Pill className="h-4 w-4 text-violet-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Receta · versión ${prescriptionVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-violet-800">
+                                    La receta mantiene control independiente por versión y permanece en
+                                    edición hasta completar la firma clínica correspondiente.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5738,23 +5822,30 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isConsultationDocumentsSection ? (
-                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildDocumentVersionTitle(
-                                      recordForm.noteType,
-                                      selectedRecord?.metadata.versionNumber ??
-                                        nextDocumentVersionNumber,
-                                    )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Cada documento se guarda como borrador, se firma con
-                                    contraseña y queda bloqueado después de firmarse.
+                            <div className="rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-cyan-100 p-2">
+                                      <FileSignature className="h-4 w-4 text-cyan-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {buildDocumentVersionTitle(
+                                        recordForm.noteType,
+                                        selectedRecord?.metadata.versionNumber ??
+                                          nextDocumentVersionNumber,
+                                      )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-cyan-800">
+                                    El documento conserva control por versión y permanece editable hasta
+                                    completar la firma clínica correspondiente.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">{recordForm.noteType}</Badge>
+                                  <Badge variant="secondary">
+                                    {recordForm.noteType}
+                                  </Badge>
                                   <Badge
                                     variant={
                                       (encounterRecordStatusConfig[recordForm.status] ??
@@ -5769,26 +5860,31 @@ export function EpisodeDetailPage() {
                                   {detail.encounterType !== 'EMERGENCY' &&
                                   recordForm.noteType === 'Nota de cierre' ? (
                                     <Badge variant="warning">
-                                      Al firmarla se cerrará el episodio
+                                      El episodio se cerrará al firmar
                                     </Badge>
                                   ) : null}
                                 </div>
                               </div>
                             </div>
                           ) : isEmergencyTriageSection ? (
-                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildTriageTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildTriageTitle(nextTriageVersionNumber)}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    El título se calcula por episodio y este registro solo
-                                    pertenece al tab Triage de Urgencias.
+                            <div className="rounded-2xl border border-rose-200/80 bg-rose-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-rose-100 p-2">
+                                      <Siren className="h-4 w-4 text-rose-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildTriageTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildTriageTitle(nextTriageVersionNumber)}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-rose-800">
+                                    El triage conserva el seguimiento inicial de urgencias y mantiene su
+                                    registro independiente dentro del episodio clínico.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5808,21 +5904,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyInitialNoteSection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyInitialNoteTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyInitialNoteTitle(
-                                          nextEmergencyInitialNoteVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Nota médica inicial basada en el último Triage del
-                                    episodio, con snapshot editable de signos vitales.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <Stethoscope className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyInitialNoteTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyInitialNoteTitle(
+                                            nextEmergencyInitialNoteVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    Nota médica inicial vinculada al último triage del episodio y basada
+                                    en los signos vitales registrados durante la atención inicial.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5842,21 +5943,27 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyEvolutionSection ? (
-                            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyEvolutionTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyEvolutionTitle(
-                                          nextEmergencyEvolutionVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Seguimiento dinámico del mismo episodio con nueva toma
-                                    de signos vitales y diagnósticos longitudinales.
+                            <div className="rounded-2xl border border-orange-200/80 bg-orange-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-orange-100 p-2">
+                                      <Activity className="h-4 w-4 text-orange-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyEvolutionTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyEvolutionTitle(
+                                            nextEmergencyEvolutionVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-orange-800">
+                                    Evolución clínica del episodio con actualización de signos vitales,
+                                    valoración médica y seguimiento continuo durante la atención en
+                                    urgencias.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5878,21 +5985,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyOrdersSection ? (
-                            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyOrdersTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyOrdersTitle(
-                                          nextEmergencyOrdersVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Órdenes operativas del episodio con validaciones y
-                                    trazabilidad automática.
+                            <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-indigo-100 p-2">
+                                      <ClipboardList className="h-4 w-4 text-indigo-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyOrdersTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyOrdersTitle(
+                                            nextEmergencyOrdersVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-indigo-800">
+                                    Órdenes médicas e indicaciones clínicas asociadas al episodio, con
+                                    seguimiento y control operativo durante la atención.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5914,21 +6026,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyConsultationSection ? (
-                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyConsultationTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyConsultationTitle(
-                                          nextEmergencyConsultationVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Solicitud formal entre servicios con auditoría de
-                                    tiempos y respuesta trazable.
+                            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-teal-100 p-2">
+                                      <MessagesSquare className="h-4 w-4 text-teal-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyConsultationTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyConsultationTitle(
+                                            nextEmergencyConsultationVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-teal-800">
+                                    Solicitud de valoración entre servicios clínicos con seguimiento de
+                                    atención y continuidad asistencial del episodio.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5948,15 +6065,20 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyDischargeSection ? (
-                            <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildEmergencyDischargeTitle()}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Documento final único del episodio. Al firmarlo se
-                                    cierra Urgencias y todo queda solo lectura.
+                            <div className="rounded-2xl border border-slate-300/80 bg-slate-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-slate-200 p-2">
+                                      <FileCheck className="h-4 w-4 text-slate-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {buildEmergencyDischargeTitle()}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
+                                    Documento final del episodio de urgencias. Una vez firmado, el episodio
+                                    quedará cerrado y disponible únicamente en modo consulta.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -5976,21 +6098,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalAdmissionSection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalAdmissionTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalAdmissionTitle(
-                                          nextHospitalAdmissionVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Admisión clínica y administrativa del episodio de
-                                    Hospitalización. El título se calcula por episodio.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <BedDouble className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalAdmissionTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalAdmissionTitle(
+                                            nextHospitalAdmissionVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    Registro de ingreso clínico y administrativo asociado al episodio de
+                                    hospitalización y continuidad de atención intrahospitalaria.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -6012,22 +6139,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalEvolutionSection ? (
-                            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalEvolutionTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalEvolutionTitle(
-                                          nextHospitalEvolutionVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Seguimiento SOAP independiente. Cada firma crea una
-                                    nueva toma de signos vitales y conserva diagnósticos
-                                    longitudinales.
+                            <div className="rounded-2xl border border-blue-200/80 bg-blue-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-blue-100 p-2">
+                                      <Activity className="h-4 w-4 text-blue-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalEvolutionTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalEvolutionTitle(
+                                            nextHospitalEvolutionVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-blue-800">
+                                    Evolución clínica intrahospitalaria con valoración médica continua,
+                                    actualización de signos vitales y seguimiento del estado del paciente.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -6049,21 +6180,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalMedicalOrdersSection ? (
-                            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalMedicalOrdersTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalMedicalOrdersTitle(
-                                          nextHospitalMedicalOrdersVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Órdenes operativas para farmacia, laboratorio,
-                                    imagen, interconsultas y enfermería con trazabilidad.
+                            <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-indigo-100 p-2">
+                                      <ClipboardList className="h-4 w-4 text-indigo-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalMedicalOrdersTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalMedicalOrdersTitle(
+                                            nextHospitalMedicalOrdersVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-indigo-800">
+                                    Indicaciones médicas asociadas al episodio hospitalario para
+                                    medicamentos, laboratorio, imagen, enfermería e interconsultas.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -6085,21 +6221,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalConsultationSection ? (
-                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalConsultationTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalConsultationTitle(
-                                          nextHospitalConsultationVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Ticket clínico formal con solicitud, respuesta,
-                                    estado, SLA y trazabilidad de tiempos.
+                            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-teal-100 p-2">
+                                      <MessagesSquare className="h-4 w-4 text-teal-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalConsultationTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalConsultationTitle(
+                                            nextHospitalConsultationVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-teal-800">
+                                    Solicitud de valoración entre servicios hospitalarios con seguimiento
+                                    clínico, respuesta médica y continuidad asistencial del episodio.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -6116,8 +6257,7 @@ export function EpisodeDetailPage() {
                                     }
                                   </Badge>
                                   <Badge variant="warning">
-                                    {typeof recordForm.formData.estatusInterconsultaHosp ===
-                                    'string'
+                                    {typeof recordForm.formData.estatusInterconsultaHosp === 'string'
                                       ? recordForm.formData.estatusInterconsultaHosp
                                       : 'BORRADOR'}
                                   </Badge>
@@ -6125,21 +6265,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalSurgicalSection ? (
-                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalSurgicalTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalSurgicalTitle(
-                                          nextHospitalSurgicalVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Subdocumento quirúrgico independiente con folio,
-                                    firma, PDF, hash y sello digital propios.
+                            <div className="rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-cyan-100 p-2">
+                                      <Scissors className="h-4 w-4 text-cyan-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalSurgicalTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalSurgicalTitle(
+                                            nextHospitalSurgicalVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-cyan-800">
+                                    Registro clínico de procedimientos y cirugía asociado al episodio
+                                    hospitalario, con control documental y validación de firma médica.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -6164,21 +6309,27 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalNursingSection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalNursingTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalNursingTitle(
-                                          nextHospitalNursingVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Corte de enfermería por turno con signos, ministración,
-                                    balance, eventos y firma independiente.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <HeartPulse className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalNursingTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalNursingTitle(
+                                            nextHospitalNursingVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    Registro de enfermería por turno con seguimiento clínico, signos
+                                    vitales, administración de medicamentos, balance y eventos relevantes
+                                    de atención.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -6199,15 +6350,20 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalDischargeSection ? (
-                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildHospitalDischargeTitle()}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Documento único de cierre. Al firmarlo se cerrará
-                                    Hospitalización y el expediente quedará solo lectura.
+                            <div className="rounded-2xl border border-rose-200/80 bg-rose-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-rose-100 p-2">
+                                      <FileCheck className="h-4 w-4 text-rose-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {buildHospitalDischargeTitle()}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-rose-800">
+                                    Documento final de egreso hospitalario. Una vez firmado, el episodio
+                                    quedará cerrado y disponible únicamente en modo consulta.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7335,34 +7491,60 @@ export function EpisodeDetailPage() {
 
           <div className="space-y-6">
             <SectionCard
-              description="Indicadores y contexto rapido para continuidad de atencion."
+              description="Resumen rápido e información clave para el seguimiento del episodio."
               title="Panel lateral"
+              icon={PanelRight}
             >
               <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <HeartPulse className="h-4 w-4 text-emerald-600" />
-                    <span className="text-sm font-medium text-slate-900">
-                      Alergias activas
-                    </span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:border-emerald-200 hover:bg-emerald-50/40">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-emerald-100 p-2">
+                      <HeartPulse className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        Alergias activas
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Registros clínicos asociados
+                      </p>
+                    </div>
                   </div>
-                  <Badge variant="alert">{detail.metrics.allergies}</Badge>
+                  <Badge variant="alert">
+                    {detail.metrics.allergies}
+                  </Badge>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4 text-violet-600" />
-                    <span className="text-sm font-medium text-slate-900">
-                      Problemas
-                    </span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:border-violet-200 hover:bg-violet-50/40">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-violet-100 p-2">
+                      <ClipboardList className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        Problemas
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Seguimiento y condiciones registradas
+                      </p>
+                    </div>
                   </div>
-                  <Badge variant="secondary">{detail.metrics.problems}</Badge>
+                  <Badge variant="secondary">
+                    {detail.metrics.problems}
+                  </Badge>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4 text-sky-600" />
-                    <span className="text-sm font-medium text-slate-900">
-                      Labs e imagen
-                    </span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:border-sky-200 hover:bg-sky-50/40">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-sky-100 p-2">
+                      <CalendarDays className="h-4 w-4 text-sky-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        Labs e imágenes
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Estudios asociados al episodio
+                      </p>
+                    </div>
                   </div>
                   <Badge variant="secondary">
                     {detail.metrics.labs + detail.metrics.imaging}
@@ -7372,36 +7554,42 @@ export function EpisodeDetailPage() {
             </SectionCard>
 
             <SectionCard
-              description="Secuencia reciente de actividad derivada del episodio y sus relaciones."
+              description="Actividad reciente relacionada con la atención y evolución del episodio."
               title="Timeline"
+              icon={History}
             >
-              <div className="space-y-4">
-                {detail.timeline.map((event) => {
+              <div className="space-y-5">
+                {detail.timeline.map((event, index) => {
                   const eventConfig = timelineKindConfig[event.kind];
                   const EventIcon = eventConfig.icon;
 
                   return (
-                    <div className="flex gap-3" key={event.id}>
-                      <div
-                        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${eventConfig.className}`}
-                      >
-                        <EventIcon className="h-4 w-4" />
+                    <div className="relative flex gap-4" key={event.id}>
+                      <div className="relative flex flex-col items-center">
+                        <div
+                          className={`z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border shadow-sm ${eventConfig.className}`}
+                        >
+                          <EventIcon className="h-4 w-4" />
+                        </div>
+                        {index !== detail.timeline.length - 1 && (
+                          <div className="mt-2 h-full w-px bg-slate-200" />
+                        )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1 pb-5">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold text-slate-900">
                             {event.label}
                           </p>
                           <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${eventConfig.className}`}
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${eventConfig.className}`}
                           >
                             {eventConfig.label}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
                           {event.detail}
                         </p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
+                        <p className="mt-2 text-[11px] font-medium text-slate-400">
                           {formatDateTime(event.timestamp)}
                         </p>
                       </div>
@@ -7412,8 +7600,9 @@ export function EpisodeDetailPage() {
             </SectionCard>
 
             <SectionCard
-              description="Datos utiles para validacion administrativa y clinica."
+              description="Información clave para validación administrativa y clínica."
               title="Contexto rapido"
+              icon={Info}
             >
               <div className="space-y-3">
                 <InfoRow
@@ -7428,14 +7617,20 @@ export function EpisodeDetailPage() {
                   label="Registro"
                   value={detail.medicalRecord.recordNumber}
                 />
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <div className="flex items-start gap-2">
-                    <ShieldAlert className="mt-0.5 h-4 w-4 text-amber-600" />
-                    <p className="text-sm text-amber-700">
-                      Este detalle edita el nucleo del episodio y muestra las
-                      relaciones clinicas existentes. La base ya soporta crecimiento
-                      hacia notas, ordenes y documentos sin rehacer el modelo.
-                    </p>
+                <div className="rounded-2xl border border-amber-200/70 bg-amber-50/70 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-amber-100 p-2">
+                      <ShieldAlert className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-amber-900">
+                        Contexto clínico del episodio
+                      </p>
+                      <p className="text-sm leading-relaxed text-amber-700">
+                        El episodio mantiene relaciones clínicas y administrativas vinculadas
+                        para asegurar continuidad y trazabilidad de atención.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
