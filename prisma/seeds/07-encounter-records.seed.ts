@@ -5,8 +5,6 @@ import type { SeedDeps } from './_context';
 function buildOutpatientSections() {
   return {
     'Historia clínica': {
-      tipoHistoriaClinica: '',
-      fechaHistoria: '',
       ahfDiabetes: false,
       ahfHipertension: false,
       ahfCancer: false,
@@ -301,8 +299,6 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
         recordedAt: ctx.dates.anaEncounterOpen,
         authoredByUserId: ctx.ids.users.valeria,
         formDataJson: {
-          tipoHistoriaClinica: 'INICIAL',
-          fechaHistoria: ctx.dates.anaEncounterOpen.toISOString().slice(0, 16),
           ahfHipertension: true,
           ahfCancer: true,
           ahfDetalle:
@@ -383,7 +379,6 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
         },
         metadataJson: {
           versionNumber: 1,
-          historyType: 'INICIAL',
           inheritedFromRecordId: null,
         },
       },

@@ -201,7 +201,6 @@ export interface EncounterDetailResponse {
     formData: Record<string, unknown>;
     metadata: {
       versionNumber: number | null;
-      historyType: string | null;
       consultationType: string | null;
       inheritedFromRecordId: string | null;
       prescriptionFolio: string | null;

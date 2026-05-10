@@ -43,6 +43,14 @@ export type EpisodeTabDefinition = {
   sections: EpisodeSectionDefinition[];
 };
 
+export function getConsultationHistoryNoteTypeLabel(
+  versionNumber: number | null | undefined,
+) {
+  return versionNumber === 1
+    ? 'Historia clínica inicial'
+    : 'Nota subsecuente de consulta';
+}
+
 const yesNoUnknownOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'SI', label: 'Si' },
@@ -485,30 +493,6 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       title: 'Historia clínica',
       description: 'Campos estructurados inspirados en la historia clínica de Nexus.',
       sections: [
-        {
-          key: 'tipo_historia',
-          title: 'Tipo de historia clínica',
-          fields: [
-            {
-              key: 'tipoHistoriaClinica',
-              label: 'Tipo de historia',
-              type: 'select',
-              inheritanceMode: 'system',
-              options: [
-                { value: '', label: 'Selecciona una opcion' },
-                { value: 'INICIAL', label: 'Inicial' },
-                { value: 'SUBSECUENTE', label: 'Subsecuente' },
-                { value: 'INTERCONSULTA', label: 'Interconsulta' },
-              ],
-            },
-            {
-              key: 'fechaHistoria',
-              label: 'Fecha clínica',
-              type: 'datetime-local',
-              inheritanceMode: 'fresh_capture',
-            },
-          ],
-        },
         {
           key: 'antecedentes_heredofamiliares',
           title: 'Antecedentes heredofamiliares',
@@ -4209,24 +4193,12 @@ export function isConsultationHistoryTab(
 export function buildHistoryVersionPrefill(
   tabDefinition: EpisodeTabDefinition,
   previousFormData: Record<string, unknown> | undefined,
-  nextHistoryType: 'INICIAL' | 'SUBSECUENTE',
-  nextRecordedAt: string,
 ) {
   const nextFormData: Record<string, unknown> = {};
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
       const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
-
-      if (field.key === 'tipoHistoriaClinica') {
-        nextFormData[field.key] = nextHistoryType;
-        continue;
-      }
-
-      if (field.key === 'fechaHistoria') {
-        nextFormData[field.key] = nextRecordedAt;
-        continue;
-      }
 
       if (inheritanceMode === 'carry_forward') {
         nextFormData[field.key] = cloneFieldValue(previousFormData?.[field.key]) ?? buildDefaultFieldValue(field);

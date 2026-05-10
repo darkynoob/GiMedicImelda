@@ -54,6 +54,7 @@ import {
   buildDefaultFieldValue,
   getAmbulatoryProcedureDocumentTabDefinition,
   getConsultationDocumentTabDefinition,
+  getConsultationHistoryNoteTypeLabel,
   getEpisodeDocumentTypes,
   getHospitalDocumentTabDefinition,
   buildHistoryVersionPrefill,
@@ -99,18 +100,6 @@ type RecordFormState = {
   recordedAt: string;
   formData: Record<string, RecordFieldValue>;
 };
-
-function getHistoryTypeLabel(historyType: string | null | undefined) {
-  if (historyType === 'INICIAL') {
-    return 'Inicial';
-  }
-
-  if (historyType === 'SUBSECUENTE') {
-    return 'Subsecuente';
-  }
-
-  return 'Sin clasificar';
-}
 
 function getLatestHistoryRecord(records: EncounterDetailResponse['sectionRecords']) {
   return [...records].sort((left, right) => {
@@ -4782,8 +4771,6 @@ export function EpisodeDetailPage() {
     : null;
   const nextHistoryVersionNumber =
     (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
-  const nextHistoryType =
-    nextHistoryVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
   const nextConsultationVersionNumber =
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
@@ -5085,8 +5072,6 @@ export function EpisodeDetailPage() {
             buildHistoryVersionPrefill(
               activeTabDefinition,
               latestHistoryRecord?.formData,
-              nextHistoryType,
-              nextRecordedAt,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -6491,12 +6476,8 @@ export function EpisodeDetailPage() {
 
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
-  const currentHistoryType =
-    (selectedRecord?.metadata.historyType as 'INICIAL' | 'SUBSECUENTE' | null) ??
-    nextHistoryType;
-  const historyTypeLabel = getHistoryTypeLabel(
-    currentHistoryType,
-  );
+  const historyNoteTypeLabel =
+    getConsultationHistoryNoteTypeLabel(historyVersionNumber);
   const inheritedFromLabel =
     isConsultationHistorySection && !selectedRecord && latestHistoryRecord
       ? `Precargada desde ${latestHistoryRecord.title}`
@@ -7120,12 +7101,15 @@ export function EpisodeDetailPage() {
                                     {`Historia clínica versión ${historyVersionNumber}`}
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
-                                    El título y el tipo se generan automáticamente para
-                                    conservar el histórico clínico del episodio.
+                                    El título y el tipo de nota se generan automáticamente
+                                    desde la versión del registro.
                                   </p>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">{historyTypeLabel}</Badge>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                    Tipo de nota
+                                  </span>
+                                  <Badge variant="secondary">{historyNoteTypeLabel}</Badge>
                                   {inheritedFromLabel ? (
                                     <Badge variant="success">{inheritedFromLabel}</Badge>
                                   ) : null}
@@ -8246,11 +8230,11 @@ export function EpisodeDetailPage() {
                           .filter((section) => {
                             if (isConsultationHistorySection) {
                               if (section.historyVisibility === 'initial_only') {
-                                return currentHistoryType === 'INICIAL';
+                                return historyVersionNumber === 1;
                               }
 
                               if (section.historyVisibility === 'subsequent_only') {
-                                return currentHistoryType === 'SUBSECUENTE';
+                                return historyVersionNumber > 1;
                               }
                             }
 

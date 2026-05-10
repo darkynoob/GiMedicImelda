@@ -5919,7 +5919,11 @@ export class EncountersService {
       currentRecordMetadata.versionNumber ??
       input.historyVersionContext?.nextVersionNumber ??
       1;
-    const historyType = versionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+    const { historyType: _historyType, ...baseHistoryMetadata } =
+      this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {};
+    const normalizedHistoryFormData = this.omitLegacyHistorySystemFields(
+      input.input.formData,
+    );
 
     return {
       tabKey: input.input.tabKey,
@@ -5927,18 +5931,15 @@ export class EncountersService {
       title: `Historia clínica versión ${versionNumber}`,
       status: input.input.status ?? input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
       formData: {
-        ...input.input.formData,
-        tipoHistoriaClinica: historyType,
-        fechaHistoria: input.recordedAt.toISOString().slice(0, 16),
+        ...normalizedHistoryFormData,
         legalMedico:
           input.responsibleUser?.fullName ?? 'Sin profesional responsable',
         legalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
         legalEspecialidad: input.encounter.specialty?.name ?? 'Sin especialidad',
       },
       metadata: {
-        ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+        ...baseHistoryMetadata,
         versionNumber,
-        historyType,
         inheritedFromRecordId:
           currentRecordMetadata.inheritedFromRecordId ??
           input.historyVersionContext?.latestRecord?.id ??
@@ -5952,6 +5953,16 @@ export class EncountersService {
     tabKey: string,
   ) {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Historia clínica';
+  }
+
+  private omitLegacyHistorySystemFields(formData: Record<string, unknown>) {
+    const {
+      tipoHistoriaClinica: _legacyHistoryType,
+      fechaHistoria: _legacyHistoryDate,
+      ...editableHistoryFormData
+    } = formData;
+
+    return editableHistoryFormData;
   }
 
   private isEmergencyTriageRecord(encounterType: EncounterType, tabKey: string) {
@@ -12457,10 +12468,6 @@ export class EncountersService {
         typeof normalizedMetadata?.versionNumber === 'number'
           ? normalizedMetadata.versionNumber
           : null,
-      historyType:
-        typeof normalizedMetadata?.historyType === 'string'
-          ? normalizedMetadata.historyType
-          : null,
       inheritedFromRecordId:
         typeof normalizedMetadata?.inheritedFromRecordId === 'string'
           ? normalizedMetadata.inheritedFromRecordId
@@ -12499,7 +12506,6 @@ export class EncountersService {
     return {
       versionNumber:
         historyMetadata.versionNumber ?? consultationMetadata.versionNumber ?? null,
-      historyType: historyMetadata.historyType,
       consultationType: consultationMetadata.consultationType,
       inheritedFromRecordId:
         historyMetadata.inheritedFromRecordId ??
