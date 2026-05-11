@@ -22,9 +22,9 @@ export function Topbar({ setIsOpen }: Props) {
       
         <div className="hidden sm:flex w-full max-w-md items-center">
           <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              className="h-9 pl-9 pr-3 text-sm bg-gray-50 border border-gray-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:bg-white transition"
+              className="h-11 rounded-2xl border-slate-200 bg-white pl-10 shadow-sm focus-visible:ring-primary/20"
               placeholder="Buscar paciente, expediente, documento..."
             />
           </div>
