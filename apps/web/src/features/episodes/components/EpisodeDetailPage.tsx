@@ -3476,6 +3476,21 @@ function ReadOnlyField({
   );
 }
 
+function isPrintableDocumentValue(value: string) {
+  const printableValue = value.trim();
+
+  return (
+    printableValue.length > 0 &&
+    ![
+      'N/A',
+      'Sin dato disponible',
+      'Sin cédula',
+      'Sin especialidad',
+    ].includes(printableValue) &&
+    !printableValue.startsWith('Se generará')
+  );
+}
+
 function normalizeRecordFormData(
   tabDefinition: EpisodeTabDefinition | undefined,
   rawFormData?: Record<string, unknown>,
@@ -8359,6 +8374,13 @@ export function EpisodeDetailPage() {
                                           ? (recordForm.formData[field.key] as string)
                                           : '';
 
+                                    if (
+                                      isConsultationLaboratoryRequestDocument &&
+                                      !isPrintableDocumentValue(readonlyValue)
+                                    ) {
+                                      return null;
+                                    }
+
                                     return (
                                       <ReadOnlyField
                                         key={field.key}
@@ -8477,16 +8499,24 @@ export function EpisodeDetailPage() {
                                 }
 
                                 if (field.type === 'readonly') {
+                                  const readonlyValue =
+                                    typeof fieldValue === 'string' ||
+                                    typeof fieldValue === 'number'
+                                      ? String(fieldValue)
+                                      : '';
+
+                                  if (
+                                    isConsultationLaboratoryRequestDocument &&
+                                    !isPrintableDocumentValue(readonlyValue)
+                                  ) {
+                                    return null;
+                                  }
+
                                   return (
                                     <ReadOnlyField
                                       key={field.key}
                                       label={field.label}
-                                      value={
-                                        typeof fieldValue === 'string' ||
-                                        typeof fieldValue === 'number'
-                                          ? String(fieldValue)
-                                          : ''
-                                      }
+                                      value={readonlyValue}
                                     />
                                   );
                                 }

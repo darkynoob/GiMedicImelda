@@ -14167,6 +14167,15 @@ export class EncountersService {
     verificationCode: string;
     downloadCount: number;
   }) {
+    if (
+      input.encounter.encounterType === EncounterType.OUTPATIENT &&
+      input.noteType === 'Solicitud de laboratorio'
+    ) {
+      return this.renderSimplePdf(
+        this.buildConsultationLaboratoryRequestPdfLines(input),
+      );
+    }
+
     const diagnosisLines = this.readDiagnosesArrayFromUnknown(
       input.formData.documentoDiagnosticos,
     ).map((item, index) =>
@@ -14321,6 +14330,117 @@ export class EncountersService {
     ];
 
     return this.renderSimplePdf(lines);
+  }
+
+  private buildConsultationLaboratoryRequestPdfLines(input: {
+    encounter: TenantEncounterRecord;
+    noteType: string;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const value = (rawValue: unknown) =>
+      this.readPrintableDocumentValue(rawValue);
+    const line = (label: string, rawValue: unknown) =>
+      this.buildPrintableDocumentLine(label, rawValue);
+    const lines = (...rawLines: Array<string | null>) =>
+      rawLines.filter((item): item is string => Boolean(item));
+    const documentDate =
+      value(input.formData.documentoFecha) ||
+      input.recordedAt.toISOString().slice(0, 10);
+    const documentTime =
+      value(input.formData.documentoHora) ||
+      input.recordedAt.toISOString().slice(11, 16);
+    const verificationCode =
+      value(input.verificationCode) ||
+      value(input.formData.documentoCodigoVerificacion);
+    const professionalName = value(input.formData.documentoNombreProfesional);
+    const professionalLicense = value(input.formData.documentoCedulaProfesional);
+    const professionalSpecialty = value(
+      input.formData.documentoEspecialidadProfesional,
+    );
+    const issuer = value(input.formData.documentoInstitucionEmisora);
+    const headerLines = issuer
+      ? lines(
+          line('Institución emisora', issuer),
+          line('RFC', input.formData.documentoRfcMedico),
+          line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
+        )
+      : lines(
+          line('Médico', professionalName),
+          line('Especialidad', professionalSpecialty),
+          line('Cédula profesional', professionalLicense),
+        );
+
+    const clinicalLines = lines(
+      line('Motivo de solicitud', input.formData.documentoMotivoSolicitud),
+      line('Estudios solicitados', input.formData.documentoEstudiosSolicitados),
+      line('Diagnóstico asociado', input.formData.documentoDiagnosticoPrincipal),
+      line('CIE-10', input.formData.documentoDiagnosticoCie10),
+      line('Observaciones', input.formData.documentoObservaciones),
+      line('Prioridad', input.formData.documentoPrioridad),
+    );
+    const legalLines = lines(
+      'Datos legales y firma',
+      line('Tipo de documento', input.noteType),
+      line('Fecha', documentDate),
+      line('Hora', documentTime),
+      line('Folio del documento', input.formData.documentoFolio),
+      line('Versión', input.formData.documentoVersion),
+      line('Estado', input.formData.documentoEstado),
+      line('Institución emisora', issuer),
+      line('RFC', input.formData.documentoRfcMedico),
+      line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
+      line('Código de verificación', verificationCode),
+      line('Profesional responsable', professionalName),
+      line('Cédula', professionalLicense),
+      line('Especialidad', professionalSpecialty),
+      line('Lugar de atención', input.formData.documentoLugarAtencion),
+      line('Firma', professionalName),
+    );
+    const footerLines = lines(
+      'Pie legal',
+      line('Nombre del médico', professionalName),
+      line('Cédula profesional', professionalLicense),
+      line('Fecha', documentDate),
+      line('Firma', professionalName),
+      line('Código de verificación', verificationCode),
+    );
+
+    return lines(
+      input.recordTitle,
+      ...headerLines,
+      line('Paciente', input.encounter.patient.fullName),
+      line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+      'Solicitud de laboratorio',
+      ...clinicalLines,
+      ...legalLines,
+      ...footerLines,
+    );
+  }
+
+  private readPrintableDocumentValue(value: unknown) {
+    const printableValue = this.readStringValue(value).trim();
+
+    if (
+      !printableValue ||
+      ['N/A', 'Sin dato disponible', 'Sin cédula', 'Sin especialidad'].includes(
+        printableValue,
+      ) ||
+      printableValue.startsWith('Se generará')
+    ) {
+      return '';
+    }
+
+    return printableValue;
+  }
+
+  private buildPrintableDocumentLine(label: string, value: unknown) {
+    const printableValue = this.readPrintableDocumentValue(value);
+
+    return printableValue ? `${label}: ${printableValue}` : null;
   }
 
   private buildAmbulatoryPreprocedurePdfDocument(input: {
@@ -15219,6 +15339,16 @@ export class EncountersService {
       !Array.isArray(input.formDataJson)
         ? (input.formDataJson as Record<string, unknown>)
         : {};
+
+    if (
+      this.isConsultationDocumentRecord(input.encounterType, input.tabKey) &&
+      input.noteType === 'Solicitud de laboratorio' &&
+      !this.readPrintableDocumentValue(formData.documentoCedulaProfesional)
+    ) {
+      throw new BadRequestException(
+        'La cédula profesional es obligatoria para firmar la solicitud de laboratorio',
+      );
+    }
 
     const requiredFieldsByNoteType: Record<string, string[]> = {
       'Solicitud de laboratorio': [
