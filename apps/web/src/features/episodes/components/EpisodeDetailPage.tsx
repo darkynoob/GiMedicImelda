@@ -4770,7 +4770,7 @@ export function EpisodeDetailPage() {
         })[0] ?? null
     : null;
   const nextHistoryVersionNumber =
-    (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
+    detail.historyVersionContext.nextVersionNumber;
   const nextConsultationVersionNumber =
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
@@ -5071,7 +5071,7 @@ export function EpisodeDetailPage() {
           rawFormData: mergeHistoryReadOnlyFields(
             buildHistoryVersionPrefill(
               activeTabDefinition,
-              latestHistoryRecord?.formData,
+              detail.historyVersionContext.latestRecordFormData ?? undefined,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -6479,8 +6479,10 @@ export function EpisodeDetailPage() {
   const historyNoteTypeLabel =
     getConsultationHistoryNoteTypeLabel(historyVersionNumber);
   const inheritedFromLabel =
-    isConsultationHistorySection && !selectedRecord && latestHistoryRecord
-      ? `Precargada desde ${latestHistoryRecord.title}`
+    isConsultationHistorySection &&
+    !selectedRecord &&
+    detail.historyVersionContext.latestRecordTitle
+      ? `Precargada desde ${detail.historyVersionContext.latestRecordTitle}`
       : selectedRecord?.metadata.inheritedFromRecordId
         ? `Heredada de una versión previa`
         : null;

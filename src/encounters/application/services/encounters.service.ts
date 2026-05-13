@@ -476,7 +476,7 @@ export class EncountersService {
   ): Promise<EncounterDetailResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
 
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       encounter,
       encounter.attendingUserId
         ? await this.userRepository.findById(encounter.attendingUserId)
@@ -595,7 +595,7 @@ export class EncountersService {
     });
 
     const createdEncounter = await this.findEncounterById(context.tenantId, result);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       createdEncounter,
       createdEncounter.attendingUserId
         ? await this.userRepository.findById(createdEncounter.attendingUserId)
@@ -728,7 +728,7 @@ export class EncountersService {
       tenantId,
       currentEncounter.id,
     );
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -761,7 +761,7 @@ export class EncountersService {
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
-      encounterId: encounter.id,
+      patientId: encounter.patientId,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
@@ -1203,7 +1203,7 @@ export class EncountersService {
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -1257,7 +1257,7 @@ export class EncountersService {
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
-      encounterId: encounter.id,
+      patientId: encounter.patientId,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
@@ -1711,7 +1711,7 @@ export class EncountersService {
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -2896,7 +2896,7 @@ export class EncountersService {
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -3547,15 +3547,21 @@ export class EncountersService {
     };
   }
 
-  private toEncounterDetailResponse(
+  private async toEncounterDetailResponse(
     encounter: TenantEncounterRecord,
     attendingClinician: {
       id: string;
       fullName: string;
       professionalLicense: string | null;
     } | null,
-  ): EncounterDetailResponse {
+  ): Promise<EncounterDetailResponse> {
     const latestVitalSign = encounter.vitalSigns[0] ?? null;
+    const patientHistoryVersionContext =
+      await this.resolveHistoryVersionContext({
+        patientId: encounter.patientId,
+        encounterType: EncounterType.OUTPATIENT,
+        tabKey: 'Historia clínica',
+      });
     const sectionRecords = encounter.sectionRecords.map((record) => ({
       id: record.id,
       tabKey: record.tabKey,
@@ -3742,6 +3748,24 @@ export class EncountersService {
         documentDate: document.documentDate.toISOString(),
         authorName: document.author?.fullName ?? null,
       })),
+      historyVersionContext: {
+        latestVersionNumber:
+          patientHistoryVersionContext?.latestVersionNumber ?? 0,
+        nextVersionNumber:
+          patientHistoryVersionContext?.nextVersionNumber ?? 1,
+        latestRecordId: patientHistoryVersionContext?.latestRecord?.id ?? null,
+        latestRecordTitle:
+          patientHistoryVersionContext?.latestRecord?.title ?? null,
+        latestRecordFormData:
+          patientHistoryVersionContext?.latestRecord?.formDataJson &&
+          typeof patientHistoryVersionContext.latestRecord.formDataJson === 'object' &&
+          !Array.isArray(patientHistoryVersionContext.latestRecord.formDataJson)
+            ? (patientHistoryVersionContext.latestRecord.formDataJson as Record<
+                string,
+                unknown
+              >)
+            : null,
+      },
       sectionRecords,
       attachments,
       timeline,
@@ -3790,7 +3814,7 @@ export class EncountersService {
   }
 
   private async resolveHistoryVersionContext(input: {
-    encounterId: string;
+    patientId: string;
     encounterType: EncounterType;
     tabKey: string;
     currentRecordId?: string;
@@ -3801,7 +3825,8 @@ export class EncountersService {
 
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
-        encounterId: input.encounterId,
+        patientId: input.patientId,
+        encounterType: EncounterType.OUTPATIENT,
         tabKey: input.tabKey,
         ...(input.currentRecordId
           ? {
@@ -3814,10 +3839,24 @@ export class EncountersService {
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
 
-    const latestRecord = records[0] ?? null;
-    const latestVersionNumber = latestRecord
-      ? this.extractHistoryVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
-      : 0;
+    const recordsWithVersion = records.map((record) => ({
+      record,
+      versionNumber:
+        this.extractHistoryVersionMetadata(record.metadataJson).versionNumber ?? 0,
+    }));
+    const latestVersion = recordsWithVersion.sort((left, right) => {
+      if (left.versionNumber !== right.versionNumber) {
+        return right.versionNumber - left.versionNumber;
+      }
+
+      if (left.record.recordedAt.getTime() !== right.record.recordedAt.getTime()) {
+        return right.record.recordedAt.getTime() - left.record.recordedAt.getTime();
+      }
+
+      return right.record.createdAt.getTime() - left.record.createdAt.getTime();
+    })[0] ?? null;
+    const latestRecord = latestVersion?.record ?? null;
+    const latestVersionNumber = latestVersion?.versionNumber ?? 0;
     const nextVersionNumber = latestVersionNumber + 1;
 
     return {
