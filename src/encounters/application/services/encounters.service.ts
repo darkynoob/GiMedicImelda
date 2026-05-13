@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   AdmissionSource,
   AuditAction,
+  EncounterSectionRecord,
   EncounterRecordStatus,
   EncounterStatus,
   EncounterType,
@@ -41,6 +42,10 @@ const consultationConsentComprehensionValues = [
   'No comprende',
   'Requiere apoyo o acompañante',
 ] as const;
+
+const consultationPrescriptionRecordType = 'Receta e indicaciones';
+const consultationPrescriptionTabKey = 'Receta e indicaciones';
+const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -189,7 +194,7 @@ const encounterTabsByType: Record<EncounterType, string[]> = {
     'Historia clínica',
     'Consulta actual',
     'Evolución',
-    'Receta / Indicaciones',
+    consultationPrescriptionTabKey,
     'Documentos',
   ],
   EMERGENCY: [
@@ -940,26 +945,44 @@ export class EncountersService {
       responsibleUser,
     });
 
-    const createdRecord = await this.prisma.encounterSectionRecord.create({
-      data: {
-        tenantId,
-        encounterId: encounter.id,
-        patientId: encounter.patientId,
-        encounterType: encounter.encounterType,
-        tabKey: normalizedRecordPayload.tabKey,
-        noteType: normalizedRecordPayload.noteType,
-        title: normalizedRecordPayload.title,
-        status: normalizedRecordPayload.status,
-        recordedAt,
-        authoredByUserId: userId,
-        formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
-        metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
-        signedAt:
-          normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
-            ? new Date()
-            : null,
-      },
-    });
+    let createdRecord: EncounterSectionRecord;
+    try {
+      createdRecord = await this.prisma.encounterSectionRecord.create({
+        data: {
+          tenantId,
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          encounterType: encounter.encounterType,
+          tabKey: normalizedRecordPayload.tabKey,
+          noteType: normalizedRecordPayload.noteType,
+          title: normalizedRecordPayload.title,
+          status: normalizedRecordPayload.status,
+          recordedAt,
+          authoredByUserId: userId,
+          formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
+          metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
+          signedAt:
+            normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
+              ? new Date()
+              : null,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        this.isConsultationPrescriptionRecord(
+          encounter.encounterType,
+          normalizedRecordPayload.tabKey,
+        )
+      ) {
+        throw new BadRequestException(
+          'La versión de la receta ya fue ocupada en este episodio. Actualiza el episodio e intenta crear una nueva receta.',
+        );
+      }
+
+      throw error;
+    }
     await this.syncEmergencyConsultationRecord({
       tenantId,
       userId,
@@ -3879,7 +3902,12 @@ export class EncountersService {
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
         encounterId: input.encounterId,
-        tabKey: input.tabKey,
+        tabKey: {
+          in: [
+            consultationPrescriptionTabKey,
+            legacyConsultationPrescriptionTabKey,
+          ],
+        },
         ...(input.currentRecordId
           ? {
               NOT: {
@@ -3967,9 +3995,12 @@ export class EncountersService {
     });
 
     const latestRecord = records[0] ?? null;
-    const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
-      : 0;
+    const latestVersionNumber = records.reduce((highestVersion, record) => {
+      const recordVersion =
+        this.extractRecordVersionMetadata(record.metadataJson).versionNumber ?? 0;
+
+      return Math.max(highestVersion, recordVersion);
+    }, 0);
 
     return {
       latestRecord,
@@ -5923,11 +5954,13 @@ export class EncountersService {
       const verificationCode =
         currentRecordMetadata.verificationCode ??
         randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+      const prescriptionTitle =
+        this.buildConsultationPrescriptionTitle(versionNumber);
 
       return {
-        tabKey: input.input.tabKey,
-        noteType: 'Receta médica',
-        title: `Receta B${versionNumber}`,
+        tabKey: consultationPrescriptionTabKey,
+        noteType: consultationPrescriptionRecordType,
+        title: prescriptionTitle,
         status:
           input.currentRecord?.status === EncounterRecordStatus.SIGNED
             ? EncounterRecordStatus.SIGNED
@@ -12502,8 +12535,13 @@ export class EncountersService {
   ) {
     return (
       encounterType === EncounterType.OUTPATIENT &&
-      tabKey === 'Receta / Indicaciones'
+      (tabKey === consultationPrescriptionTabKey ||
+        tabKey === legacyConsultationPrescriptionTabKey)
     );
+  }
+
+  private buildConsultationPrescriptionTitle(versionNumber: number) {
+    return `Receta V${versionNumber}`;
   }
 
   private isConsultationDocumentRecord(
@@ -16599,8 +16637,13 @@ export class EncountersService {
 
   private assertRecordTabAllowed(encounterType: EncounterType, tabKey: string) {
     const allowedTabs = encounterTabsByType[encounterType] ?? [];
+    const normalizedTabKey =
+      encounterType === EncounterType.OUTPATIENT &&
+      tabKey === legacyConsultationPrescriptionTabKey
+        ? consultationPrescriptionTabKey
+        : tabKey;
 
-    if (!allowedTabs.includes(tabKey) || tabKey === 'Resumen') {
+    if (!allowedTabs.includes(normalizedTabKey) || normalizedTabKey === 'Resumen') {
       throw new BadRequestException(
         'La pestaña seleccionada no es válida para este tipo de episodio',
       );

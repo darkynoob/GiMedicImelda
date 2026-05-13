@@ -141,7 +141,18 @@ function isConsultationEvolutionTab(encounterType: string, tabTitle: string) {
 }
 
 function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) {
-  return encounterType === 'OUTPATIENT' && tabTitle === 'Receta / Indicaciones';
+  return (
+    encounterType === 'OUTPATIENT' &&
+    (tabTitle === 'Receta e indicaciones' || tabTitle === 'Receta / Indicaciones')
+  );
+}
+
+const consultationPrescriptionTabKey = 'Receta e indicaciones';
+const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
+const consultationPrescriptionRecordType = 'Receta e indicaciones';
+
+function buildConsultationPrescriptionTitle(versionNumber: number) {
+  return `Receta V${versionNumber}`;
 }
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
@@ -4561,8 +4572,10 @@ export function EpisodeDetailPage() {
                   ? 'Enfermería'
                   : isHospitalDischargeTab(detail.encounterType, activeTab)
                     ? 'Egreso'
-                    : isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
-                      ? 'Valoración preprocedimiento'
+                    : isConsultationPrescriptionTab(detail.encounterType, activeTab)
+                      ? consultationPrescriptionTabKey
+                      : isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
+                        ? 'Valoración preprocedimiento'
                       : isAmbulatoryRecoveryEvaluationTab(
                             detail.encounterType,
                             activeTab,
@@ -4582,7 +4595,9 @@ export function EpisodeDetailPage() {
       (activeRecordTabKey === 'Recuperación / Evaluación' &&
         record.tabKey === 'Recuperación / Evolución') ||
       (activeRecordTabKey === 'Receta e indicaciones de egreso' &&
-        record.tabKey === 'Indicaciones / Receta'),
+        record.tabKey === 'Indicaciones / Receta') ||
+      (activeRecordTabKey === consultationPrescriptionTabKey &&
+        record.tabKey === legacyConsultationPrescriptionTabKey),
   );
   const isConsultationHistorySection = isConsultationHistoryTab(
     detail.encounterType,
@@ -5145,8 +5160,8 @@ export function EpisodeDetailPage() {
       setRecordForm(
         buildRecordFormState({
           tabDefinition: activeTabDefinition,
-          noteType: 'Receta médica',
-          title: `Receta B${nextPrescriptionVersionNumber}`,
+          noteType: consultationPrescriptionRecordType,
+          title: buildConsultationPrescriptionTitle(nextPrescriptionVersionNumber),
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: buildPrescriptionVersionPrefill({
@@ -7157,7 +7172,9 @@ export function EpisodeDetailPage() {
                               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                                 <div>
                                   <p className="text-sm font-semibold text-slate-900">
-                                    {`Receta B${prescriptionVersionNumber}`}
+                                    {buildConsultationPrescriptionTitle(
+                                      prescriptionVersionNumber,
+                                    )}
                                   </p>
                                   <p className="mt-1 text-xs text-muted-foreground">
                                     Cada receta es independiente, se guarda como borrador
@@ -7166,6 +7183,9 @@ export function EpisodeDetailPage() {
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    {consultationPrescriptionRecordType}
+                                  </Badge>
                                   <Badge variant="secondary">
                                     {typeof recordForm.formData.recetaFolio === 'string'
                                       ? recordForm.formData.recetaFolio

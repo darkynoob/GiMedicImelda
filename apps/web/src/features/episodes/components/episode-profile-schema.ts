@@ -1136,7 +1136,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       ],
     },
     {
-      key: 'Receta / Indicaciones',
+      key: 'Receta e indicaciones',
       title: 'Receta e indicaciones',
       description: 'Prescripción, seguridad y seguimiento.',
       sections: [
