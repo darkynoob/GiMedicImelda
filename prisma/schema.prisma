@@ -75,6 +75,14 @@ enum EncounterRecordStatus {
   SIGNED
 }
 
+/// Tipo clínico del estudio previo capturado en una historia clínica de consulta.
+enum ConsultationPriorStudyType {
+  LABORATORY
+  IMAGING
+  CABINET
+  OTHER
+}
+
 /// Categoría funcional del documento.
 /// Esto NO es la especialidad.
 /// La especialidad va en Specialty.
@@ -222,6 +230,7 @@ model Tenant {
   patientBillingProfiles     PatientBillingProfile[]
   encounterProfiles          EncounterProfile[]
   encounterSectionRecords    EncounterSectionRecord[]
+  consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
   emergencyOrderSets         EmergencyOrderSet[]
   emergencyOrderMedications  EmergencyOrderMedication[]
@@ -508,6 +517,7 @@ model User {
   respondingHospitalConsultations HospitalConsultation[] @relation("HospitalConsultationResponder")
   requestedEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationRequester")
   respondingEmergencyConsultations EmergencyConsultation[] @relation("EmergencyConsultationResponder")
+  registeredConsultationHistoryPriorStudies ConsultationHistoryPriorStudy[] @relation("ConsultationHistoryPriorStudyRegistrar")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -819,6 +829,7 @@ model Patient {
   hospitalDocumentLabStudies HospitalDocumentLabStudy[]
   hospitalDocumentImagingStudies HospitalDocumentImagingStudy[]
   hospitalDocumentSigners HospitalDocumentSigner[]
+  consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
 
   @@index([tenantId])
   @@index([fullName])
@@ -1262,6 +1273,7 @@ model Encounter {
   hospitalDocumentLabStudies HospitalDocumentLabStudy[]
   hospitalDocumentImagingStudies HospitalDocumentImagingStudy[]
   hospitalDocumentSigners HospitalDocumentSigner[]
+  consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
 
   @@unique([facilityId, encounterNumber])
   @@index([tenantId])
@@ -1376,6 +1388,7 @@ model EncounterSectionRecord {
   hospitalNursingShift HospitalNursingShift?
   hospitalDischarge HospitalDischarge?
   hospitalDocument HospitalDocument?
+  consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1385,6 +1398,46 @@ model EncounterSectionRecord {
   @@index([status])
   @@index([recordedAt])
   @@index([authoredByUserId])
+}
+
+/// Estudio previo estructurado dentro de una versión de Historia clínica de consulta.
+/// El resumen narrativo permanece en EncounterSectionRecord.formDataJson; esta
+/// tabla normaliza los estudios individuales para consulta, auditoría y reutilización.
+model ConsultationHistoryPriorStudy {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String
+
+  versionNumber Int
+  studyType ConsultationPriorStudyType
+  studyName String
+  studyDate DateTime?
+  result String
+  relevantFinding String?
+
+  sourceModule String?
+  sourceReferenceId String?
+  registeredByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  registeredByUser User? @relation("ConsultationHistoryPriorStudyRegistrar", fields: [registeredByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sectionRecordId])
+  @@index([studyType])
+  @@index([studyDate])
+  @@index([sourceModule, sourceReferenceId])
 }
 
 /// Valoración clínica integral previa a un procedimiento ambulatorio.

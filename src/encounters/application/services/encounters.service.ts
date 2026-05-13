@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   AdmissionSource,
   AuditAction,
+  EncounterSectionRecord,
   EncounterRecordStatus,
   EncounterStatus,
   EncounterType,
@@ -34,6 +35,20 @@ import type {
   EncounterSectionRecordPdfResponse,
   EncountersListResponse,
 } from '../dto/encounter.response';
+
+const consultationConsentComprehensionValues = [
+  'Comprende y acepta',
+  'Comprensión parcial',
+  'No comprende',
+  'Requiere apoyo o acompañante',
+] as const;
+
+const consultationPrescriptionPatientComprehensionValues =
+  consultationConsentComprehensionValues;
+
+const consultationPrescriptionRecordType = 'Receta e indicaciones';
+const consultationPrescriptionTabKey = 'Receta e indicaciones';
+const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -182,7 +197,7 @@ const encounterTabsByType: Record<EncounterType, string[]> = {
     'Historia clínica',
     'Consulta actual',
     'Evolución',
-    'Receta / Indicaciones',
+    consultationPrescriptionTabKey,
     'Documentos',
   ],
   EMERGENCY: [
@@ -469,7 +484,7 @@ export class EncountersService {
   ): Promise<EncounterDetailResponse> {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
 
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       encounter,
       encounter.attendingUserId
         ? await this.userRepository.findById(encounter.attendingUserId)
@@ -588,7 +603,7 @@ export class EncountersService {
     });
 
     const createdEncounter = await this.findEncounterById(context.tenantId, result);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       createdEncounter,
       createdEncounter.attendingUserId
         ? await this.userRepository.findById(createdEncounter.attendingUserId)
@@ -721,7 +736,7 @@ export class EncountersService {
       tenantId,
       currentEncounter.id,
     );
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -754,7 +769,7 @@ export class EncountersService {
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
-      encounterId: encounter.id,
+      patientId: encounter.patientId,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
@@ -933,26 +948,44 @@ export class EncountersService {
       responsibleUser,
     });
 
-    const createdRecord = await this.prisma.encounterSectionRecord.create({
-      data: {
-        tenantId,
-        encounterId: encounter.id,
-        patientId: encounter.patientId,
-        encounterType: encounter.encounterType,
-        tabKey: normalizedRecordPayload.tabKey,
-        noteType: normalizedRecordPayload.noteType,
-        title: normalizedRecordPayload.title,
-        status: normalizedRecordPayload.status,
-        recordedAt,
-        authoredByUserId: userId,
-        formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
-        metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
-        signedAt:
-          normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
-            ? new Date()
-            : null,
-      },
-    });
+    let createdRecord: EncounterSectionRecord;
+    try {
+      createdRecord = await this.prisma.encounterSectionRecord.create({
+        data: {
+          tenantId,
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          encounterType: encounter.encounterType,
+          tabKey: normalizedRecordPayload.tabKey,
+          noteType: normalizedRecordPayload.noteType,
+          title: normalizedRecordPayload.title,
+          status: normalizedRecordPayload.status,
+          recordedAt,
+          authoredByUserId: userId,
+          formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
+          metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
+          signedAt:
+            normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
+              ? new Date()
+              : null,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        this.isConsultationPrescriptionRecord(
+          encounter.encounterType,
+          normalizedRecordPayload.tabKey,
+        )
+      ) {
+        throw new BadRequestException(
+          'La versión de la receta ya fue ocupada en este episodio. Actualiza el episodio e intenta crear una nueva receta.',
+        );
+      }
+
+      throw error;
+    }
     await this.syncEmergencyConsultationRecord({
       tenantId,
       userId,
@@ -1185,9 +1218,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncConsultationHistoryPriorStudies({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -1241,7 +1283,7 @@ export class EncountersService {
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
-      encounterId: encounter.id,
+      patientId: encounter.patientId,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
@@ -1684,9 +1726,18 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncConsultationHistoryPriorStudies({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -2871,7 +2922,7 @@ export class EncountersService {
     });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
-    return this.toEncounterDetailResponse(
+    return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -3522,15 +3573,21 @@ export class EncountersService {
     };
   }
 
-  private toEncounterDetailResponse(
+  private async toEncounterDetailResponse(
     encounter: TenantEncounterRecord,
     attendingClinician: {
       id: string;
       fullName: string;
       professionalLicense: string | null;
     } | null,
-  ): EncounterDetailResponse {
+  ): Promise<EncounterDetailResponse> {
     const latestVitalSign = encounter.vitalSigns[0] ?? null;
+    const patientHistoryVersionContext =
+      await this.resolveHistoryVersionContext({
+        patientId: encounter.patientId,
+        encounterType: EncounterType.OUTPATIENT,
+        tabKey: 'Historia clínica',
+      });
     const sectionRecords = encounter.sectionRecords.map((record) => ({
       id: record.id,
       tabKey: record.tabKey,
@@ -3717,6 +3774,24 @@ export class EncountersService {
         documentDate: document.documentDate.toISOString(),
         authorName: document.author?.fullName ?? null,
       })),
+      historyVersionContext: {
+        latestVersionNumber:
+          patientHistoryVersionContext?.latestVersionNumber ?? 0,
+        nextVersionNumber:
+          patientHistoryVersionContext?.nextVersionNumber ?? 1,
+        latestRecordId: patientHistoryVersionContext?.latestRecord?.id ?? null,
+        latestRecordTitle:
+          patientHistoryVersionContext?.latestRecord?.title ?? null,
+        latestRecordFormData:
+          patientHistoryVersionContext?.latestRecord?.formDataJson &&
+          typeof patientHistoryVersionContext.latestRecord.formDataJson === 'object' &&
+          !Array.isArray(patientHistoryVersionContext.latestRecord.formDataJson)
+            ? (patientHistoryVersionContext.latestRecord.formDataJson as Record<
+                string,
+                unknown
+              >)
+            : null,
+      },
       sectionRecords,
       attachments,
       timeline,
@@ -3765,7 +3840,7 @@ export class EncountersService {
   }
 
   private async resolveHistoryVersionContext(input: {
-    encounterId: string;
+    patientId: string;
     encounterType: EncounterType;
     tabKey: string;
     currentRecordId?: string;
@@ -3776,7 +3851,8 @@ export class EncountersService {
 
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
-        encounterId: input.encounterId,
+        patientId: input.patientId,
+        encounterType: EncounterType.OUTPATIENT,
         tabKey: input.tabKey,
         ...(input.currentRecordId
           ? {
@@ -3789,10 +3865,24 @@ export class EncountersService {
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
 
-    const latestRecord = records[0] ?? null;
-    const latestVersionNumber = latestRecord
-      ? this.extractHistoryVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
-      : 0;
+    const recordsWithVersion = records.map((record) => ({
+      record,
+      versionNumber:
+        this.extractHistoryVersionMetadata(record.metadataJson).versionNumber ?? 0,
+    }));
+    const latestVersion = recordsWithVersion.sort((left, right) => {
+      if (left.versionNumber !== right.versionNumber) {
+        return right.versionNumber - left.versionNumber;
+      }
+
+      if (left.record.recordedAt.getTime() !== right.record.recordedAt.getTime()) {
+        return right.record.recordedAt.getTime() - left.record.recordedAt.getTime();
+      }
+
+      return right.record.createdAt.getTime() - left.record.createdAt.getTime();
+    })[0] ?? null;
+    const latestRecord = latestVersion?.record ?? null;
+    const latestVersionNumber = latestVersion?.versionNumber ?? 0;
     const nextVersionNumber = latestVersionNumber + 1;
 
     return {
@@ -3815,7 +3905,12 @@ export class EncountersService {
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
         encounterId: input.encounterId,
-        tabKey: input.tabKey,
+        tabKey: {
+          in: [
+            consultationPrescriptionTabKey,
+            legacyConsultationPrescriptionTabKey,
+          ],
+        },
         ...(input.currentRecordId
           ? {
               NOT: {
@@ -3903,9 +3998,12 @@ export class EncountersService {
     });
 
     const latestRecord = records[0] ?? null;
-    const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
-      : 0;
+    const latestVersionNumber = records.reduce((highestVersion, record) => {
+      const recordVersion =
+        this.extractRecordVersionMetadata(record.metadataJson).versionNumber ?? 0;
+
+      return Math.max(highestVersion, recordVersion);
+    }, 0);
 
     return {
       latestRecord,
@@ -5712,6 +5810,10 @@ export class EncountersService {
         input.input.formData,
         input.currentRecord?.formDataJson ?? null,
       );
+      const consentimientoComprension =
+        this.normalizeConsultationConsentComprehension(
+          input.input.formData.consentimientoComprension,
+        );
 
       return {
         tabKey: input.input.tabKey,
@@ -5724,6 +5826,7 @@ export class EncountersService {
         formData: {
           ...input.input.formData,
           tipoConsultaActual: consultationType,
+          consentimientoComprension,
           referenciaAlergiasCriticas: referenceSnapshot.allergies,
           referenciaCronicos: referenceSnapshot.chronicConditions,
           referenciaMedicacionCronica: referenceSnapshot.chronicMedication,
@@ -5854,17 +5957,24 @@ export class EncountersService {
       const verificationCode =
         currentRecordMetadata.verificationCode ??
         randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+      const prescriptionTitle =
+        this.buildConsultationPrescriptionTitle(versionNumber);
+      const patientComprehension =
+        this.normalizeConsultationPrescriptionPatientComprehension(
+          input.input.formData.recetaComprensionPaciente,
+        );
 
       return {
-        tabKey: input.input.tabKey,
-        noteType: 'Receta médica',
-        title: `Receta B${versionNumber}`,
+        tabKey: consultationPrescriptionTabKey,
+        noteType: consultationPrescriptionRecordType,
+        title: prescriptionTitle,
         status:
           input.currentRecord?.status === EncounterRecordStatus.SIGNED
             ? EncounterRecordStatus.SIGNED
             : EncounterRecordStatus.DRAFT,
         formData: {
           ...input.input.formData,
+          recetaComprensionPaciente: patientComprehension,
           recetaFolio: prescriptionFolio,
           recetaCodigoVerificacion: verificationCode,
           recetaDiagnosticoPrincipal:
@@ -5919,7 +6029,15 @@ export class EncountersService {
       currentRecordMetadata.versionNumber ??
       input.historyVersionContext?.nextVersionNumber ??
       1;
-    const historyType = versionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+    const { historyType: _historyType, ...baseHistoryMetadata } =
+      this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {};
+    const normalizedHistoryFormData = this.omitLegacyHistorySystemFields(
+      input.input.formData,
+    );
+    normalizedHistoryFormData.estudiosPreviosRegistrados =
+      this.normalizeConsultationHistoryPriorStudiesFormData(
+        normalizedHistoryFormData.estudiosPreviosRegistrados,
+      );
 
     return {
       tabKey: input.input.tabKey,
@@ -5927,18 +6045,15 @@ export class EncountersService {
       title: `Historia clínica versión ${versionNumber}`,
       status: input.input.status ?? input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
       formData: {
-        ...input.input.formData,
-        tipoHistoriaClinica: historyType,
-        fechaHistoria: input.recordedAt.toISOString().slice(0, 16),
+        ...normalizedHistoryFormData,
         legalMedico:
           input.responsibleUser?.fullName ?? 'Sin profesional responsable',
         legalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
         legalEspecialidad: input.encounter.specialty?.name ?? 'Sin especialidad',
       },
       metadata: {
-        ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+        ...baseHistoryMetadata,
         versionNumber,
-        historyType,
         inheritedFromRecordId:
           currentRecordMetadata.inheritedFromRecordId ??
           input.historyVersionContext?.latestRecord?.id ??
@@ -5952,6 +6067,50 @@ export class EncountersService {
     tabKey: string,
   ) {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Historia clínica';
+  }
+
+  private omitLegacyHistorySystemFields(formData: Record<string, unknown>) {
+    const {
+      tipoHistoriaClinica: _legacyHistoryType,
+      fechaHistoria: _legacyHistoryDate,
+      ...editableHistoryFormData
+    } = formData;
+
+    return editableHistoryFormData;
+  }
+
+  private normalizeConsultationHistoryPriorStudiesFormData(value: unknown) {
+    return this.readObjectArray(value)
+      .map((study) => ({
+        tipoEstudio: this.normalizeConsultationPriorStudyType(study.tipoEstudio),
+        nombreEstudio: this.readStringValue(study.nombreEstudio).trim(),
+        fechaEstudio: this.readStringValue(study.fechaEstudio).trim(),
+        resultado: this.readStringValue(study.resultado).trim(),
+        interpretacionHallazgo: this.readStringValue(
+          study.interpretacionHallazgo,
+        ).trim(),
+        sourceModule: this.readStringValue(study.sourceModule).trim(),
+        sourceReferenceId: this.readStringValue(study.sourceReferenceId).trim(),
+      }))
+      .filter((study) =>
+        [
+          study.tipoEstudio,
+          study.nombreEstudio,
+          study.fechaEstudio,
+          study.resultado,
+          study.interpretacionHallazgo,
+        ].some((fieldValue) => fieldValue.length > 0),
+      );
+  }
+
+  private normalizeConsultationPriorStudyType(value: unknown) {
+    const studyType = this.readStringValue(value).trim().toUpperCase();
+
+    if (['LABORATORY', 'IMAGING', 'CABINET', 'OTHER'].includes(studyType)) {
+      return studyType;
+    }
+
+    return '';
   }
 
   private isEmergencyTriageRecord(encounterType: EncounterType, tabKey: string) {
@@ -8573,6 +8732,59 @@ export class EncountersService {
     }
 
     return Prisma.sql`CAST(${JSON.stringify(value)} AS JSONB)`;
+  }
+
+  private async syncConsultationHistoryPriorStudies(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isConsultationHistoryRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const studies = this.normalizeConsultationHistoryPriorStudiesFormData(
+      input.formData.estudiosPreviosRegistrados,
+    );
+
+    await this.prisma.$executeRaw`
+      DELETE FROM "ConsultationHistoryPriorStudy"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+    `;
+
+    for (const study of studies) {
+      const studyType = study.tipoEstudio || 'OTHER';
+      const studyName = study.nombreEstudio || 'Estudio no especificado';
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "ConsultationHistoryPriorStudy" (
+          "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+          "versionNumber", "studyType", "studyName", "studyDate", "result",
+          "relevantFinding", "sourceModule", "sourceReferenceId",
+          "registeredByUserId", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id},
+          ${input.encounter.patientId}, ${input.sectionRecordId},
+          ${versionNumber},
+          CAST(${studyType} AS "public"."ConsultationPriorStudyType"),
+          ${studyName}, ${this.parseOptionalDate(study.fechaEstudio)},
+          ${study.resultado}, ${study.interpretacionHallazgo || null},
+          ${study.sourceModule || null}, ${study.sourceReferenceId || null},
+          ${input.userId}, NOW(), NOW()
+        )
+      `;
+    }
   }
 
   private async syncEmergencyEvolutionRecord(input: {
@@ -12298,6 +12510,46 @@ export class EncountersService {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Consulta actual';
   }
 
+  private normalizeConsultationConsentComprehension(value: unknown) {
+    const comprehensionValue = this.readStringValue(value).trim();
+
+    if (!comprehensionValue) {
+      return '';
+    }
+
+    if (
+      consultationConsentComprehensionValues.includes(
+        comprehensionValue as (typeof consultationConsentComprehensionValues)[number],
+      )
+    ) {
+      return comprehensionValue;
+    }
+
+    throw new BadRequestException(
+      'La comprensión del consentimiento informado no es válida',
+    );
+  }
+
+  private normalizeConsultationPrescriptionPatientComprehension(value: unknown) {
+    const comprehensionValue = this.readStringValue(value).trim();
+
+    if (!comprehensionValue) {
+      return '';
+    }
+
+    if (
+      consultationPrescriptionPatientComprehensionValues.includes(
+        comprehensionValue as (typeof consultationPrescriptionPatientComprehensionValues)[number],
+      )
+    ) {
+      return comprehensionValue;
+    }
+
+    throw new BadRequestException(
+      'La comprensión del paciente en receta no es válida',
+    );
+  }
+
   private isConsultationEvolutionRecord(
     encounterType: EncounterType,
     tabKey: string,
@@ -12311,8 +12563,13 @@ export class EncountersService {
   ) {
     return (
       encounterType === EncounterType.OUTPATIENT &&
-      tabKey === 'Receta / Indicaciones'
+      (tabKey === consultationPrescriptionTabKey ||
+        tabKey === legacyConsultationPrescriptionTabKey)
     );
+  }
+
+  private buildConsultationPrescriptionTitle(versionNumber: number) {
+    return `Receta V${versionNumber}`;
   }
 
   private isConsultationDocumentRecord(
@@ -12457,10 +12714,6 @@ export class EncountersService {
         typeof normalizedMetadata?.versionNumber === 'number'
           ? normalizedMetadata.versionNumber
           : null,
-      historyType:
-        typeof normalizedMetadata?.historyType === 'string'
-          ? normalizedMetadata.historyType
-          : null,
       inheritedFromRecordId:
         typeof normalizedMetadata?.inheritedFromRecordId === 'string'
           ? normalizedMetadata.inheritedFromRecordId
@@ -12499,7 +12752,6 @@ export class EncountersService {
     return {
       versionNumber:
         historyMetadata.versionNumber ?? consultationMetadata.versionNumber ?? null,
-      historyType: historyMetadata.historyType,
       consultationType: consultationMetadata.consultationType,
       inheritedFromRecordId:
         historyMetadata.inheritedFromRecordId ??
@@ -13915,6 +14167,12 @@ export class EncountersService {
     verificationCode: string;
     downloadCount: number;
   }) {
+    if (input.encounter.encounterType === EncounterType.OUTPATIENT) {
+      return this.renderSimplePdf(
+        this.buildConsultationDocumentPdfLines(input),
+      );
+    }
+
     const diagnosisLines = this.readDiagnosesArrayFromUnknown(
       input.formData.documentoDiagnosticos,
     ).map((item, index) =>
@@ -14069,6 +14327,216 @@ export class EncountersService {
     ];
 
     return this.renderSimplePdf(lines);
+  }
+
+  private buildConsultationDocumentPdfLines(input: {
+    encounter: TenantEncounterRecord;
+    noteType: string;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const value = (rawValue: unknown) =>
+      this.readPrintableDocumentValue(rawValue);
+    const line = (label: string, rawValue: unknown) =>
+      this.buildPrintableDocumentLine(label, rawValue);
+    const lines = (...rawLines: Array<string | null>) =>
+      rawLines.filter((item): item is string => Boolean(item));
+    const documentDate =
+      value(input.formData.documentoFecha) ||
+      input.recordedAt.toISOString().slice(0, 10);
+    const documentTime =
+      value(input.formData.documentoHora) ||
+      input.recordedAt.toISOString().slice(11, 16);
+    const verificationCode =
+      value(input.verificationCode) ||
+      value(input.formData.documentoCodigoVerificacion);
+    const professionalName = value(input.formData.documentoNombreProfesional);
+    const professionalLicense = value(input.formData.documentoCedulaProfesional);
+    const professionalSpecialty = value(
+      input.formData.documentoEspecialidadProfesional,
+    );
+    const issuer = value(input.formData.documentoInstitucionEmisora);
+    const headerLines = issuer
+      ? lines(
+          line('Institución emisora', issuer),
+          line('RFC', input.formData.documentoRfcMedico),
+          line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
+        )
+      : lines(
+          line('Médico', professionalName),
+          line('Especialidad', professionalSpecialty),
+          line('Cédula profesional', professionalLicense),
+        );
+    const diagnosisLines = this.readDiagnosesArrayFromUnknown(
+      input.formData.documentoDiagnosticos,
+    )
+      .map((item, index) =>
+        lines(
+          line('Diagnóstico', item.diagnostico),
+          line('CIE-10', item.cie10),
+          line('Estado', item.estado),
+        ).length
+          ? `${index + 1}. ${lines(
+              line('Diagnóstico', item.diagnostico),
+              line('CIE-10', item.cie10),
+              line('Estado', item.estado),
+            )
+              .map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''))
+              .join(' · ')}`
+          : null,
+      )
+      .filter((item): item is string => Boolean(item));
+    const consentWitnessLines = this.readObjectArray(
+      input.formData.documentoTestigosConsentimiento,
+    )
+      .map((item, index) => {
+        const witnessParts = lines(
+          line('Nombre', item.nombre),
+          line('Firma', item.firma),
+        ).map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''));
+
+        return witnessParts.length
+          ? `${index + 1}. ${witnessParts.join(' · ')}`
+          : null;
+      })
+      .filter((item): item is string => Boolean(item));
+    const restRange = lines(
+      line('Inicio', input.formData.documentoReposoInicio),
+      line('Fin', input.formData.documentoReposoFin),
+    )
+      .map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''))
+      .join(' al ');
+    const clinicalLinesByDocument: Record<string, string[]> = {
+      'Solicitud de laboratorio': lines(
+        line('Motivo de solicitud', input.formData.documentoMotivoSolicitud),
+        line('Estudios solicitados', input.formData.documentoEstudiosSolicitados),
+        line('Diagnóstico asociado', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Observaciones', input.formData.documentoObservaciones),
+        line('Prioridad', input.formData.documentoPrioridad),
+      ),
+      'Solicitud de imagenología': lines(
+        line('Motivo de estudio', input.formData.documentoMotivoSolicitud),
+        line(
+          'Estudio solicitado',
+          value(input.formData.documentoEstudioImagen) ||
+            value(input.formData.documentoEstudiosSolicitados),
+        ),
+        line('Región anatómica', input.formData.documentoRegionAnatomica),
+        line('Diagnóstico presuntivo', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Indicaciones especiales', input.formData.documentoIndicacionesEspeciales),
+        line('Prioridad', input.formData.documentoPrioridad),
+      ),
+      'Referencia / contrarreferencia': lines(
+        line('Tipo', input.formData.documentoTipoReferencia),
+        line('Unidad destino', input.formData.documentoUnidadDestino),
+        line('Motivo de envío', input.formData.documentoMotivoEnvio),
+        line('Resumen clínico', input.formData.documentoResumenClinico),
+        ...(diagnosisLines.length ? ['Diagnósticos:', ...diagnosisLines] : []),
+        line('Tratamiento actual', input.formData.documentoTratamientoActual),
+        line('Estudios realizados', input.formData.documentoEstudiosRealizados),
+        line('Recomendaciones', input.formData.documentoRecomendaciones),
+      ),
+      'Consentimiento informado': lines(
+        line('Tipo de procedimiento', input.formData.documentoProcedimientoTipo),
+        line(
+          'Descripción del procedimiento',
+          input.formData.documentoProcedimientoDescripcion,
+        ),
+        line('Riesgos', input.formData.documentoRiesgos),
+        line('Beneficios', input.formData.documentoBeneficios),
+        line('Alternativas', input.formData.documentoAlternativas),
+        line(
+          'Pronóstico sin tratamiento',
+          input.formData.documentoPronosticoSinTratamiento,
+        ),
+        line('Nombre paciente / tutor', input.formData.documentoNombreTutor),
+        line('Relación', input.formData.documentoRelacionTutor),
+        line('Firma paciente / tutor', input.formData.documentoFirmaPaciente),
+        ...(consentWitnessLines.length ? ['Testigos:', ...consentWitnessLines] : []),
+      ),
+      'Certificado / constancia': lines(
+        line('Tipo', input.formData.documentoTipoCertificado),
+        line('Uso del documento', input.formData.documentoUsoDocumento),
+        line('Motivo', input.formData.documentoMotivo),
+        line('Diagnóstico', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Reposo', restRange),
+        line('Observaciones', input.formData.documentoObservaciones),
+      ),
+      'Nota de cierre': lines(
+        line('Motivo de cierre', input.formData.documentoMotivoCierre),
+        line('Resumen clínico final', input.formData.documentoResumenClinicoFinal),
+        ...(diagnosisLines.length ? ['Diagnósticos finales:', ...diagnosisLines] : []),
+        line('Estado final', input.formData.documentoEstadoFinal),
+        line('Indicaciones al egreso', input.formData.documentoIndicacionesEgreso),
+        line('Plan de seguimiento', input.formData.documentoPlanSeguimiento),
+      ),
+    };
+    const clinicalLines = clinicalLinesByDocument[input.noteType] ?? [];
+    const legalLines = lines(
+      'Datos legales y firma',
+      line('Tipo de documento', input.noteType),
+      line('Fecha', documentDate),
+      line('Hora', documentTime),
+      line('Folio del documento', input.formData.documentoFolio),
+      line('Versión', input.formData.documentoVersion),
+      line('Estado', input.formData.documentoEstado),
+      line('Institución emisora', issuer),
+      line('RFC', input.formData.documentoRfcMedico),
+      line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
+      line('Código de verificación', verificationCode),
+      line('Profesional responsable', professionalName),
+      line('Cédula', professionalLicense),
+      line('Especialidad', professionalSpecialty),
+      line('Lugar de atención', input.formData.documentoLugarAtencion),
+      line('Firma', professionalName),
+    );
+    const footerLines = lines(
+      'Pie legal',
+      line('Nombre del médico', professionalName),
+      line('Cédula profesional', professionalLicense),
+      line('Fecha', documentDate),
+      line('Firma', professionalName),
+      line('Código de verificación', verificationCode),
+    );
+
+    return lines(
+      input.recordTitle,
+      ...headerLines,
+      line('Paciente', input.encounter.patient.fullName),
+      line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+      input.noteType,
+      ...clinicalLines,
+      ...legalLines,
+      ...footerLines,
+    );
+  }
+
+  private readPrintableDocumentValue(value: unknown) {
+    const printableValue = this.readStringValue(value).trim();
+
+    if (
+      !printableValue ||
+      ['N/A', 'Sin dato disponible', 'Sin cédula', 'Sin especialidad'].includes(
+        printableValue,
+      ) ||
+      printableValue.startsWith('Se generará')
+    ) {
+      return '';
+    }
+
+    return printableValue;
+  }
+
+  private buildPrintableDocumentLine(label: string, value: unknown) {
+    const printableValue = this.readPrintableDocumentValue(value);
+
+    return printableValue ? `${label}: ${printableValue}` : null;
   }
 
   private buildAmbulatoryPreprocedurePdfDocument(input: {
@@ -14967,6 +15435,16 @@ export class EncountersService {
       !Array.isArray(input.formDataJson)
         ? (input.formDataJson as Record<string, unknown>)
         : {};
+
+    if (
+      this.isConsultationDocumentRecord(input.encounterType, input.tabKey) &&
+      input.noteType === 'Solicitud de laboratorio' &&
+      !this.readPrintableDocumentValue(formData.documentoCedulaProfesional)
+    ) {
+      throw new BadRequestException(
+        'La cédula profesional es obligatoria para firmar la solicitud de laboratorio',
+      );
+    }
 
     const requiredFieldsByNoteType: Record<string, string[]> = {
       'Solicitud de laboratorio': [
@@ -16413,8 +16891,13 @@ export class EncountersService {
 
   private assertRecordTabAllowed(encounterType: EncounterType, tabKey: string) {
     const allowedTabs = encounterTabsByType[encounterType] ?? [];
+    const normalizedTabKey =
+      encounterType === EncounterType.OUTPATIENT &&
+      tabKey === legacyConsultationPrescriptionTabKey
+        ? consultationPrescriptionTabKey
+        : tabKey;
 
-    if (!allowedTabs.includes(tabKey) || tabKey === 'Resumen') {
+    if (!allowedTabs.includes(normalizedTabKey) || normalizedTabKey === 'Resumen') {
       throw new BadRequestException(
         'La pestaña seleccionada no es válida para este tipo de episodio',
       );

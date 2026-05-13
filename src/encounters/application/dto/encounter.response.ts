@@ -187,6 +187,13 @@ export interface EncounterDetailResponse {
     documentDate: string;
     authorName: string | null;
   }>;
+  historyVersionContext: {
+    latestVersionNumber: number;
+    nextVersionNumber: number;
+    latestRecordId: string | null;
+    latestRecordTitle: string | null;
+    latestRecordFormData: Record<string, unknown> | null;
+  };
   sectionRecords: Array<{
     id: string;
     tabKey: string;
@@ -201,7 +208,6 @@ export interface EncounterDetailResponse {
     formData: Record<string, unknown>;
     metadata: {
       versionNumber: number | null;
-      historyType: string | null;
       consultationType: string | null;
       inheritedFromRecordId: string | null;
       prescriptionFolio: string | null;

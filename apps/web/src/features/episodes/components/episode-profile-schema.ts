@@ -41,6 +41,7 @@ export type EpisodeFieldDefinition = {
   inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
   itemFields?: EpisodeFieldDefinition[];
   itemAddLabel?: string;
+  itemRemoveLabel?: string;
   disableItemRemoval?: boolean;
   actionLabel?: string;
 };
@@ -60,6 +61,14 @@ export type EpisodeTabDefinition = {
   description: string;
   sections: EpisodeSectionDefinition[];
 };
+
+export function getConsultationHistoryNoteTypeLabel(
+  versionNumber: number | null | undefined,
+) {
+  return versionNumber === 1
+    ? 'Historia clínica inicial'
+    : 'Nota subsecuente de consulta';
+}
 
 const yesNoUnknownOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
@@ -496,6 +505,27 @@ const finalStateOptions: EpisodeFieldOption[] = [
   { value: 'NO_RESUELTO', label: 'No resuelto' },
 ];
 
+const priorStudyTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'LABORATORY', label: 'Laboratorio' },
+  { value: 'IMAGING', label: 'Imagen' },
+  { value: 'CABINET', label: 'Gabinete' },
+  { value: 'OTHER', label: 'Otro' },
+];
+
+const consultationConsentComprehensionOptions: EpisodeFieldOption[] = [
+  { value: 'Comprende y acepta', label: 'Comprende y acepta' },
+  { value: 'Comprensión parcial', label: 'Comprensión parcial' },
+  { value: 'No comprende', label: 'No comprende' },
+  {
+    value: 'Requiere apoyo o acompañante',
+    label: 'Requiere apoyo o acompañante',
+  },
+];
+
+const consultationPrescriptionPatientComprehensionOptions =
+  consultationConsentComprehensionOptions;
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -504,30 +534,6 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Campos estructurados inspirados en la historia clínica de Nexus.',
       icon: FileText,
       sections: [
-        {
-          key: 'tipo_historia',
-          title: 'Tipo de historia clínica',
-          fields: [
-            {
-              key: 'tipoHistoriaClinica',
-              label: 'Tipo de historia',
-              type: 'select',
-              inheritanceMode: 'system',
-              options: [
-                { value: '', label: 'Selecciona una opcion' },
-                { value: 'INICIAL', label: 'Inicial' },
-                { value: 'SUBSECUENTE', label: 'Subsecuente' },
-                { value: 'INTERCONSULTA', label: 'Interconsulta' },
-              ],
-            },
-            {
-              key: 'fechaHistoria',
-              label: 'Fecha clínica',
-              type: 'datetime-local',
-              inheritanceMode: 'fresh_capture',
-            },
-          ],
-        },
         {
           key: 'antecedentes_heredofamiliares',
           title: 'Antecedentes heredofamiliares',
@@ -645,6 +651,42 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'resultados_previos',
           title: 'Resultados previos de estudios',
           fields: [
+            {
+              key: 'estudiosPreviosRegistrados',
+              label: 'Estudios previos registrados',
+              type: 'object-array',
+              itemAddLabel: '+ Agregar estudio',
+              itemRemoveLabel: 'Eliminar estudio',
+              inheritanceMode: 'carry_forward',
+              itemFields: [
+                {
+                  key: 'tipoEstudio',
+                  label: 'Tipo de estudio',
+                  type: 'select',
+                  options: priorStudyTypeOptions,
+                },
+                {
+                  key: 'nombreEstudio',
+                  label: 'Nombre del estudio',
+                  type: 'text',
+                },
+                {
+                  key: 'fechaEstudio',
+                  label: 'Fecha del estudio',
+                  type: 'date',
+                },
+                {
+                  key: 'resultado',
+                  label: 'Resultado',
+                  type: 'textarea',
+                },
+                {
+                  key: 'interpretacionHallazgo',
+                  label: 'Interpretación / hallazgo relevante',
+                  type: 'textarea',
+                },
+              ],
+            },
             { key: 'resultadosPreviosResumen', label: 'Resumen de estudios relevantes', type: 'textarea', inheritanceMode: 'carry_forward' },
           ],
         },
@@ -891,7 +933,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           fields: [
             { key: 'consentimientoVigente', label: 'Vigente', type: 'checkbox', inheritanceMode: 'fresh_capture' },
             { key: 'consentimientoExplicacion', label: 'Explicación', type: 'textarea', inheritanceMode: 'fresh_capture' },
-            { key: 'consentimientoComprension', label: 'Comprensión', type: 'select', options: [{ value: '', label: 'Sin especificar' }, { value: 'COMPLETA', label: 'Completa' }, { value: 'PARCIAL', label: 'Parcial' }, { value: 'INSUFICIENTE', label: 'Insuficiente' }], inheritanceMode: 'fresh_capture' },
+            { key: 'consentimientoComprension', label: 'Comprensión', type: 'select', options: consultationConsentComprehensionOptions, inheritanceMode: 'fresh_capture' },
           ],
         },
         {
@@ -1118,7 +1160,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       ],
     },
     {
-      key: 'Receta / Indicaciones',
+      key: 'Receta e indicaciones',
       title: 'Receta e indicaciones',
       description: 'Prescripción, seguridad y seguimiento.',
       icon: Pill,
@@ -1289,7 +1331,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               label: 'Comprensión del paciente',
               type: 'select',
               inheritanceMode: 'fresh_capture',
-              options: comprehensionOptions,
+              options: consultationPrescriptionPatientComprehensionOptions,
             },
             {
               key: 'recetaMaterialEducativo',
@@ -4253,24 +4295,12 @@ export function isConsultationHistoryTab(
 export function buildHistoryVersionPrefill(
   tabDefinition: EpisodeTabDefinition,
   previousFormData: Record<string, unknown> | undefined,
-  nextHistoryType: 'INICIAL' | 'SUBSECUENTE',
-  nextRecordedAt: string,
 ) {
   const nextFormData: Record<string, unknown> = {};
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
       const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
-
-      if (field.key === 'tipoHistoriaClinica') {
-        nextFormData[field.key] = nextHistoryType;
-        continue;
-      }
-
-      if (field.key === 'fechaHistoria') {
-        nextFormData[field.key] = nextRecordedAt;
-        continue;
-      }
 
       if (inheritanceMode === 'carry_forward') {
         nextFormData[field.key] = cloneFieldValue(previousFormData?.[field.key]) ?? buildDefaultFieldValue(field);

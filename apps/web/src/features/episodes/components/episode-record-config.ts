@@ -21,6 +21,10 @@ const outpatientConfig: Record<string, EpisodeRecordPanelConfig> = {
     contextLabel: 'Evoluciones hospitalarias',
     defaultActionLabel: 'Nueva evolución hospitalaria',
   },
+  'Receta e indicaciones': {
+    contextLabel: 'Recetas e indicaciones',
+    defaultActionLabel: 'Nueva receta',
+  },
   'Receta / Indicaciones': {
     contextLabel: 'Recetas e indicaciones',
     defaultActionLabel: 'Nueva receta',

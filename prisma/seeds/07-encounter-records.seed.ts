@@ -5,8 +5,6 @@ import type { SeedDeps } from './_context';
 function buildOutpatientSections() {
   return {
     'Historia clínica': {
-      tipoHistoriaClinica: '',
-      fechaHistoria: '',
       ahfDiabetes: false,
       ahfHipertension: false,
       ahfCancer: false,
@@ -73,6 +71,7 @@ function buildOutpatientSections() {
       dbiCie10: '',
       dbiTipo: '',
       dbiSecundarios: [],
+      estudiosPreviosRegistrados: [],
       resultadosPreviosResumen: '',
       ptiTratamientoFarmacologico: '',
       ptiTratamientoNoFarmacologico: '',
@@ -263,6 +262,7 @@ function buildOutpatientSections() {
 }
 
 export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
+  const anaHistoryRecordId = randomUUID();
   const defaultOutpatientSections = buildOutpatientSections();
 
   await prisma.encounterProfile.createMany({
@@ -289,7 +289,7 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
   await prisma.encounterSectionRecord.createMany({
     data: [
       {
-        id: randomUUID(),
+        id: anaHistoryRecordId,
         tenantId: ctx.ids.tenants.nova,
         encounterId: ctx.ids.encounters.anaConsult,
         patientId: ctx.ids.patients.ana,
@@ -301,8 +301,6 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
         recordedAt: ctx.dates.anaEncounterOpen,
         authoredByUserId: ctx.ids.users.valeria,
         formDataJson: {
-          tipoHistoriaClinica: 'INICIAL',
-          fechaHistoria: ctx.dates.anaEncounterOpen.toISOString().slice(0, 16),
           ahfHipertension: true,
           ahfCancer: true,
           ahfDetalle:
@@ -364,6 +362,16 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
           dbiCie10: 'N63',
           dbiTipo: 'PRESUNTIVO',
           dbiSecundarios: ['Ansiedad reactiva al proceso diagnóstico'],
+          estudiosPreviosRegistrados: [
+            {
+              tipoEstudio: 'IMAGING',
+              nombreEstudio: 'Mastografía de control',
+              fechaEstudio: '',
+              resultado: 'Pendiente de realización.',
+              interpretacionHallazgo:
+                'Se solicita como parte del estudio de lesión mamaria.',
+            },
+          ],
           resultadosPreviosResumen: 'Mastografía de control pendiente.',
           ptiTratamientoFarmacologico: 'Paracetamol PRN dolor.',
           ptiTratamientoNoFarmacologico: 'Educación y autoexploración mamaria.',
@@ -383,7 +391,6 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
         },
         metadataJson: {
           versionNumber: 1,
-          historyType: 'INICIAL',
           inheritedFromRecordId: null,
         },
       },
@@ -469,7 +476,7 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
           consentimientoVigente: true,
           consentimientoExplicacion:
             'Paciente acepta plan diagnóstico y seguimiento.',
-          consentimientoComprension: 'COMPLETA',
+          consentimientoComprension: 'Comprende y acepta',
           rfCefaleaIntensaSubita: false,
           rfDeficitNeurologicoFocal: false,
           rfPerdidaVisual: false,
@@ -503,9 +510,9 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
         encounterId: ctx.ids.encounters.anaConsult,
         patientId: ctx.ids.patients.ana,
         encounterType: EncounterType.OUTPATIENT,
-        tabKey: 'Receta / Indicaciones',
-        noteType: 'Receta médica',
-        title: 'Receta B1',
+        tabKey: 'Receta e indicaciones',
+        noteType: 'Receta e indicaciones',
+        title: 'Receta V1',
         status: EncounterRecordStatus.DRAFT,
         recordedAt: ctx.dates.anaEncounterClose,
         authoredByUserId: ctx.ids.users.valeria,
@@ -552,7 +559,7 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
             'Se explica al paciente el uso de la receta y el motivo de vigilancia estrecha.',
           recetaIndicacionesNoFarmacologicas:
             'Continuar autoexploración mamaria y acudir con estudios realizados.',
-          recetaComprensionPaciente: 'COMPLETA',
+          recetaComprensionPaciente: 'Comprende y acepta',
           recetaMaterialEducativo: ['Autoexploración mamaria'],
           recetaSeguimientoFecha: '2026-01-22',
           recetaSeguimientoTipo: 'CONSULTA',
@@ -691,4 +698,21 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
       },
     ],
   });
+
+  await prisma.$executeRaw`
+    INSERT INTO "ConsultationHistoryPriorStudy" (
+      "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+      "versionNumber", "studyType", "studyName", "studyDate", "result",
+      "relevantFinding", "registeredByUserId", "createdAt", "updatedAt"
+    )
+    VALUES (
+      ${randomUUID()}, ${ctx.ids.tenants.nova}, ${ctx.ids.encounters.anaConsult},
+      ${ctx.ids.patients.ana}, ${anaHistoryRecordId}, ${1},
+      CAST(${'IMAGING'} AS "public"."ConsultationPriorStudyType"),
+      ${'Mastografía de control'}, ${null},
+      ${'Pendiente de realización.'},
+      ${'Se solicita como parte del estudio de lesión mamaria.'},
+      ${ctx.ids.users.valeria}, NOW(), NOW()
+    )
+  `;
 }
