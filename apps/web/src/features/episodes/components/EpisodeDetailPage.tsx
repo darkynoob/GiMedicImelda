@@ -6536,6 +6536,10 @@ export function EpisodeDetailPage() {
           metaQuery.data ?? null,
         )
       : null;
+  const isConsultationLaboratoryRequestDocument =
+    isConsultationDocumentsSection &&
+    detail.encounterType === 'OUTPATIENT' &&
+    recordForm?.noteType === 'Solicitud de laboratorio';
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -7810,6 +7814,15 @@ export function EpisodeDetailPage() {
                                 </Badge>
                               </div>
                             </div>
+                          ) : isConsultationLaboratoryRequestDocument ? (
+                            <div className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">
+                                Tipo de documento
+                              </span>
+                              <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm text-slate-700">
+                                {recordForm.noteType}
+                              </div>
+                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -7846,7 +7859,8 @@ export function EpisodeDetailPage() {
                                 {recordForm.noteType}
                               </div>
                             </div>
-                          ) : isConsultationDocumentsSection ? (
+                          ) : isConsultationDocumentsSection &&
+                            !isConsultationLaboratoryRequestDocument ? (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de documento</span>
                               <select
@@ -8020,7 +8034,9 @@ export function EpisodeDetailPage() {
                           </div>
                         ) : null}
 
-                        {isConsultationDocumentsSection && currentDocumentLegalSnapshot ? (
+                        {isConsultationDocumentsSection &&
+                        currentDocumentLegalSnapshot &&
+                        !isConsultationLaboratoryRequestDocument ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
                               <p className="text-sm font-semibold text-slate-900">
@@ -8853,7 +8869,8 @@ export function EpisodeDetailPage() {
                       </div>
                     ) : null}
 
-                    {activeTab === 'Documentos' ? (
+                    {activeTab === 'Documentos' &&
+                    !isConsultationLaboratoryRequestDocument ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
