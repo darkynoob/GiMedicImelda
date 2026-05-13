@@ -44,7 +44,6 @@ import {
   uploadEncounterAttachments,
 } from '../api/encounters.service';
 import {
-  admissionSourceLabels,
   encounterStatusConfig,
   encounterTypeConfig,
   getEncounterTabs,
@@ -3380,6 +3379,66 @@ function buildPdfBlobUrl(contentBase64: string, mimeType: string) {
   return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
 }
 
+function readSummaryText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildMedicationSummary(value: unknown) {
+  return readMedicationArray(value as RecordFieldValue)
+    .map((item) =>
+      [
+        readSummaryText(item.medicamento),
+        readSummaryText(item.dosis),
+        readSummaryText(item.frecuencia),
+        readSummaryText(item.duracion),
+        readSummaryText(item.indicaciones),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    )
+    .filter(Boolean);
+}
+
+function buildConsultationClinicalSummary(detail: EncounterDetailResponse) {
+  const latestConsultationRecord = getLatestRecordByTab(
+    detail.sectionRecords,
+    'Consulta actual',
+  );
+  const latestPrescriptionRecord =
+    getLatestRecordByTab(detail.sectionRecords, 'Receta e indicaciones') ??
+    getLatestRecordByTab(detail.sectionRecords, 'Receta / Indicaciones');
+  const consultationFormData = latestConsultationRecord?.formData ?? {};
+  const prescriptionFormData = latestPrescriptionRecord?.formData ?? {};
+  const primaryDiagnosis = detail.diagnoses.find((diagnosis) => diagnosis.isPrimary);
+  const mainDiagnosis =
+    readSummaryText(consultationFormData.idDiagnosticoPrincipal) ||
+    primaryDiagnosis?.description ||
+    detail.diagnoses[0]?.description ||
+    '';
+  const mainDiagnosisCode =
+    readSummaryText(consultationFormData.idCie10) ||
+    primaryDiagnosis?.code ||
+    detail.diagnoses[0]?.code ||
+    '';
+  const activeProblems = detail.problems
+    .filter((problem) => problem.status !== 'RESUELTO' && problem.status !== 'INACTIVE')
+    .map((problem) => problem.description)
+    .filter(Boolean);
+  const treatmentItems = buildMedicationSummary(prescriptionFormData.recetaMedicamentos);
+
+  return {
+    reason:
+      readSummaryText(consultationFormData.motivoConsultaPrincipal) ||
+      readSummaryText(detail.reasonForVisit),
+    mainDiagnosis: [mainDiagnosis, mainDiagnosisCode].filter(Boolean).join(' · '),
+    activeProblems,
+    treatmentSummary:
+      treatmentItems.length > 0
+        ? treatmentItems.join('\n')
+        : readSummaryText(prescriptionFormData.recetaIndicacionesGenerales),
+  };
+}
+
 function calculateImcValue(
   weightValue: RecordFieldValue,
   heightValue: RecordFieldValue,
@@ -3667,6 +3726,9 @@ export function EpisodeDetailPage() {
   }, [detailQuery.data]);
 
   const detail = detailQuery.data;
+  const consultationClinicalSummary = detail
+    ? buildConsultationClinicalSummary(detail)
+    : null;
   const tabs = useMemo(
     () => getEncounterTabs(detail?.encounterType ?? 'OUTPATIENT'),
     [detail?.encounterType],
@@ -6623,11 +6685,7 @@ export function EpisodeDetailPage() {
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
                   <span>{detail.facility?.name ?? 'Sin sede'}</span>
-                  <span>
-                    {detail.serviceArea?.name ??
-                      detail.specialty?.name ??
-                      'Sin area clinica'}
-                  </span>
+                  {detail.specialty?.name ? <span>{detail.specialty.name}</span> : null}
                   <span>
                     {detail.attendingClinician?.fullName ?? 'Sin responsable'}
                   </span>
@@ -6669,13 +6727,13 @@ export function EpisodeDetailPage() {
           </div>
 
           <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 md:grid-cols-4">
-            <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
-            <InfoRow
-              label="Origen"
-              value={admissionSourceLabels[detail.admissionSource ?? ''] ?? 'Sin origen'}
-            />
+            {detail.reasonForVisit ? (
+              <InfoRow label="Motivo" value={detail.reasonForVisit} />
+            ) : null}
             <InfoRow label="Actualizado" value={formatDateTime(detail.updatedAt)} />
-            <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
+            {detail.closedAt ? (
+              <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
+            ) : null}
           </div>
         </div>
 
@@ -6698,12 +6756,16 @@ export function EpisodeDetailPage() {
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.55fr_0.95fr]">
+        <div
+          className={`grid gap-6 ${
+            activeTab === 'Resumen' ? '' : 'xl:grid-cols-[1.55fr_0.95fr]'
+          }`}
+        >
           <div className="space-y-6">
             {activeTab === 'Resumen' ? (
               <>
                 <SectionCard
-                  description="Datos base del episodio editables sin salir del resumen."
+                  description="Información operativa principal del episodio."
                   title="Datos base del episodio"
                 >
                   <div className="grid gap-4 md:grid-cols-2">
@@ -6720,26 +6782,6 @@ export function EpisodeDetailPage() {
                         {(metaQuery.data?.facilities ?? []).map((facility) => (
                           <option key={facility.id} value={facility.id}>
                             {facility.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">
-                        Area de servicio
-                      </span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('serviceAreaId', event.target.value)
-                        }
-                        value={form.serviceAreaId}
-                      >
-                        <option value="">Sin area especifica</option>
-                        {availableServiceAreas.map((serviceArea) => (
-                          <option key={serviceArea.id} value={serviceArea.id}>
-                            {serviceArea.name}
                           </option>
                         ))}
                       </select>
@@ -6784,23 +6826,6 @@ export function EpisodeDetailPage() {
                     </label>
 
                     <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Tipo</span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('encounterType', event.target.value)
-                        }
-                        value={form.encounterType}
-                      >
-                        {(metaQuery.data?.encounterTypes ?? []).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
                       <span className="font-medium text-slate-900">Estado</span>
                       <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -6820,26 +6845,8 @@ export function EpisodeDetailPage() {
 
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Origen</span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('admissionSource', event.target.value)
-                        }
-                        value={form.admissionSource}
-                      >
-                        <option value="">Sin origen</option>
-                        {(metaQuery.data?.admissionSources ?? []).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
                       <span className="font-medium text-slate-900">
-                        Apertura del episodio
+                        Fecha de apertura
                       </span>
                       <Input
                         onChange={(event) =>
@@ -6850,22 +6857,24 @@ export function EpisodeDetailPage() {
                       />
                     </label>
 
-                    <label className="space-y-2 text-sm md:col-span-2">
-                      <span className="font-medium text-slate-900">
-                        Fecha de cierre
-                      </span>
-                      <Input
-                        onChange={(event) =>
-                          updateFormField('closedAt', event.target.value)
-                        }
-                        type="datetime-local"
-                        value={form.closedAt}
-                      />
-                    </label>
+                    {form.closedAt ? (
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">
+                          Fecha de cierre
+                        </span>
+                        <Input
+                          onChange={(event) =>
+                            updateFormField('closedAt', event.target.value)
+                          }
+                          type="datetime-local"
+                          value={form.closedAt}
+                        />
+                      </label>
+                    ) : null}
                   </div>
 
                   <label className="mt-4 block space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Motivo de atencion</span>
+                    <span className="font-medium text-slate-900">Motivo de atención</span>
                     <Textarea
                       onChange={(event) =>
                         updateFormField('reasonForVisit', event.target.value)
@@ -6874,79 +6883,75 @@ export function EpisodeDetailPage() {
                     />
                   </label>
 
-                  <label className="mt-4 block space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Notas</span>
-                    <Textarea
-                      onChange={(event) =>
-                        updateFormField('notes', event.target.value)
-                      }
-                      value={form.notes}
-                    />
-                  </label>
                 </SectionCard>
 
                 <SectionCard
-                  description="Resumen operativo y clinico del episodio alineado con el dominio actual."
-                  title="Vista general"
+                  description="Datos consolidados desde Historia clínica, Consulta actual y Receta e indicaciones."
+                  title="Resumen clínico"
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Paciente
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {detail.patient.fullName}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {detail.patient.phone ?? 'Sin telefono'} ·{' '}
-                        {detail.patient.email ?? 'Sin correo'}
-                      </p>
+                  {consultationClinicalSummary &&
+                  (consultationClinicalSummary.reason ||
+                    consultationClinicalSummary.mainDiagnosis ||
+                    consultationClinicalSummary.activeProblems.length > 0 ||
+                    consultationClinicalSummary.treatmentSummary) ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {consultationClinicalSummary.reason ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Motivo de consulta
+                          </p>
+                          <p className="mt-2 whitespace-pre-line text-sm text-slate-900">
+                            {consultationClinicalSummary.reason}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {consultationClinicalSummary.mainDiagnosis ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Diagnóstico principal
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900">
+                            {consultationClinicalSummary.mainDiagnosis}
+                          </p>
+                        </div>
+                      ) : null}
+
+                      {consultationClinicalSummary.activeProblems.length > 0 ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Problemas activos
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {consultationClinicalSummary.activeProblems.map((problem) => (
+                              <Badge key={problem} variant="secondary">
+                                {problem}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {consultationClinicalSummary.treatmentSummary ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Tratamiento actual
+                          </p>
+                          <p className="mt-2 whitespace-pre-line text-sm text-slate-900">
+                            {consultationClinicalSummary.treatmentSummary}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Episodio
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900">
-                        {typeConfig?.label ?? detail.encounterType}
-                      </p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {detail.facility?.name ?? 'Sin sede'} ·{' '}
-                        {detail.serviceArea?.name ??
-                          detail.specialty?.name ??
-                          'Sin area'}
-                      </p>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Aún no hay datos clínicos capturados para este episodio.
+                    </p>
+                  )}
                 </SectionCard>
 
                 <SectionCard
-                  description="Indicadores existentes del episodio y sus relaciones clinicas."
-                  title="Actividad ligada"
-                >
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      ['Documentos', detail.metrics.documents],
-                      ['Diagnosticos', detail.metrics.diagnoses],
-                      ['Labs', detail.metrics.labs],
-                      ['Imagen', detail.metrics.imaging],
-                    ].map(([label, value]) => (
-                      <div
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-                        key={label}
-                      >
-                        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {label}
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-slate-900">
-                          {value}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-
-                <SectionCard
-                  description="Ultimo bloque de signos vitales asociado al episodio."
+                  description="Último registro disponible del episodio."
                   title="Signos vitales"
                 >
                   {detail.latestVitalSigns.length > 0 ? (
@@ -9007,6 +9012,7 @@ export function EpisodeDetailPage() {
             ) : null}
           </div>
 
+          {activeTab !== 'Resumen' ? (
           <div className="space-y-6">
             <SectionCard
               description="Indicadores y contexto rapido para continuidad de atencion."
@@ -9115,6 +9121,7 @@ export function EpisodeDetailPage() {
               </div>
             </SectionCard>
           </div>
+          ) : null}
         </div>
 
         {isSigningRecord ? (
