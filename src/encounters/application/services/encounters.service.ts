@@ -35,6 +35,13 @@ import type {
   EncountersListResponse,
 } from '../dto/encounter.response';
 
+const consultationConsentComprehensionValues = [
+  'Comprende y acepta',
+  'Comprensión parcial',
+  'No comprende',
+  'Requiere apoyo o acompañante',
+] as const;
+
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
     tenant: {
@@ -5730,6 +5737,10 @@ export class EncountersService {
         input.input.formData,
         input.currentRecord?.formDataJson ?? null,
       );
+      const consentimientoComprension =
+        this.normalizeConsultationConsentComprehension(
+          input.input.formData.consentimientoComprension,
+        );
 
       return {
         tabKey: input.input.tabKey,
@@ -5742,6 +5753,7 @@ export class EncountersService {
         formData: {
           ...input.input.formData,
           tipoConsultaActual: consultationType,
+          consentimientoComprension,
           referenciaAlergiasCriticas: referenceSnapshot.allergies,
           referenciaCronicos: referenceSnapshot.chronicConditions,
           referenciaMedicacionCronica: referenceSnapshot.chronicMedication,
@@ -12416,6 +12428,26 @@ export class EncountersService {
     tabKey: string,
   ) {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Consulta actual';
+  }
+
+  private normalizeConsultationConsentComprehension(value: unknown) {
+    const comprehensionValue = this.readStringValue(value).trim();
+
+    if (!comprehensionValue) {
+      return '';
+    }
+
+    if (
+      consultationConsentComprehensionValues.includes(
+        comprehensionValue as (typeof consultationConsentComprehensionValues)[number],
+      )
+    ) {
+      return comprehensionValue;
+    }
+
+    throw new BadRequestException(
+      'La comprensión del consentimiento informado no es válida',
+    );
   }
 
   private isConsultationEvolutionRecord(

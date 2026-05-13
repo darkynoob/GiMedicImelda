@@ -476,7 +476,7 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
           consentimientoVigente: true,
           consentimientoExplicacion:
             'Paciente acepta plan diagnóstico y seguimiento.',
-          consentimientoComprension: 'COMPLETA',
+          consentimientoComprension: 'Comprende y acepta',
           rfCefaleaIntensaSubita: false,
           rfDeficitNeurologicoFocal: false,
           rfPerdidaVisual: false,

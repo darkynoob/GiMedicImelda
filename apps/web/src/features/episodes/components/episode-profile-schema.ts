@@ -495,6 +495,16 @@ const priorStudyTypeOptions: EpisodeFieldOption[] = [
   { value: 'OTHER', label: 'Otro' },
 ];
 
+const consultationConsentComprehensionOptions: EpisodeFieldOption[] = [
+  { value: 'Comprende y acepta', label: 'Comprende y acepta' },
+  { value: 'Comprensión parcial', label: 'Comprensión parcial' },
+  { value: 'No comprende', label: 'No comprende' },
+  {
+    value: 'Requiere apoyo o acompañante',
+    label: 'Requiere apoyo o acompañante',
+  },
+];
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -900,7 +910,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           fields: [
             { key: 'consentimientoVigente', label: 'Vigente', type: 'checkbox', inheritanceMode: 'fresh_capture' },
             { key: 'consentimientoExplicacion', label: 'Explicación', type: 'textarea', inheritanceMode: 'fresh_capture' },
-            { key: 'consentimientoComprension', label: 'Comprensión', type: 'select', options: [{ value: '', label: 'Sin especificar' }, { value: 'COMPLETA', label: 'Completa' }, { value: 'PARCIAL', label: 'Parcial' }, { value: 'INSUFICIENTE', label: 'Insuficiente' }], inheritanceMode: 'fresh_capture' },
+            { key: 'consentimientoComprension', label: 'Comprensión', type: 'select', options: consultationConsentComprehensionOptions, inheritanceMode: 'fresh_capture' },
           ],
         },
         {
