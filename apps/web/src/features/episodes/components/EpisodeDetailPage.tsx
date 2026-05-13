@@ -8675,7 +8675,7 @@ export function EpisodeDetailPage() {
                                                   type="button"
                                                   variant="outline"
                                                 >
-                                                  Eliminar
+                                                  {field.itemRemoveLabel ?? 'Eliminar'}
                                                 </Button>
                                               </div>
                                               <div className="grid gap-3 md:grid-cols-2">
@@ -8720,6 +8720,39 @@ export function EpisodeDetailPage() {
                                                             </option>
                                                           ))}
                                                         </select>
+                                                      </label>
+                                                    );
+                                                  }
+
+                                                  if (itemField.type === 'textarea') {
+                                                    return (
+                                                      <label
+                                                        className="space-y-2 text-sm md:col-span-2"
+                                                        key={`${field.key}-${itemIndex}-${itemField.key}`}
+                                                      >
+                                                        <span className="font-medium text-slate-900">
+                                                          {itemField.label}
+                                                        </span>
+                                                        <Textarea
+                                                          disabled={isRecordLocked}
+                                                          onChange={(event) => {
+                                                            const nextItems = [...items];
+                                                            nextItems[itemIndex] = {
+                                                              ...nextItems[itemIndex],
+                                                              [itemField.key]: event.target.value,
+                                                            };
+                                                            updateRecordFormDataField(
+                                                              field.key,
+                                                              nextItems,
+                                                            );
+                                                          }}
+                                                          placeholder={itemField.placeholder}
+                                                          value={
+                                                            typeof itemFieldValue === 'string'
+                                                              ? itemFieldValue
+                                                              : ''
+                                                          }
+                                                        />
                                                       </label>
                                                     );
                                                   }

@@ -24,6 +24,7 @@ export type EpisodeFieldDefinition = {
   inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
   itemFields?: EpisodeFieldDefinition[];
   itemAddLabel?: string;
+  itemRemoveLabel?: string;
   disableItemRemoval?: boolean;
   actionLabel?: string;
 };
@@ -486,6 +487,14 @@ const finalStateOptions: EpisodeFieldOption[] = [
   { value: 'NO_RESUELTO', label: 'No resuelto' },
 ];
 
+const priorStudyTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'LABORATORY', label: 'Laboratorio' },
+  { value: 'IMAGING', label: 'Imagen' },
+  { value: 'CABINET', label: 'Gabinete' },
+  { value: 'OTHER', label: 'Otro' },
+];
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -610,6 +619,42 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'resultados_previos',
           title: 'Resultados previos de estudios',
           fields: [
+            {
+              key: 'estudiosPreviosRegistrados',
+              label: 'Estudios previos registrados',
+              type: 'object-array',
+              itemAddLabel: '+ Agregar estudio',
+              itemRemoveLabel: 'Eliminar estudio',
+              inheritanceMode: 'carry_forward',
+              itemFields: [
+                {
+                  key: 'tipoEstudio',
+                  label: 'Tipo de estudio',
+                  type: 'select',
+                  options: priorStudyTypeOptions,
+                },
+                {
+                  key: 'nombreEstudio',
+                  label: 'Nombre del estudio',
+                  type: 'text',
+                },
+                {
+                  key: 'fechaEstudio',
+                  label: 'Fecha del estudio',
+                  type: 'date',
+                },
+                {
+                  key: 'resultado',
+                  label: 'Resultado',
+                  type: 'textarea',
+                },
+                {
+                  key: 'interpretacionHallazgo',
+                  label: 'Interpretación / hallazgo relevante',
+                  type: 'textarea',
+                },
+              ],
+            },
             { key: 'resultadosPreviosResumen', label: 'Resumen de estudios relevantes', type: 'textarea', inheritanceMode: 'carry_forward' },
           ],
         },

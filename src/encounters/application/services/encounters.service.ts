@@ -1185,6 +1185,15 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncConsultationHistoryPriorStudies({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return this.toEncounterDetailResponse(
@@ -1681,6 +1690,15 @@ export class EncountersService {
       recordedAt,
       title: normalizedRecordPayload.title,
       status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncConsultationHistoryPriorStudies({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
@@ -5924,6 +5942,10 @@ export class EncountersService {
     const normalizedHistoryFormData = this.omitLegacyHistorySystemFields(
       input.input.formData,
     );
+    normalizedHistoryFormData.estudiosPreviosRegistrados =
+      this.normalizeConsultationHistoryPriorStudiesFormData(
+        normalizedHistoryFormData.estudiosPreviosRegistrados,
+      );
 
     return {
       tabKey: input.input.tabKey,
@@ -5963,6 +5985,40 @@ export class EncountersService {
     } = formData;
 
     return editableHistoryFormData;
+  }
+
+  private normalizeConsultationHistoryPriorStudiesFormData(value: unknown) {
+    return this.readObjectArray(value)
+      .map((study) => ({
+        tipoEstudio: this.normalizeConsultationPriorStudyType(study.tipoEstudio),
+        nombreEstudio: this.readStringValue(study.nombreEstudio).trim(),
+        fechaEstudio: this.readStringValue(study.fechaEstudio).trim(),
+        resultado: this.readStringValue(study.resultado).trim(),
+        interpretacionHallazgo: this.readStringValue(
+          study.interpretacionHallazgo,
+        ).trim(),
+        sourceModule: this.readStringValue(study.sourceModule).trim(),
+        sourceReferenceId: this.readStringValue(study.sourceReferenceId).trim(),
+      }))
+      .filter((study) =>
+        [
+          study.tipoEstudio,
+          study.nombreEstudio,
+          study.fechaEstudio,
+          study.resultado,
+          study.interpretacionHallazgo,
+        ].some((fieldValue) => fieldValue.length > 0),
+      );
+  }
+
+  private normalizeConsultationPriorStudyType(value: unknown) {
+    const studyType = this.readStringValue(value).trim().toUpperCase();
+
+    if (['LABORATORY', 'IMAGING', 'CABINET', 'OTHER'].includes(studyType)) {
+      return studyType;
+    }
+
+    return '';
   }
 
   private isEmergencyTriageRecord(encounterType: EncounterType, tabKey: string) {
@@ -8584,6 +8640,59 @@ export class EncountersService {
     }
 
     return Prisma.sql`CAST(${JSON.stringify(value)} AS JSONB)`;
+  }
+
+  private async syncConsultationHistoryPriorStudies(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (
+      !this.isConsultationHistoryRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const studies = this.normalizeConsultationHistoryPriorStudiesFormData(
+      input.formData.estudiosPreviosRegistrados,
+    );
+
+    await this.prisma.$executeRaw`
+      DELETE FROM "ConsultationHistoryPriorStudy"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+    `;
+
+    for (const study of studies) {
+      const studyType = study.tipoEstudio || 'OTHER';
+      const studyName = study.nombreEstudio || 'Estudio no especificado';
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "ConsultationHistoryPriorStudy" (
+          "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+          "versionNumber", "studyType", "studyName", "studyDate", "result",
+          "relevantFinding", "sourceModule", "sourceReferenceId",
+          "registeredByUserId", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${input.tenantId}, ${input.encounter.id},
+          ${input.encounter.patientId}, ${input.sectionRecordId},
+          ${versionNumber},
+          CAST(${studyType} AS "public"."ConsultationPriorStudyType"),
+          ${studyName}, ${this.parseOptionalDate(study.fechaEstudio)},
+          ${study.resultado}, ${study.interpretacionHallazgo || null},
+          ${study.sourceModule || null}, ${study.sourceReferenceId || null},
+          ${input.userId}, NOW(), NOW()
+        )
+      `;
+    }
   }
 
   private async syncEmergencyEvolutionRecord(input: {
