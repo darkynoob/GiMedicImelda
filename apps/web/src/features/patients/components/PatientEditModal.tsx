@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode, type ComponentType } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -12,6 +12,11 @@ import {
   Upload,
   UserRound,
   X,
+  MapPin,
+  UserCheck,
+  FileText,
+  ShieldCheck,
+  Receipt
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
@@ -29,7 +34,8 @@ import {
 
 const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
 const RFC_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
-const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+const PHONE_REGEX = /^[\d\s\-+()]{10,20}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const sexOptions = [
   { value: '', label: 'Selecciona una opcion' },
@@ -350,38 +356,38 @@ type FormErrors = Partial<Record<string, string>>;
 const modalSections = [
   {
     id: 'identidad',
-    title: 'Identidad',
+    title: 'Identidad del paciente',
     description:
-      'Nombre legal, identificadores base y estatus operativo del perfil.',
+      'Datos básicos para identificar al paciente en el sistema.',
   },
   {
     id: 'contacto',
-    title: 'Contacto',
-    description: 'Canales de contacto directo y seguimiento operativo.',
+    title: 'Contacto y facturacion',
+    description: 'Medios de contacto y datos fiscales para comunicacion y comprobantes.',
   },
   {
     id: 'domicilio',
     title: 'Domicilio',
     description:
-      'Direccion estructurada para recepcion, seguimiento y correspondencia.',
+      'Dirección del paciente para contacto y seguimiento.',
   },
   {
     id: 'responsable',
     title: 'Responsable',
     description:
-      'Persona responsable o acompanante principal para decisiones y seguimiento.',
+      'Contacto principal para decisiones, autorizaciones y seguimiento del paciente.',
   },
   {
     id: 'cobertura',
     title: 'Cobertura',
     description:
-      'Pagadores y datos de aseguramiento vinculados al paciente.',
+      'Aseguradoras, planes y condiciones de pago vinculadas al paciente.',
   },
   {
     id: 'documentos',
     title: 'Documentos',
     description:
-      'Metadatos documentales y archivos adjuntos disponibles desde el perfil.',
+      'Documentos y archivos adjuntos vinculados al paciente.',
   },
   {
     id: 'clinico',
@@ -754,6 +760,12 @@ function validateForm(form: FormState): FormErrors {
     errors.alternatePhone = 'Formato invalido';
   }
 
+  if (form.email.trim()) {
+    if (!EMAIL_REGEX.test(form.email.trim())) {
+      errors.email = 'Formato invalido';
+    }
+  }
+
   if (!form.city.trim()) errors.city = 'Obligatorio';
   if (!form.state.trim()) errors.state = 'Obligatorio';
   if (!form.allergiesSelection) errors.allergiesSelection = 'Obligatorio';
@@ -797,6 +809,19 @@ function validateForm(form: FormState): FormErrors {
     errors.responsiblePhone = 'Formato invalido';
   }
 
+  if (
+    form.responsible.alternatePhone.trim() &&
+    !PHONE_REGEX.test(form.responsible.alternatePhone.trim())
+  ) {
+    errors.responsibleAlternatePhone = 'Formato invalido';
+  }  
+
+  if (form.responsible.email.trim()) {
+    if (!EMAIL_REGEX.test(form.responsible.email.trim())) {
+      errors.responsibleEmail = 'Formato invalido';
+    }
+  }
+
   if (form.billingProfile.requiresInvoiceSelection === 'true') {
     if (!form.billingProfile.businessName.trim()) {
       errors.billingBusinessName = 'Obligatorio';
@@ -819,7 +844,13 @@ function validateForm(form: FormState): FormErrors {
     if (!form.billingProfile.cfdiUse.trim()) {
       errors.billingCfdiUse = 'Obligatorio';
     }
+    if (form.billingProfile.billingEmail.trim()) {
+      if (!EMAIL_REGEX.test(form.billingProfile.billingEmail.trim())) {
+        errors.billingEmail = 'Formato invalido';
+      }
+    }
   }
+
 
   const primaryCoverages = form.coverages.filter(
     (coverage) => coverage.isPrimary,
@@ -1050,10 +1081,10 @@ function FieldShell({
     <label className="space-y-2">
       <span className="text-sm font-medium text-foreground">
         {label}
-        {required ? <span className="text-clinical-alert"> *</span> : null}
+        {required ? <span className="text-clinical-alert-foreground"> *</span> : null}
       </span>
       {children}
-      {error ? <p className="text-xs text-clinical-alert">{error}</p> : null}
+      {error ? <p className="text-xs text-clinical-alert-foreground">{error}</p> : null}
       {!error && helper ? (
         <p className="text-xs text-muted-foreground">{helper}</p>
       ) : null}
@@ -1065,27 +1096,33 @@ function TextField({
   label,
   value,
   onChange,
+  placeholder,
+  type = 'text',
+  helper,
   required = false,
   error,
-  helper,
-  type = 'text',
-  placeholder,
+  maxLength,
+  onBlur,
   disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  helper?: string;
   required?: boolean;
   error?: string;
-  helper?: string;
-  type?: string;
-  placeholder?: string;
+  maxLength?: number;
+  onBlur?: () => void;
   disabled?: boolean;
 }) {
   return (
     <FieldShell error={error} helper={helper} label={label} required={required}>
       <Input
         disabled={disabled}
+        maxLength={maxLength}
+        onBlur={onBlur}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         type={type}
@@ -1162,11 +1199,13 @@ function TextAreaField({
 }
 
 function Section({
+  icon: Icon,
   sectionId,
   title,
   description,
   children,
 }: {
+  icon: ComponentType<{ className?: string }>;
   sectionId: ModalSectionId;
   title: string;
   description: string;
@@ -1178,9 +1217,16 @@ function Section({
       data-section-id={sectionId}
       id={sectionId}
     >
-      <div className="border-b border-gray-100 bg-slate-50/80 px-5 py-4">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      <div className="px-5 pt-5 pb-3">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+          </div>
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
         {children}
@@ -1496,73 +1542,76 @@ export function PatientEditModal({
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/55 p-4 md:p-6"
+      className="fixed inset-0 z-50 flex items-start justify-end bg-slate-950/55 p-4 md:p-6"
       role="dialog"
     >
       <div className="absolute inset-0" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-slate-100 shadow-2xl">
-        <div className="border-b border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-blue-900 px-6 py-5 text-white">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-white/80">
-                <UserRound className="h-3.5 w-3.5" />
-                Edicion de perfil
+      <div className="relative z-10 flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border-slate-200 bg-slate-100 shadow-2xl">
+        <div className="bg-gradient-to-r from-primary to-primary/80 px-6 py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 border border-white/15">
+                <UserRound className="h-5 w-5 text-white" />
               </div>
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight">
+
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+                  Edición de paciente
+                </p>
+                <h2 className="truncate text-lg font-semibold text-white">
                   {patient.fullName}
                 </h2>
-                <p className="mt-1 max-w-3xl text-sm text-white/75">
-                  Conserva el diseno base del modal y lo extiende con la
-                  estructura operativa inspirada en Nexus: identidad,
-                  responsable, cobertura, documentos, clinico y demografico.
+                <p className="text-xs text-white/60 truncate">
+                  Perfil clínico, administrativo y cobertura
                 </p>
               </div>
             </div>
 
-            <button
-              className="rounded-full border border-white/15 bg-white/10 p-2 text-white/80 transition hover:bg-white/20 hover:text-white"
-              onClick={onClose}
-              type="button"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-lg border border-white/15 bg-white/10 p-2 text-white/70 hover:bg-white/20 hover:text-white transition"
+                onClick={onClose}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+          <div className="mt-4 gap-3 flex flex-wrap gap-2">
+            <div className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs">
+              <p className="text-primary-foreground/60">
                 Expediente activo
               </p>
-              <p className="mt-1 text-sm font-medium">
+              <p className="text-xs text-primary-foreground">
                 {patient.medicalRecords[0]?.recordNumber ?? 'Sin expediente'}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+            <div className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs">
+              <p className="text-primary-foreground/60">
                 Cobertura primaria
               </p>
-              <p className="mt-1 text-sm font-medium">
+              <p className="text-xs text-primary-foreground">
                 {form.coverages.find((coverage) => coverage.isPrimary)
                   ?.providerName || 'Sin cobertura primaria'}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+            <div className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs">
+              <p className="text-primary-foreground/60">
                 Alertas clinicas
               </p>
-              <p className="mt-1 text-sm font-medium">
+              <p className="text-xs text-primary-foreground">
                 {form.clinicalProfile.clinicalAlerts.trim() ||
                   (form.allergiesSelection === 'yes'
                     ? 'Con alergias registradas'
                     : 'Sin alertas clinicas')}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+            <div className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs">
+              <p className="text-primary-foreground/60">
                 Ultima actualizacion visible
               </p>
-              <p className="mt-1 text-sm font-medium">
+              <p className="text-xs text-primary-foreground">
                 {new Date(patient.updatedAt).toLocaleString('es-MX')}
               </p>
             </div>
@@ -1587,15 +1636,17 @@ export function PatientEditModal({
             }
 
             const activeVisibleSection =
-              visibleSections.find((section) => {
+              visibleSections
+              .map((section) => {
                 const bounds = section.getBoundingClientRect();
                 const containerBounds = container.getBoundingClientRect();
 
-                return (
-                  bounds.top >= containerBounds.top + 96 &&
-                  bounds.top <= containerBounds.top + 220
-                );
-              }) ?? visibleSections[0];
+                return {
+                  section,
+                  offset: Math.abs(bounds.top - containerBounds.top - 120), // offset visual
+                };
+              })
+              .sort((a, b) => a.offset - b.offset)[0]?.section;
 
             const nextSectionId = activeVisibleSection.dataset.sectionId as
               | ModalSectionId
@@ -1614,37 +1665,51 @@ export function PatientEditModal({
               </div>
             ) : null}
 
-            <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
-              <div className="flex min-w-max gap-2">
-                {modalSections.map((section) => {
+            
+            <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+              <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
+                {modalSections.map((section, index) => {
                   const isCurrentSection = section.id === activeSection;
 
                   return (
                     <button
                       key={section.id}
-                      className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        isCurrentSection
-                          ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'
-                      }`}
                       onClick={() => scrollToSection(section.id)}
                       type="button"
+                      className={`rounded-xl flex items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs font-medium transition
+                        ${
+                          isCurrentSection
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        }`}
                     >
                       {section.title}
                     </button>
                   );
                 })}
               </div>
-              <p className="mt-2 px-1 text-xs text-muted-foreground">
-                Navega por categoria y salta directo a cada bloque del perfil
-                sin perder el contexto del modal.
-              </p>
+              <div className="px-3 pb-2">
+                <div className="h-1 w-full rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    className="h-full bg-slate-900 transition-all duration-300"
+                    style={{
+                      width: `${
+                        ((modalSections.findIndex(s => s.id === activeSection) + 1) /
+                          modalSections.length) *
+                        100
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
             </div>
+
 
             <Section
               description={modalSections[0].description}
               sectionId="identidad"
               title={modalSections[0].title}
+              icon={UserRound}
             >
               <TextField
                 error={formErrors.firstName}
@@ -1779,6 +1844,7 @@ export function PatientEditModal({
               description={modalSections[1].description}
               sectionId="contacto"
               title={modalSections[1].title}
+              icon={Receipt}
             >
               <TextField
                 error={formErrors.phone}
@@ -1794,6 +1860,7 @@ export function PatientEditModal({
                 value={form.alternatePhone}
               />
               <TextField
+                error={formErrors.email}
                 label="Correo electronico"
                 onChange={(value) => updateField('email', value)}
                 type="email"
@@ -1872,6 +1939,7 @@ export function PatientEditModal({
               description={modalSections[2].description}
               sectionId="domicilio"
               title={modalSections[2].title}
+              icon={MapPin}
             >
               <TextField
                 error={formErrors.city}
@@ -1937,6 +2005,7 @@ export function PatientEditModal({
               description={modalSections[3].description}
               sectionId="responsable"
               title={modalSections[3].title}
+              icon={UserCheck}
             >
               <TextField
                 label="Nombre completo"
@@ -1959,6 +2028,7 @@ export function PatientEditModal({
               />
               <TextField
                 label="Telefono alterno"
+                error={formErrors.responsibleAlternatePhone}
                 onChange={(value) =>
                   updateResponsibleField('alternatePhone', value)
                 }
@@ -1966,6 +2036,7 @@ export function PatientEditModal({
               />
               <TextField
                 label="Correo electronico"
+                error={formErrors.responsibleEmail}
                 onChange={(value) => updateResponsibleField('email', value)}
                 type="email"
                 value={form.responsible.email}
@@ -2026,6 +2097,7 @@ export function PatientEditModal({
               description={modalSections[4].description}
               sectionId="cobertura"
               title={modalSections[4].title}
+              icon={ShieldCheck}
             >
               <div className="md:col-span-2 space-y-4">
                 {formErrors.coverages ? (
@@ -2038,7 +2110,11 @@ export function PatientEditModal({
                   <CollectionCard
                     key={`coverage-${index}`}
                     onRemove={() => removeCollectionItem('coverages', index)}
-                    subtitle="Modelado como registros relacionados para permitir cambios de pagador y escalabilidad futura."
+                    subtitle={`${
+                                coverageTypeOptions.find(
+                                  (opt) => opt.value === coverage.coverageType
+                                )?.label ?? 'Tipo desconocido'
+                              } · ${coverage.providerName}`}
                     title={`Cobertura ${index + 1}`}
                   >
                     <SelectField
@@ -2126,14 +2202,38 @@ export function PatientEditModal({
                       }
                       value={coverage.relationshipToInsured}
                     />
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                      <input
-                        checked={coverage.isPrimary}
-                        className="h-4 w-4"
-                        onChange={() => markPrimaryItem('coverages', index)}
-                        type="checkbox"
-                      />
-                      <span className="text-sm">Marcar como primaria</span>
+                    <div
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2 transition
+                        ${
+                          coverage.isPrimary
+                            ? 'border-emerald-300 bg-emerald-50'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            coverage.isPrimary ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        />
+                        <span className="text-sm font-medium text-slate-800">
+                          Cobertura primaria
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => markPrimaryItem('coverages', index)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition
+                          ${coverage.isPrimary ? 'bg-emerald-500' : 'bg-slate-300'}
+                        `}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition
+                            ${coverage.isPrimary ? 'translate-x-4' : 'translate-x-1'}
+                          `}
+                        />
+                      </button>
                     </div>
                     <TextField
                       label="Vigencia inicial"
@@ -2193,6 +2293,7 @@ export function PatientEditModal({
               description={modalSections[5].description}
               sectionId="documentos"
               title={modalSections[5].title}
+              icon={FileText}
             >
               <div className="md:col-span-2 space-y-4">
                 {formErrors.documents ? (
@@ -2245,14 +2346,38 @@ export function PatientEditModal({
                       }
                       value={document.issuedBy}
                     />
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                      <input
-                        checked={document.isPrimary}
-                        className="h-4 w-4"
-                        onChange={() => markPrimaryItem('documents', index)}
-                        type="checkbox"
-                      />
-                      <span className="text-sm">Marcar como principal</span>
+                    <div
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2 transition
+                        ${
+                          document.isPrimary
+                            ? 'border-emerald-300 bg-emerald-50'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            document.isPrimary ? 'bg-emerald-500' : 'bg-slate-300'
+                          }`}
+                        />
+                        <span className="text-sm font-medium text-slate-800">
+                          Documento principal
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => markPrimaryItem('documents', index)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition
+                          ${document.isPrimary ? 'bg-emerald-500' : 'bg-slate-300'}
+                        `}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition
+                            ${document.isPrimary ? 'translate-x-4' : 'translate-x-1'}
+                          `}
+                        />
+                      </button>
                     </div>
                     <TextField
                       label="Fecha de emision"
@@ -2306,18 +2431,22 @@ export function PatientEditModal({
                   Agregar documento
                 </Button>
 
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-5 transition hover:border-slate-400 hover:bg-slate-100/60">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-slate-900">
-                        Archivos adjuntos del paciente
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Sube PDF, imagenes u otros soportes administrativos al
-                        perfil del paciente.
-                      </p>
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-xl bg-slate-900/5 p-2 text-slate-700">
+                        <Upload className="h-4 w-4" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-900">
+                          Archivos adjuntos
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Sube documentos e imagenes del paciente
+                        </p>
+                      </div>
                     </div>
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800">
                       <Upload className="h-4 w-4" />
                       {uploadAttachmentsMutation.isPending
                         ? 'Subiendo...'
@@ -2346,29 +2475,29 @@ export function PatientEditModal({
                       patient.attachments.map((attachment) => (
                         <div
                           key={attachment.id}
-                          className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between"
+                          className="group flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-slate-300 hover:shadow-sm md:flex-row md:items-center md:justify-between"
                         >
                           <div className="flex items-start gap-3">
-                            <div className="rounded-full bg-slate-100 p-2 text-slate-600">
+                            <div className="rounded-lg bg-slate-100 p-2 text-slate-600">
                               <Paperclip className="h-4 w-4" />
                             </div>
-                            <div>
+                            <div className="space-y-1">
                               <p className="text-sm font-medium text-slate-900">
                                 {attachment.fileName}
                               </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {attachment.mimeType} ·{' '}
-                                {Math.max(
-                                  1,
-                                  Math.round(
-                                    Number(attachment.fileSizeBytes) / 1024,
-                                  ),
-                                )}{' '}
-                                KB ·{' '}
-                                {new Date(attachment.uploadedAt).toLocaleString(
-                                  'es-MX',
-                                )}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                                  {attachment.mimeType}
+                                </span>
+                                <span>
+                                  {Math.max(1, Math.round(Number(attachment.fileSizeBytes) / 1024))} KB
+                                </span>
+                                <span>
+                                  {new Date(attachment.uploadedAt).toLocaleString(
+                                    'es-MX',
+                                  )}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <Button
@@ -2378,16 +2507,22 @@ export function PatientEditModal({
                             }
                             type="button"
                             variant="outline"
+                            className="opacity-70 transition group-hover:opacity-100"
+                            size="sm"
                           >
                             <Trash2 className="h-4 w-4" />
-                            Quitar
                           </Button>
                         </div>
                       ))
                     ) : (
-                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-muted-foreground">
-                        Aun no hay archivos adjuntos cargados para este
-                        paciente.
+                      <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center">
+                        <Paperclip className="h-5 w-5 text-slate-400" />
+                        <p className="text-sm text-slate-600">
+                          No hay archivos adjuntos
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Sube documentos para mantener el perfil completo
+                        </p>
                       </div>
                     )}
                   </div>
@@ -2399,6 +2534,7 @@ export function PatientEditModal({
               description={modalSections[6].description}
               sectionId="clinico"
               title={modalSections[6].title}
+              icon={UserRound}
             >
               <SelectField
                 label="Tipo sanguineo"
@@ -2616,6 +2752,7 @@ export function PatientEditModal({
               description={modalSections[7].description}
               sectionId="demografico"
               title={modalSections[7].title}
+              icon={UserRound}
             >
               <TextField
                 label="Nombre preferido"
@@ -2720,26 +2857,28 @@ export function PatientEditModal({
           </div>
         </form>
 
-        <div className="border-t border-slate-200 bg-white px-6 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <span>
-                Se actualizan las secciones del perfil sin alterar el flujo de
-                alta. Responsable, coberturas, documentos y perfiles ampliados
-                quedan normalizados en tablas relacionadas para crecer sin
-                sobrecargar la tabla de pacientes.
+        <div className="sticky bottom-0 border-t border-slate-200 bg-white/95 backdrop-blur px-5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ShieldAlert className="h-4 w-4 text-amber-500" />
+              <span className="truncate">
+                Cambios en perfil clínico y administrativo
               </span>
             </div>
 
-            <div className="flex gap-2">
-              <Button onClick={onClose} type="button" variant="outline">
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={onClose}
+                type="button"
+                variant="ghost"
+                className="text-sm"
+              >
                 Cancelar
               </Button>
               <Button
                 disabled={updatePatientMutation.isPending || !isValid}
                 type="submit"
-                onClick={() => updatePatientMutation.mutate()}
+                className="text-sm"
               >
                 {updatePatientMutation.isPending ? (
                   <>
@@ -2749,7 +2888,7 @@ export function PatientEditModal({
                 ) : (
                   <>
                     <Save className="h-4 w-4" />
-                    Guardar cambios
+                    Guardar
                   </>
                 )}
               </Button>

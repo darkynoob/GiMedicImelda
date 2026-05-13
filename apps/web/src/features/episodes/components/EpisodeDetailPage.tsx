@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity,
+  FileCheck,
   ArrowLeft,
   CalendarDays,
   ClipboardList,
@@ -17,7 +17,20 @@ import {
   ShieldAlert,
   Stethoscope,
   Trash2,
-  UserRound,
+  FolderOpen,
+  ClipboardPen,
+  Pill,
+  FileSignature,
+  Siren,
+  Activity,
+  MessagesSquare,
+  BedDouble,
+  Scissors,
+  PanelRight,
+  History,
+  Info,
+  LayoutDashboard,
+  Paperclip
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../../../components/layout/AppLayout';
@@ -44,6 +57,7 @@ import {
   uploadEncounterAttachments,
 } from '../api/encounters.service';
 import {
+  admissionSourceLabels,
   encounterStatusConfig,
   encounterTypeConfig,
   getEncounterTabs,
@@ -53,7 +67,6 @@ import {
   buildDefaultFieldValue,
   getAmbulatoryProcedureDocumentTabDefinition,
   getConsultationDocumentTabDefinition,
-  getConsultationHistoryNoteTypeLabel,
   getEpisodeDocumentTypes,
   getHospitalDocumentTabDefinition,
   buildHistoryVersionPrefill,
@@ -100,6 +113,18 @@ type RecordFormState = {
   formData: Record<string, RecordFieldValue>;
 };
 
+function getHistoryTypeLabel(historyType: string | null | undefined) {
+  if (historyType === 'INICIAL') {
+    return 'Inicial';
+  }
+
+  if (historyType === 'SUBSECUENTE') {
+    return 'Subsecuente';
+  }
+
+  return 'Sin clasificar';
+}
+
 function getLatestHistoryRecord(records: EncounterDetailResponse['sectionRecords']) {
   return [...records].sort((left, right) => {
     const leftVersion = left.metadata.versionNumber ?? 0;
@@ -140,18 +165,7 @@ function isConsultationEvolutionTab(encounterType: string, tabTitle: string) {
 }
 
 function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) {
-  return (
-    encounterType === 'OUTPATIENT' &&
-    (tabTitle === 'Receta e indicaciones' || tabTitle === 'Receta / Indicaciones')
-  );
-}
-
-const consultationPrescriptionTabKey = 'Receta e indicaciones';
-const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
-const consultationPrescriptionRecordType = 'Receta e indicaciones';
-
-function buildConsultationPrescriptionTitle(versionNumber: number) {
-  return `Receta V${versionNumber}`;
+  return encounterType === 'OUTPATIENT' && tabTitle === 'Receta / Indicaciones';
 }
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
@@ -3379,66 +3393,6 @@ function buildPdfBlobUrl(contentBase64: string, mimeType: string) {
   return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
 }
 
-function readSummaryText(value: unknown) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function buildMedicationSummary(value: unknown) {
-  return readMedicationArray(value as RecordFieldValue)
-    .map((item) =>
-      [
-        readSummaryText(item.medicamento),
-        readSummaryText(item.dosis),
-        readSummaryText(item.frecuencia),
-        readSummaryText(item.duracion),
-        readSummaryText(item.indicaciones),
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    )
-    .filter(Boolean);
-}
-
-function buildConsultationClinicalSummary(detail: EncounterDetailResponse) {
-  const latestConsultationRecord = getLatestRecordByTab(
-    detail.sectionRecords,
-    'Consulta actual',
-  );
-  const latestPrescriptionRecord =
-    getLatestRecordByTab(detail.sectionRecords, 'Receta e indicaciones') ??
-    getLatestRecordByTab(detail.sectionRecords, 'Receta / Indicaciones');
-  const consultationFormData = latestConsultationRecord?.formData ?? {};
-  const prescriptionFormData = latestPrescriptionRecord?.formData ?? {};
-  const primaryDiagnosis = detail.diagnoses.find((diagnosis) => diagnosis.isPrimary);
-  const mainDiagnosis =
-    readSummaryText(consultationFormData.idDiagnosticoPrincipal) ||
-    primaryDiagnosis?.description ||
-    detail.diagnoses[0]?.description ||
-    '';
-  const mainDiagnosisCode =
-    readSummaryText(consultationFormData.idCie10) ||
-    primaryDiagnosis?.code ||
-    detail.diagnoses[0]?.code ||
-    '';
-  const activeProblems = detail.problems
-    .filter((problem) => problem.status !== 'RESUELTO' && problem.status !== 'INACTIVE')
-    .map((problem) => problem.description)
-    .filter(Boolean);
-  const treatmentItems = buildMedicationSummary(prescriptionFormData.recetaMedicamentos);
-
-  return {
-    reason:
-      readSummaryText(consultationFormData.motivoConsultaPrincipal) ||
-      readSummaryText(detail.reasonForVisit),
-    mainDiagnosis: [mainDiagnosis, mainDiagnosisCode].filter(Boolean).join(' · '),
-    activeProblems,
-    treatmentSummary:
-      treatmentItems.length > 0
-        ? treatmentItems.join('\n')
-        : readSummaryText(prescriptionFormData.recetaIndicacionesGenerales),
-  };
-}
-
 function calculateImcValue(
   weightValue: RecordFieldValue,
   heightValue: RecordFieldValue,
@@ -3509,11 +3463,11 @@ function normalizeStructuredSections(detail: EncounterDetailResponse) {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="space-y-1">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {label}
       </p>
-      <p className="mt-1 text-sm font-medium text-slate-900">{value}</p>
+      <p className="text-sm font-semibold leading-none text-slate-900">{value}</p>
     </div>
   );
 }
@@ -3532,21 +3486,6 @@ function ReadOnlyField({
         {value || 'Sin dato disponible'}
       </div>
     </div>
-  );
-}
-
-function isPrintableDocumentValue(value: string) {
-  const printableValue = value.trim();
-
-  return (
-    printableValue.length > 0 &&
-    ![
-      'N/A',
-      'Sin dato disponible',
-      'Sin cédula',
-      'Sin especialidad',
-    ].includes(printableValue) &&
-    !printableValue.startsWith('Se generará')
   );
 }
 
@@ -3668,21 +3607,31 @@ function buildEvolutionVersionPrefill(args: {
 }
 
 function SectionCard({
+  icon: Icon,
   title,
   description,
   children,
 }: {
+  icon: ComponentType<{ className?: string }>;
   title: string;
   description?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+
       <div className="mb-4">
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        {description ? (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-        ) : null}
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+            {description ? (
+              <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+            ) : null}
+          </div>
+        </div>
       </div>
       {children}
     </div>
@@ -3726,9 +3675,6 @@ export function EpisodeDetailPage() {
   }, [detailQuery.data]);
 
   const detail = detailQuery.data;
-  const consultationClinicalSummary = detail
-    ? buildConsultationClinicalSummary(detail)
-    : null;
   const tabs = useMemo(
     () => getEncounterTabs(detail?.encounterType ?? 'OUTPATIENT'),
     [detail?.encounterType],
@@ -4649,10 +4595,8 @@ export function EpisodeDetailPage() {
                   ? 'Enfermería'
                   : isHospitalDischargeTab(detail.encounterType, activeTab)
                     ? 'Egreso'
-                    : isConsultationPrescriptionTab(detail.encounterType, activeTab)
-                      ? consultationPrescriptionTabKey
-                      : isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
-                        ? 'Valoración preprocedimiento'
+                    : isAmbulatoryPreprocedureTab(detail.encounterType, activeTab)
+                      ? 'Valoración preprocedimiento'
                       : isAmbulatoryRecoveryEvaluationTab(
                             detail.encounterType,
                             activeTab,
@@ -4672,9 +4616,7 @@ export function EpisodeDetailPage() {
       (activeRecordTabKey === 'Recuperación / Evaluación' &&
         record.tabKey === 'Recuperación / Evolución') ||
       (activeRecordTabKey === 'Receta e indicaciones de egreso' &&
-        record.tabKey === 'Indicaciones / Receta') ||
-      (activeRecordTabKey === consultationPrescriptionTabKey &&
-        record.tabKey === legacyConsultationPrescriptionTabKey),
+        record.tabKey === 'Indicaciones / Receta'),
   );
   const isConsultationHistorySection = isConsultationHistoryTab(
     detail.encounterType,
@@ -4862,7 +4804,9 @@ export function EpisodeDetailPage() {
         })[0] ?? null
     : null;
   const nextHistoryVersionNumber =
-    detail.historyVersionContext.nextVersionNumber;
+    (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextHistoryType =
+    nextHistoryVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
   const nextConsultationVersionNumber =
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
@@ -5163,7 +5107,9 @@ export function EpisodeDetailPage() {
           rawFormData: mergeHistoryReadOnlyFields(
             buildHistoryVersionPrefill(
               activeTabDefinition,
-              detail.historyVersionContext.latestRecordFormData ?? undefined,
+              latestHistoryRecord?.formData,
+              nextHistoryType,
+              nextRecordedAt,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -5237,8 +5183,8 @@ export function EpisodeDetailPage() {
       setRecordForm(
         buildRecordFormState({
           tabDefinition: activeTabDefinition,
-          noteType: consultationPrescriptionRecordType,
-          title: buildConsultationPrescriptionTitle(nextPrescriptionVersionNumber),
+          noteType: 'Receta médica',
+          title: `Receta B${nextPrescriptionVersionNumber}`,
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: buildPrescriptionVersionPrefill({
@@ -6568,13 +6514,15 @@ export function EpisodeDetailPage() {
 
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
-  const historyNoteTypeLabel =
-    getConsultationHistoryNoteTypeLabel(historyVersionNumber);
+  const currentHistoryType =
+    (selectedRecord?.metadata.historyType as 'INICIAL' | 'SUBSECUENTE' | null) ??
+    nextHistoryType;
+  const historyTypeLabel = getHistoryTypeLabel(
+    currentHistoryType,
+  );
   const inheritedFromLabel =
-    isConsultationHistorySection &&
-    !selectedRecord &&
-    detail.historyVersionContext.latestRecordTitle
-      ? `Precargada desde ${detail.historyVersionContext.latestRecordTitle}`
+    isConsultationHistorySection && !selectedRecord && latestHistoryRecord
+      ? `Precargada desde ${latestHistoryRecord.title}`
       : selectedRecord?.metadata.inheritedFromRecordId
         ? `Heredada de una versión previa`
         : null;
@@ -6613,9 +6561,6 @@ export function EpisodeDetailPage() {
           metaQuery.data ?? null,
         )
       : null;
-  const isOutpatientConsultationDocument =
-    isConsultationDocumentsSection &&
-    detail.encounterType === 'OUTPATIENT';
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -6634,11 +6579,19 @@ export function EpisodeDetailPage() {
     uploadAttachmentsMutation.mutate(pendingFiles);
   };
 
+  const getInitials = (name?: string) =>
+                                      name
+                                        ?.split(' ')
+                                        .map(n => n[0])
+                                        .slice(0, 2)
+                                        .join('')
+                                        .toUpperCase()
+
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
         <button
-          className="flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+          className="mb-3 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           onClick={() => navigate('/episodios')}
           type="button"
         >
@@ -6646,15 +6599,17 @@ export function EpisodeDetailPage() {
           Volver a episodios
         </button>
 
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <UserRound className="h-6 w-6" />
+        <div className="clinical-card p-5">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-primary font-semibold">
+                  {getInitials(detail.patient?.fullName) || 'P'}
+                </div>
               </div>
-              <div className="space-y-3">
+              <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                  <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
                     {detail.patient.fullName}
                   </h1>
                   <div
@@ -6671,25 +6626,37 @@ export function EpisodeDetailPage() {
                   </Badge>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-                  <span className="font-mono text-xs text-primary">
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <span className="text-primary">
                     {detail.encounterNumber}
                   </span>
-                  <span>
+                  <span className="text-xs text-muted-foreground/70">
                     {detail.patient.sexAtBirth} ·{' '}
                     {detail.patient.ageLabel ?? 'Edad no disponible'}
                   </span>
-                  <span>{detail.patient.curp ?? 'Sin CURP'}</span>
-                  <span>Exp: {detail.medicalRecord.recordNumber}</span>
+                  <span className="text-xs text-muted-foreground/70">
+                    {detail.patient.curp ?? 'Sin CURP'}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Exp: {detail.medicalRecord.recordNumber}
+                  </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-                  <span>{detail.facility?.name ?? 'Sin sede'}</span>
-                  {detail.specialty?.name ? <span>{detail.specialty.name}</span> : null}
-                  <span>
+                <div className="mt-1 mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <span className="text-xs text-muted-foreground/70">
+                    {detail.facility?.name ?? 'Sin sede'}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
+                    {detail.serviceArea?.name ??
+                      detail.specialty?.name ??
+                      'Sin area clinica'}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
                     {detail.attendingClinician?.fullName ?? 'Sin responsable'}
                   </span>
-                  <span>{formatDateTime(detail.openedAt)}</span>
+                  <span className="text-xs text-muted-foreground/70">
+                    {formatDateTime(detail.openedAt)}
+                  </span>
                 </div>
 
                 {detail.patient.allergiesSummary.length > 0 ? (
@@ -6704,9 +6671,9 @@ export function EpisodeDetailPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-2">
               <Button
-                className="gap-2"
+                className="gap-1.5"
                 disabled={updateMutation.isPending || isEpisodeClosed}
                 onClick={saveChanges}
                 type="button"
@@ -6718,7 +6685,7 @@ export function EpisodeDetailPage() {
                   </>
                 ) : (
                   <>
-                    <Save className="h-4 w-4" />
+                    <Save className="h-3.5 w-3.5" />
                     Guardar cambios
                   </>
                 )}
@@ -6727,24 +6694,24 @@ export function EpisodeDetailPage() {
           </div>
 
           <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 md:grid-cols-4">
-            {detail.reasonForVisit ? (
-              <InfoRow label="Motivo" value={detail.reasonForVisit} />
-            ) : null}
+            <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
+            <InfoRow
+              label="Origen"
+              value={admissionSourceLabels[detail.admissionSource ?? ''] ?? 'Sin origen'}
+            />
             <InfoRow label="Actualizado" value={formatDateTime(detail.updatedAt)} />
-            {detail.closedAt ? (
-              <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
-            ) : null}
+            <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
           </div>
         </div>
 
-        <div className="sticky top-0 z-10 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
-          <div className="flex gap-2">
+        <div className="sticky top-[72px] z-20 overflow-x-auto rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2 overflow-x-auto px-3 py-2">
             {tabs.map((tab) => (
               <button
-                className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                className={`rounded-xl flex items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs font-medium transition ${
                   tab === activeTab
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -6756,17 +6723,14 @@ export function EpisodeDetailPage() {
           </div>
         </div>
 
-        <div
-          className={`grid gap-6 ${
-            activeTab === 'Resumen' ? '' : 'xl:grid-cols-[1.55fr_0.95fr]'
-          }`}
-        >
+        <div className="grid gap-6 xl:grid-cols-[1.55fr_0.95fr]">
           <div className="space-y-6">
             {activeTab === 'Resumen' ? (
               <>
                 <SectionCard
-                  description="Información operativa principal del episodio."
-                  title="Datos base del episodio"
+                  description="Consulta y edita la información principal del episodio clínico."
+                  title="Información general"
+                  icon={LayoutDashboard}
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
@@ -6782,6 +6746,26 @@ export function EpisodeDetailPage() {
                         {(metaQuery.data?.facilities ?? []).map((facility) => (
                           <option key={facility.id} value={facility.id}>
                             {facility.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2 text-sm">
+                      <span className="font-medium text-slate-900">
+                        Area de servicio
+                      </span>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        onChange={(event) =>
+                          updateFormField('serviceAreaId', event.target.value)
+                        }
+                        value={form.serviceAreaId}
+                      >
+                        <option value="">Sin area especifica</option>
+                        {availableServiceAreas.map((serviceArea) => (
+                          <option key={serviceArea.id} value={serviceArea.id}>
+                            {serviceArea.name}
                           </option>
                         ))}
                       </select>
@@ -6826,6 +6810,23 @@ export function EpisodeDetailPage() {
                     </label>
 
                     <label className="space-y-2 text-sm">
+                      <span className="font-medium text-slate-900">Tipo</span>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        onChange={(event) =>
+                          updateFormField('encounterType', event.target.value)
+                        }
+                        value={form.encounterType}
+                      >
+                        {(metaQuery.data?.encounterTypes ?? []).map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2 text-sm">
                       <span className="font-medium text-slate-900">Estado</span>
                       <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -6845,8 +6846,26 @@ export function EpisodeDetailPage() {
 
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
+                      <span className="font-medium text-slate-900">Origen</span>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        onChange={(event) =>
+                          updateFormField('admissionSource', event.target.value)
+                        }
+                        value={form.admissionSource}
+                      >
+                        <option value="">Sin origen</option>
+                        {(metaQuery.data?.admissionSources ?? []).map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2 text-sm">
                       <span className="font-medium text-slate-900">
-                        Fecha de apertura
+                        Apertura del episodio
                       </span>
                       <Input
                         onChange={(event) =>
@@ -6857,24 +6876,22 @@ export function EpisodeDetailPage() {
                       />
                     </label>
 
-                    {form.closedAt ? (
-                      <label className="space-y-2 text-sm">
-                        <span className="font-medium text-slate-900">
-                          Fecha de cierre
-                        </span>
-                        <Input
-                          onChange={(event) =>
-                            updateFormField('closedAt', event.target.value)
-                          }
-                          type="datetime-local"
-                          value={form.closedAt}
-                        />
-                      </label>
-                    ) : null}
+                    <label className="space-y-2 text-sm md:col-span-2">
+                      <span className="font-medium text-slate-900">
+                        Fecha de cierre
+                      </span>
+                      <Input
+                        onChange={(event) =>
+                          updateFormField('closedAt', event.target.value)
+                        }
+                        type="datetime-local"
+                        value={form.closedAt}
+                      />
+                    </label>
                   </div>
 
                   <label className="mt-4 block space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Motivo de atención</span>
+                    <span className="font-medium text-slate-900">Motivo de atencion</span>
                     <Textarea
                       onChange={(event) =>
                         updateFormField('reasonForVisit', event.target.value)
@@ -6883,91 +6900,109 @@ export function EpisodeDetailPage() {
                     />
                   </label>
 
+                  <label className="mt-4 block space-y-2 text-sm">
+                    <span className="font-medium text-slate-900">Notas</span>
+                    <Textarea
+                      onChange={(event) =>
+                        updateFormField('notes', event.target.value)
+                      }
+                      value={form.notes}
+                    />
+                  </label>
                 </SectionCard>
 
                 <SectionCard
-                  description="Datos consolidados desde Historia clínica, Consulta actual y Receta e indicaciones."
-                  title="Resumen clínico"
+                  description="Resumen clínico y operativo del episodio según el contexto actual."
+                  title="Vista general"
+                  icon={FolderOpen}
                 >
-                  {consultationClinicalSummary &&
-                  (consultationClinicalSummary.reason ||
-                    consultationClinicalSummary.mainDiagnosis ||
-                    consultationClinicalSummary.activeProblems.length > 0 ||
-                    consultationClinicalSummary.treatmentSummary) ? (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {consultationClinicalSummary.reason ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            Motivo de consulta
-                          </p>
-                          <p className="mt-2 whitespace-pre-line text-sm text-slate-900">
-                            {consultationClinicalSummary.reason}
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {consultationClinicalSummary.mainDiagnosis ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            Diagnóstico principal
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-900">
-                            {consultationClinicalSummary.mainDiagnosis}
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {consultationClinicalSummary.activeProblems.length > 0 ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            Problemas activos
-                          </p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {consultationClinicalSummary.activeProblems.map((problem) => (
-                              <Badge key={problem} variant="secondary">
-                                {problem}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {consultationClinicalSummary.treatmentSummary ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            Tratamiento actual
-                          </p>
-                          <p className="mt-2 whitespace-pre-line text-sm text-slate-900">
-                            {consultationClinicalSummary.treatmentSummary}
-                          </p>
-                        </div>
-                      ) : null}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Paciente
+                        </p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {detail.patient.fullName}
+                        </p>
+                        <p className="text-sm leading-relaxed text-slate-500">
+                          {detail.patient.phone ?? 'Sin teléfono'} ·{' '}
+                          {detail.patient.email ?? 'Sin correo'}
+                        </p>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Aún no hay datos clínicos capturados para este episodio.
-                    </p>
-                  )}
+                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Episodio
+                        </p>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {typeConfig?.label ?? detail.encounterType}
+                        </p>
+                        <p className="text-sm leading-relaxed text-slate-500">
+                          {detail.facility?.name ?? 'Sin sede'} ·{' '}
+                          {detail.serviceArea?.name ??
+                            detail.specialty?.name ??
+                            'Sin área'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </SectionCard>
 
                 <SectionCard
-                  description="Último registro disponible del episodio."
+                  description="Contadores e indicadores vinculados al episodio clínico."
+                  title="Actividad relacionada"
+                  icon={Activity}
+                >
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      ['Documentos', detail.metrics.documents],
+                      ['Diagnósticos', detail.metrics.diagnoses],
+                      ['Labs', detail.metrics.labs],
+                      ['Imágenes', detail.metrics.imaging],
+                    ].map(([label, value]) => (
+                      <div
+                        className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-5 py-4 transition-colors hover:border-slate-300 hover:bg-white shadow-sm"
+                        key={label}
+                      >
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {label}
+                          </p>
+
+                          <p className="text-2xl font-bold tracking-tight text-slate-900">
+                            {value}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  description="Información más reciente de monitoreo clínico del episodio."
                   title="Signos vitales"
+                  icon={HeartPulse}
                 >
                   {detail.latestVitalSigns.length > 0 ? (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {detail.latestVitalSigns.map((item) => (
                         <div
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
                           key={item.label}
                         >
                           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             {item.label}
                           </p>
-                          <p className="mt-2 text-xl font-semibold text-slate-900">
-                            {item.value}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{item.unit}</p>
+                          <div className="flex items-end gap-1.5">
+                            <p className="mt-2 text-xl font-semibold text-slate-900">
+                              {item.value}
+                            </p>
+                            <span className="pb-1 text-xs font-medium text-slate-500">
+                              {item.unit}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -6985,24 +7020,35 @@ export function EpisodeDetailPage() {
                 <SectionCard
                   description={activeTabDefinition.description}
                   title={activeTabDefinition.title}
+                  icon={activeTabDefinition.icon}
                 >
                   <div className="space-y-5">
                     {isEpisodeClosed ? (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        Este episodio ya está cerrado. Todo el contenido queda en modo
-                        consulta y no permite nuevas capturas, firmas ni adjuntos.
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+                        <div className="flex items-start gap-3">
+                          <div className="rounded-xl bg-amber-100 p-2">
+                            <ShieldAlert className="h-4 w-4 text-amber-600" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-amber-900">
+                              Episodio cerrado
+                            </p>
+                            <p className="text-sm leading-relaxed text-amber-700">
+                              El episodio permanece disponible solo en modo consulta y ya no permite
+                              nuevas capturas, firmas ni adjuntos.
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     ) : null}
-
-                    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
-                      <div>
+                    <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-5 md:flex-row md:items-center md:justify-between">
+                      <div className="space-y-1">
                         <p className="text-sm font-semibold text-slate-900">
                           {activeTabPanelConfig?.contextLabel ?? 'Registros de la sección'}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Antes de capturar se muestra el estado vacío; cuando ya
-                          existen registros puedes retomarlos o crear uno nuevo,
-                          como en Nexus.
+                        <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
+                          Crea nuevos registros o continúa capturas existentes dentro de esta
+                          sección clínica.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -7016,19 +7062,22 @@ export function EpisodeDetailPage() {
                             ]
                         ).map((noteType) => (
                           <Button
-                            className="gap-2"
+                            className="gap-2 shadow-sm"
                             disabled={isEpisodeClosed}
                             key={noteType}
                             onClick={() => startCreatingRecord(noteType)}
                             type="button"
                             variant={
-                              activeTabPanelConfig?.noteTypes?.length ? 'outline' : 'default'
+                              activeTabPanelConfig?.noteTypes?.length
+                                ? 'outline'
+                                : 'default'
                             }
                           >
                             <Plus className="h-4 w-4" />
                             {activeTabPanelConfig?.noteTypes?.length
                               ? noteType
-                              : activeTabPanelConfig?.defaultActionLabel ?? 'Nuevo registro'}
+                              : activeTabPanelConfig?.defaultActionLabel ??
+                                'Nuevo registro'}
                           </Button>
                         ))}
                       </div>
@@ -7044,13 +7093,13 @@ export function EpisodeDetailPage() {
 
                             return (
                               <button
-                                className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-primary/30 hover:bg-slate-50"
+                                className="group w-full rounded-2xl border border-slate-200/80 bg-white p-5 text-left transition-all hover:border-primary/30 hover:bg-slate-50/70 hover:shadow-sm"
                                 key={record.id}
                                 onClick={() => openExistingRecord(record.id)}
                                 type="button"
                               >
-                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                  <div className="min-w-0">
+                                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                  <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
                                       <p className="text-sm font-semibold text-slate-900">
                                         {record.title}
@@ -7062,17 +7111,19 @@ export function EpisodeDetailPage() {
                                         {recordStatusConfig.label}
                                       </Badge>
                                     </div>
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                      {record.authorName ?? 'Sin autor'} ·{' '}
-                                      {formatDateTime(record.recordedAt)} · última
-                                      actualización {formatDateTime(record.updatedAt)}
-                                    </p>
+                                    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                                      <span>{record.authorName ?? 'Sin autor'}</span>
+                                      <span className="text-slate-300">•</span>
+                                      <span>{formatDateTime(record.recordedAt)}</span>
+                                      <span className="text-slate-300">•</span>
+                                      <span>
+                                        Actualizado {formatDateTime(record.updatedAt)}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2 text-primary">
+                                  <div className="flex items-center gap-2 text-sm font-medium text-primary transition-transform group-hover:translate-x-0.5">
                                     <PencilLine className="h-4 w-4" />
-                                    <span className="text-xs font-medium">
-                                      Ver o continuar captura
-                                    </span>
+                                    <span>Continuar captura</span>
                                   </div>
                                 </div>
                               </button>
@@ -7080,31 +7131,35 @@ export function EpisodeDetailPage() {
                           })}
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-10 text-center">
-                          <FileText className="mx-auto h-8 w-8 text-slate-400" />
-                          <p className="mt-3 text-sm font-medium text-slate-900">
-                            Esta subsección todavía no tiene registros
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Usa el botón superior para crear la primera captura de{' '}
-                            {activeTab.toLowerCase()}.
-                          </p>
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-6 py-12 text-center">
+                          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                            <FileText className="h-7 w-7 text-slate-400" />
+                          </div>
+                          <div className="mt-4 space-y-1">
+                            <p className="text-sm font-semibold text-slate-900">
+                              Aún no hay registros disponibles
+                            </p>
+                            <p className="mx-auto max-w-sm text-sm leading-relaxed text-slate-500">
+                              Usa la acción superior para crear el primer registro de{' '}
+                              {activeTab.toLowerCase()}.
+                            </p>
+                          </div>
                         </div>
                       )
                     ) : recordForm ? (
                       <div className="space-y-5">
-                        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between">
-                          <div>
+                        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 md:flex-row md:items-center md:justify-between">
+                          <div className="space-y-1">
                             <p className="text-sm font-semibold text-slate-900">
                               {selectedRecord ? 'Editar registro' : 'Nuevo registro'}
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
                               {selectedRecord
-                                ? 'Puedes continuar la captura, ajustar campos y guardar la nueva versión operativa del registro.'
-                                : 'Se abrió la captura contextual de la subsección siguiendo el flujo esperado por tipo de episodio.'}
+                                ? 'Continúa la captura y actualiza la información clínica del registro.'
+                                : 'Completa la captura clínica correspondiente a esta sección del episodio.'}
                             </p>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <Button
                               onClick={closeRecordWorkspace}
                               type="button"
@@ -7113,7 +7168,7 @@ export function EpisodeDetailPage() {
                               Cancelar
                             </Button>
                             <Button
-                              className="gap-2"
+                              className="gap-2 shadow-sm"
                               disabled={
                                 createRecordMutation.isPending ||
                                 updateRecordMutation.isPending ||
@@ -7134,81 +7189,100 @@ export function EpisodeDetailPage() {
 
                         <div className="grid gap-4 md:grid-cols-2">
                           {isConsultationHistorySection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Historia clínica versión ${historyVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    El título y el tipo de nota se generan automáticamente
-                                    desde la versión del registro.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <FileCheck className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Historia clínica · versión ${historyVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    El registro conserva el versionado clínico del episodio y mantiene la
+                                    trazabilidad histórica de la atención.
                                   </p>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                    Tipo de nota
-                                  </span>
-                                  <Badge variant="secondary">{historyNoteTypeLabel}</Badge>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    {historyTypeLabel}
+                                  </Badge>
                                   {inheritedFromLabel ? (
-                                    <Badge variant="success">{inheritedFromLabel}</Badge>
+                                    <Badge variant="success">
+                                      {inheritedFromLabel}
+                                    </Badge>
                                   ) : null}
                                 </div>
                               </div>
                             </div>
                           ) : isConsultationCurrentSection ? (
-                            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Consulta versión ${consultationVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    La consulta actual registra el evento clínico del día y
-                                    mantiene su propio histórico por episodio.
-                                  </p>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">{consultationTypeLabel}</Badge>
-                                </div>
-                              </div>
-                            </div>
-                          ) : isConsultationEvolutionSection ? (
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {`Evolución V${evolutionVersionNumber}`}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Cada evolución documenta el seguimiento clínico del
-                                    episodio sin sobrescribir evoluciones previas.
-                                  </p>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">SOAP</Badge>
-                                </div>
-                              </div>
-                            </div>
-                          ) : isConsultationPrescriptionSection ? (
-                            <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildConsultationPrescriptionTitle(
-                                      prescriptionVersionNumber,
-                                    )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Cada receta es independiente, se guarda como borrador
-                                    y solo se bloquea cuando se firma con validación de
-                                    contraseña.
+                            <div className="rounded-2xl border border-sky-200/80 bg-sky-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-sky-100 p-2">
+                                      <Stethoscope className="h-4 w-4 text-sky-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Consulta · versión ${consultationVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-sky-800">
+                                    La consulta conserva el seguimiento clínico y el histórico operativo
+                                    asociado al episodio.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Badge variant="secondary">
-                                    {consultationPrescriptionRecordType}
+                                    {consultationTypeLabel}
                                   </Badge>
+                                </div>
+                              </div>
+                            </div>
+                          ) : isConsultationEvolutionSection ? (
+                            <div className="rounded-2xl border border-amber-200/80 bg-amber-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-amber-100 p-2">
+                                      <ClipboardPen className="h-4 w-4 text-amber-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Evolución · versión ${evolutionVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-amber-800">
+                                    Cada evolución conserva el seguimiento clínico del episodio y mantiene
+                                    el histórico progresivo de atención.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    SOAP
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
+                          ) : isConsultationPrescriptionSection ? (
+                            <div className="rounded-2xl border border-violet-200/80 bg-violet-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-violet-100 p-2">
+                                      <Pill className="h-4 w-4 text-violet-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {`Receta · versión ${prescriptionVersionNumber}`}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-violet-800">
+                                    La receta mantiene control independiente por versión y permanece en
+                                    edición hasta completar la firma clínica correspondiente.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
                                   <Badge variant="secondary">
                                     {typeof recordForm.formData.recetaFolio === 'string'
                                       ? recordForm.formData.recetaFolio
@@ -7225,23 +7299,30 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isConsultationDocumentsSection ? (
-                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildDocumentVersionTitle(
-                                      recordForm.noteType,
-                                      selectedRecord?.metadata.versionNumber ??
-                                        nextDocumentVersionNumber,
-                                    )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Cada documento se guarda como borrador, se firma con
-                                    contraseña y queda bloqueado después de firmarse.
+                            <div className="rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-cyan-100 p-2">
+                                      <FileSignature className="h-4 w-4 text-cyan-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {buildDocumentVersionTitle(
+                                        recordForm.noteType,
+                                        selectedRecord?.metadata.versionNumber ??
+                                          nextDocumentVersionNumber,
+                                      )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-cyan-800">
+                                    El documento conserva control por versión y permanece editable hasta
+                                    completar la firma clínica correspondiente.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  <Badge variant="secondary">{recordForm.noteType}</Badge>
+                                  <Badge variant="secondary">
+                                    {recordForm.noteType}
+                                  </Badge>
                                   <Badge
                                     variant={
                                       (encounterRecordStatusConfig[recordForm.status] ??
@@ -7256,26 +7337,31 @@ export function EpisodeDetailPage() {
                                   {detail.encounterType !== 'EMERGENCY' &&
                                   recordForm.noteType === 'Nota de cierre' ? (
                                     <Badge variant="warning">
-                                      Al firmarla se cerrará el episodio
+                                      El episodio se cerrará al firmar
                                     </Badge>
                                   ) : null}
                                 </div>
                               </div>
                             </div>
                           ) : isEmergencyTriageSection ? (
-                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildTriageTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildTriageTitle(nextTriageVersionNumber)}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    El título se calcula por episodio y este registro solo
-                                    pertenece al tab Triage de Urgencias.
+                            <div className="rounded-2xl border border-rose-200/80 bg-rose-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-rose-100 p-2">
+                                      <Siren className="h-4 w-4 text-rose-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildTriageTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildTriageTitle(nextTriageVersionNumber)}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-rose-800">
+                                    El triage conserva el seguimiento inicial de urgencias y mantiene su
+                                    registro independiente dentro del episodio clínico.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7295,21 +7381,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyInitialNoteSection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyInitialNoteTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyInitialNoteTitle(
-                                          nextEmergencyInitialNoteVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Nota médica inicial basada en el último Triage del
-                                    episodio, con snapshot editable de signos vitales.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <Stethoscope className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyInitialNoteTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyInitialNoteTitle(
+                                            nextEmergencyInitialNoteVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    Nota médica inicial vinculada al último triage del episodio y basada
+                                    en los signos vitales registrados durante la atención inicial.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7329,21 +7420,27 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyEvolutionSection ? (
-                            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyEvolutionTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyEvolutionTitle(
-                                          nextEmergencyEvolutionVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Seguimiento dinámico del mismo episodio con nueva toma
-                                    de signos vitales y diagnósticos longitudinales.
+                            <div className="rounded-2xl border border-orange-200/80 bg-orange-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-orange-100 p-2">
+                                      <Activity className="h-4 w-4 text-orange-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyEvolutionTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyEvolutionTitle(
+                                            nextEmergencyEvolutionVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-orange-800">
+                                    Evolución clínica del episodio con actualización de signos vitales,
+                                    valoración médica y seguimiento continuo durante la atención en
+                                    urgencias.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7365,21 +7462,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyOrdersSection ? (
-                            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyOrdersTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyOrdersTitle(
-                                          nextEmergencyOrdersVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Órdenes operativas del episodio con validaciones y
-                                    trazabilidad automática.
+                            <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-indigo-100 p-2">
+                                      <ClipboardList className="h-4 w-4 text-indigo-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyOrdersTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyOrdersTitle(
+                                            nextEmergencyOrdersVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-indigo-800">
+                                    Órdenes médicas e indicaciones clínicas asociadas al episodio, con
+                                    seguimiento y control operativo durante la atención.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7401,21 +7503,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyConsultationSection ? (
-                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildEmergencyConsultationTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildEmergencyConsultationTitle(
-                                          nextEmergencyConsultationVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Solicitud formal entre servicios con auditoría de
-                                    tiempos y respuesta trazable.
+                            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-teal-100 p-2">
+                                      <MessagesSquare className="h-4 w-4 text-teal-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyConsultationTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyConsultationTitle(
+                                            nextEmergencyConsultationVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-teal-800">
+                                    Solicitud de valoración entre servicios clínicos con seguimiento de
+                                    atención y continuidad asistencial del episodio.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7435,15 +7542,20 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isEmergencyDischargeSection ? (
-                            <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildEmergencyDischargeTitle()}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Documento final único del episodio. Al firmarlo se
-                                    cierra Urgencias y todo queda solo lectura.
+                            <div className="rounded-2xl border border-slate-300/80 bg-slate-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-slate-200 p-2">
+                                      <FileCheck className="h-4 w-4 text-slate-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {buildEmergencyDischargeTitle()}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
+                                    Documento final del episodio de urgencias. Una vez firmado, el episodio
+                                    quedará cerrado y disponible únicamente en modo consulta.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7463,21 +7575,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalAdmissionSection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalAdmissionTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalAdmissionTitle(
-                                          nextHospitalAdmissionVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Admisión clínica y administrativa del episodio de
-                                    Hospitalización. El título se calcula por episodio.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <BedDouble className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalAdmissionTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalAdmissionTitle(
+                                            nextHospitalAdmissionVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    Registro de ingreso clínico y administrativo asociado al episodio de
+                                    hospitalización y continuidad de atención intrahospitalaria.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7499,22 +7616,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalEvolutionSection ? (
-                            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalEvolutionTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalEvolutionTitle(
-                                          nextHospitalEvolutionVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Seguimiento SOAP independiente. Cada firma crea una
-                                    nueva toma de signos vitales y conserva diagnósticos
-                                    longitudinales.
+                            <div className="rounded-2xl border border-blue-200/80 bg-blue-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-blue-100 p-2">
+                                      <Activity className="h-4 w-4 text-blue-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalEvolutionTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalEvolutionTitle(
+                                            nextHospitalEvolutionVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-blue-800">
+                                    Evolución clínica intrahospitalaria con valoración médica continua,
+                                    actualización de signos vitales y seguimiento del estado del paciente.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7536,21 +7657,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalMedicalOrdersSection ? (
-                            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalMedicalOrdersTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalMedicalOrdersTitle(
-                                          nextHospitalMedicalOrdersVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Órdenes operativas para farmacia, laboratorio,
-                                    imagen, interconsultas y enfermería con trazabilidad.
+                            <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-indigo-100 p-2">
+                                      <ClipboardList className="h-4 w-4 text-indigo-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalMedicalOrdersTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalMedicalOrdersTitle(
+                                            nextHospitalMedicalOrdersVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-indigo-800">
+                                    Indicaciones médicas asociadas al episodio hospitalario para
+                                    medicamentos, laboratorio, imagen, enfermería e interconsultas.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7572,21 +7698,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalConsultationSection ? (
-                            <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalConsultationTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalConsultationTitle(
-                                          nextHospitalConsultationVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Ticket clínico formal con solicitud, respuesta,
-                                    estado, SLA y trazabilidad de tiempos.
+                            <div className="rounded-2xl border border-teal-200/80 bg-teal-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-teal-100 p-2">
+                                      <MessagesSquare className="h-4 w-4 text-teal-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalConsultationTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalConsultationTitle(
+                                            nextHospitalConsultationVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-teal-800">
+                                    Solicitud de valoración entre servicios hospitalarios con seguimiento
+                                    clínico, respuesta médica y continuidad asistencial del episodio.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7603,8 +7734,7 @@ export function EpisodeDetailPage() {
                                     }
                                   </Badge>
                                   <Badge variant="warning">
-                                    {typeof recordForm.formData.estatusInterconsultaHosp ===
-                                    'string'
+                                    {typeof recordForm.formData.estatusInterconsultaHosp === 'string'
                                       ? recordForm.formData.estatusInterconsultaHosp
                                       : 'BORRADOR'}
                                   </Badge>
@@ -7612,21 +7742,26 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalSurgicalSection ? (
-                            <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalSurgicalTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalSurgicalTitle(
-                                          nextHospitalSurgicalVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Subdocumento quirúrgico independiente con folio,
-                                    firma, PDF, hash y sello digital propios.
+                            <div className="rounded-2xl border border-cyan-200/80 bg-cyan-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-cyan-100 p-2">
+                                      <Scissors className="h-4 w-4 text-cyan-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalSurgicalTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalSurgicalTitle(
+                                            nextHospitalSurgicalVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-cyan-800">
+                                    Registro clínico de procedimientos y cirugía asociado al episodio
+                                    hospitalario, con control documental y validación de firma médica.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7651,21 +7786,27 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalNursingSection ? (
-                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {selectedRecord
-                                      ? buildHospitalNursingTitle(
-                                          selectedRecord.metadata.versionNumber ?? 1,
-                                        )
-                                      : buildHospitalNursingTitle(
-                                          nextHospitalNursingVersionNumber,
-                                        )}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Corte de enfermería por turno con signos, ministración,
-                                    balance, eventos y firma independiente.
+                            <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-emerald-100 p-2">
+                                      <HeartPulse className="h-4 w-4 text-emerald-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildHospitalNursingTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildHospitalNursingTitle(
+                                            nextHospitalNursingVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
+                                    Registro de enfermería por turno con seguimiento clínico, signos
+                                    vitales, administración de medicamentos, balance y eventos relevantes
+                                    de atención.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7686,15 +7827,20 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isHospitalDischargeSection ? (
-                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 md:col-span-2">
-                              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {buildHospitalDischargeTitle()}
-                                  </p>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    Documento único de cierre. Al firmarlo se cerrará
-                                    Hospitalización y el expediente quedará solo lectura.
+                            <div className="rounded-2xl border border-rose-200/80 bg-rose-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-rose-100 p-2">
+                                      <FileCheck className="h-4 w-4 text-rose-600" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {buildHospitalDischargeTitle()}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-rose-800">
+                                    Documento final de egreso hospitalario. Una vez firmado, el episodio
+                                    quedará cerrado y disponible únicamente en modo consulta.
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -7833,15 +7979,6 @@ export function EpisodeDetailPage() {
                                 </Badge>
                               </div>
                             </div>
-                          ) : isOutpatientConsultationDocument ? (
-                            <div className="space-y-2 text-sm">
-                              <span className="font-medium text-slate-900">
-                                Tipo de documento
-                              </span>
-                              <div className="flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm text-slate-700">
-                                {recordForm.noteType}
-                              </div>
-                            </div>
                           ) : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -7878,8 +8015,7 @@ export function EpisodeDetailPage() {
                                 {recordForm.noteType}
                               </div>
                             </div>
-                          ) : isConsultationDocumentsSection &&
-                            !isOutpatientConsultationDocument ? (
+                          ) : isConsultationDocumentsSection ? (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de documento</span>
                               <select
@@ -8053,9 +8189,7 @@ export function EpisodeDetailPage() {
                           </div>
                         ) : null}
 
-                        {isConsultationDocumentsSection &&
-                        currentDocumentLegalSnapshot &&
-                        !isOutpatientConsultationDocument ? (
+                        {isConsultationDocumentsSection && currentDocumentLegalSnapshot ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
                               <p className="text-sm font-semibold text-slate-900">
@@ -8287,11 +8421,11 @@ export function EpisodeDetailPage() {
                           .filter((section) => {
                             if (isConsultationHistorySection) {
                               if (section.historyVisibility === 'initial_only') {
-                                return historyVersionNumber === 1;
+                                return currentHistoryType === 'INICIAL';
                               }
 
                               if (section.historyVisibility === 'subsequent_only') {
-                                return historyVersionNumber > 1;
+                                return currentHistoryType === 'SUBSECUENTE';
                               }
                             }
 
@@ -8377,13 +8511,6 @@ export function EpisodeDetailPage() {
                                         : typeof recordForm.formData[field.key] === 'string'
                                           ? (recordForm.formData[field.key] as string)
                                           : '';
-
-                                    if (
-                                      isOutpatientConsultationDocument &&
-                                      !isPrintableDocumentValue(readonlyValue)
-                                    ) {
-                                      return null;
-                                    }
 
                                     return (
                                       <ReadOnlyField
@@ -8503,24 +8630,16 @@ export function EpisodeDetailPage() {
                                 }
 
                                 if (field.type === 'readonly') {
-                                  const readonlyValue =
-                                    typeof fieldValue === 'string' ||
-                                    typeof fieldValue === 'number'
-                                      ? String(fieldValue)
-                                      : '';
-
-                                  if (
-                                    isOutpatientConsultationDocument &&
-                                    !isPrintableDocumentValue(readonlyValue)
-                                  ) {
-                                    return null;
-                                  }
-
                                   return (
                                     <ReadOnlyField
                                       key={field.key}
                                       label={field.label}
-                                      value={readonlyValue}
+                                      value={
+                                        typeof fieldValue === 'string' ||
+                                        typeof fieldValue === 'number'
+                                          ? String(fieldValue)
+                                          : ''
+                                      }
                                     />
                                   );
                                 }
@@ -8747,7 +8866,7 @@ export function EpisodeDetailPage() {
                                                   type="button"
                                                   variant="outline"
                                                 >
-                                                  {field.itemRemoveLabel ?? 'Eliminar'}
+                                                  Eliminar
                                                 </Button>
                                               </div>
                                               <div className="grid gap-3 md:grid-cols-2">
@@ -8792,39 +8911,6 @@ export function EpisodeDetailPage() {
                                                             </option>
                                                           ))}
                                                         </select>
-                                                      </label>
-                                                    );
-                                                  }
-
-                                                  if (itemField.type === 'textarea') {
-                                                    return (
-                                                      <label
-                                                        className="space-y-2 text-sm md:col-span-2"
-                                                        key={`${field.key}-${itemIndex}-${itemField.key}`}
-                                                      >
-                                                        <span className="font-medium text-slate-900">
-                                                          {itemField.label}
-                                                        </span>
-                                                        <Textarea
-                                                          disabled={isRecordLocked}
-                                                          onChange={(event) => {
-                                                            const nextItems = [...items];
-                                                            nextItems[itemIndex] = {
-                                                              ...nextItems[itemIndex],
-                                                              [itemField.key]: event.target.value,
-                                                            };
-                                                            updateRecordFormDataField(
-                                                              field.key,
-                                                              nextItems,
-                                                            );
-                                                          }}
-                                                          placeholder={itemField.placeholder}
-                                                          value={
-                                                            typeof itemFieldValue === 'string'
-                                                              ? itemFieldValue
-                                                              : ''
-                                                          }
-                                                        />
                                                       </label>
                                                     );
                                                   }
@@ -8903,28 +8989,32 @@ export function EpisodeDetailPage() {
                       </div>
                     ) : null}
 
-                    {activeTab === 'Documentos' &&
-                    !isOutpatientConsultationDocument ? (
+                    {activeTab === 'Documentos' ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
                             <p className="text-sm font-semibold text-slate-900">
                               Archivos del episodio
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Esta sección ya soporta el flujo vacío, carga de archivos y
-                              listado persistente por episodio.
+                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                              Adjunta documentos, estudios y archivos relacionados con el episodio clínico.
                             </p>
                           </div>
                           <div className="flex flex-col gap-2 sm:flex-row">
-                            <Input
-                              disabled={isEpisodeClosed}
-                              multiple
-                              onChange={(event) =>
-                                setPendingFiles(Array.from(event.target.files ?? []))
-                              }
-                              type="file"
-                            />
+                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                              <Paperclip className="h-4 w-4" />
+                              Seleccionar archivos
+
+                              <input
+                                className="hidden"
+                                disabled={isEpisodeClosed}
+                                multiple
+                                onChange={(event) =>
+                                  setPendingFiles(Array.from(event.target.files ?? []))
+                                }
+                                type="file"
+                              />
+                            </label>
                             <Button
                               className="gap-2"
                               disabled={uploadAttachmentsMutation.isPending || isEpisodeClosed}
@@ -9012,37 +9102,62 @@ export function EpisodeDetailPage() {
             ) : null}
           </div>
 
-          {activeTab !== 'Resumen' ? (
           <div className="space-y-6">
             <SectionCard
-              description="Indicadores y contexto rapido para continuidad de atencion."
+              description="Resumen rápido e información clave para el seguimiento del episodio."
               title="Panel lateral"
+              icon={PanelRight}
             >
               <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <HeartPulse className="h-4 w-4 text-emerald-600" />
-                    <span className="text-sm font-medium text-slate-900">
-                      Alergias activas
-                    </span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:border-emerald-200 hover:bg-emerald-50/40">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-emerald-100 p-2">
+                      <HeartPulse className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        Alergias activas
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Registros clínicos asociados
+                      </p>
+                    </div>
                   </div>
-                  <Badge variant="alert">{detail.metrics.allergies}</Badge>
+                  <Badge variant="alert">
+                    {detail.metrics.allergies}
+                  </Badge>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4 text-violet-600" />
-                    <span className="text-sm font-medium text-slate-900">
-                      Problemas
-                    </span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:border-violet-200 hover:bg-violet-50/40">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-violet-100 p-2">
+                      <ClipboardList className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        Problemas
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Seguimiento y condiciones registradas
+                      </p>
+                    </div>
                   </div>
-                  <Badge variant="secondary">{detail.metrics.problems}</Badge>
+                  <Badge variant="secondary">
+                    {detail.metrics.problems}
+                  </Badge>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4 text-sky-600" />
-                    <span className="text-sm font-medium text-slate-900">
-                      Labs e imagen
-                    </span>
+                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/70 px-4 py-3 transition-colors hover:border-sky-200 hover:bg-sky-50/40">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-sky-100 p-2">
+                      <CalendarDays className="h-4 w-4 text-sky-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        Labs e imágenes
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Estudios asociados al episodio
+                      </p>
+                    </div>
                   </div>
                   <Badge variant="secondary">
                     {detail.metrics.labs + detail.metrics.imaging}
@@ -9052,36 +9167,42 @@ export function EpisodeDetailPage() {
             </SectionCard>
 
             <SectionCard
-              description="Secuencia reciente de actividad derivada del episodio y sus relaciones."
+              description="Actividad reciente relacionada con la atención y evolución del episodio."
               title="Timeline"
+              icon={History}
             >
-              <div className="space-y-4">
-                {detail.timeline.map((event) => {
+              <div className="space-y-5">
+                {detail.timeline.map((event, index) => {
                   const eventConfig = timelineKindConfig[event.kind];
                   const EventIcon = eventConfig.icon;
 
                   return (
-                    <div className="flex gap-3" key={event.id}>
-                      <div
-                        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${eventConfig.className}`}
-                      >
-                        <EventIcon className="h-4 w-4" />
+                    <div className="relative flex gap-4" key={event.id}>
+                      <div className="relative flex flex-col items-center">
+                        <div
+                          className={`z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border shadow-sm ${eventConfig.className}`}
+                        >
+                          <EventIcon className="h-4 w-4" />
+                        </div>
+                        {index !== detail.timeline.length - 1 && (
+                          <div className="mt-2 h-full w-px bg-slate-200" />
+                        )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1 pb-5">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold text-slate-900">
                             {event.label}
                           </p>
                           <span
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${eventConfig.className}`}
+                            className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${eventConfig.className}`}
                           >
                             {eventConfig.label}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
                           {event.detail}
                         </p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
+                        <p className="mt-2 text-[11px] font-medium text-slate-400">
                           {formatDateTime(event.timestamp)}
                         </p>
                       </div>
@@ -9092,8 +9213,9 @@ export function EpisodeDetailPage() {
             </SectionCard>
 
             <SectionCard
-              description="Datos utiles para validacion administrativa y clinica."
+              description="Información clave para validación administrativa y clínica."
               title="Contexto rapido"
+              icon={Info}
             >
               <div className="space-y-3">
                 <InfoRow
@@ -9108,20 +9230,25 @@ export function EpisodeDetailPage() {
                   label="Registro"
                   value={detail.medicalRecord.recordNumber}
                 />
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <div className="flex items-start gap-2">
-                    <ShieldAlert className="mt-0.5 h-4 w-4 text-amber-600" />
-                    <p className="text-sm text-amber-700">
-                      Este detalle edita el nucleo del episodio y muestra las
-                      relaciones clinicas existentes. La base ya soporta crecimiento
-                      hacia notas, ordenes y documentos sin rehacer el modelo.
-                    </p>
+                <div className="rounded-2xl border border-amber-200/70 bg-amber-50/70 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-amber-100 p-2">
+                      <ShieldAlert className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-amber-900">
+                        Contexto clínico del episodio
+                      </p>
+                      <p className="text-sm leading-relaxed text-amber-700">
+                        El episodio mantiene relaciones clínicas y administrativas vinculadas
+                        para asegurar continuidad y trazabilidad de atención.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
             </SectionCard>
           </div>
-          ) : null}
         </div>
 
         {isSigningRecord ? (

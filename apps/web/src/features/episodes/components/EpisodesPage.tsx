@@ -9,6 +9,7 @@ import {
   Stethoscope,
   TriangleAlert,
   Users,
+  Eye
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '../../../components/layout/AppLayout';
@@ -75,12 +76,16 @@ export function EpisodesPage() {
     enabled: Boolean(session),
   });
 
+  const [page, setPage] = useState(1);
+
   const encountersQuery = useQuery({
-    queryKey: ['encounters', search, encounterType, status, facilityId],
+    queryKey: [
+      'encounters', page, search, encounterType, status, facilityId,
+    ],
     queryFn: () =>
       fetchEncounters(session!.accessToken, {
-        page: 1,
-        pageSize: 25,
+        page,
+        pageSize: 15,
         search,
         encounterType,
         status,
@@ -154,17 +159,16 @@ export function EpisodesPage() {
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">
               Episodios
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
               Operacion de episodios clinicos
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Listado operativo, filtros y acceso rapido a consulta, urgencia,
-              hospitalizacion, procedimiento y seguimiento.
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Administra consultas, urgencias, hospitalizaciones, procedimientos y seguimientos desde un mismo flujo operativo.
             </p>
           </div>
           <Button
@@ -195,18 +199,18 @@ export function EpisodesPage() {
         </div>
 
         <div className="space-y-3">
-          <div className="flex flex-col gap-3 lg:flex-row">
-            <div className="relative max-w-lg flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="flex flex-col gap-3 xl:flex-row">
+            <div className="relative max-w-sm flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
-                className="h-9 pl-9"
+                className="h-11 rounded-2xl border-slate-200 bg-white pl-10 shadow-sm focus-visible:ring-primary/20"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Buscar por folio, paciente, CURP o motivo de atencion..."
                 value={search}
               />
             </div>
             <Button
-              className="gap-1.5 bg-white"
+              className="h-11 gap-2 rounded-2xl border-slate-200 bg-white px-4 shadow-sm hover:bg-slate-50"
               onClick={() => setShowFilters((currentValue) => !currentValue)}
               size="sm"
               type="button"
@@ -257,8 +261,33 @@ export function EpisodesPage() {
             </div>
           ) : null}
         </div>
+  
+        <div className="clinical-card rounded-2xl border border-slate-200">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <p className="text-sm text-muted-foreground">
+              Página {page}
+            </p>
 
-        <div className="clinical-card overflow-x-auto">
+            <div className="flex gap-2">
+              <Button
+                className="gap-2"
+                disabled={page === 1}
+                onClick={() => setPage((prev) => prev - 1)}
+                variant="outline"
+              >
+                Anterior
+              </Button>
+              <Button
+                className="gap-2"
+                disabled={
+                  (encountersQuery.data?.items.length ?? 0) < 15
+                }
+                onClick={() => setPage((prev) => prev + 1)}
+              >
+                Siguiente
+              </Button>
+            </div>
+          </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/30">
@@ -300,7 +329,7 @@ export function EpisodesPage() {
 
                   return (
                     <tr
-                      className="cursor-pointer transition-colors hover:bg-muted/20"
+                    className="cursor-pointer transition-colors hover:bg-muted/20 transition-all hover:shadow-sm hover:translate-x-[2px]"
                       key={encounter.id}
                       onClick={() =>
                         navigate(`/episodios/${encounter.encounterNumber}`)
@@ -308,10 +337,10 @@ export function EpisodesPage() {
                     >
                       <td className="p-3">
                         <div>
-                          <p className="font-mono text-xs font-semibold text-primary">
+                          <p className="font-medium text-slate-900">
                             {encounter.encounterNumber}
                           </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {admissionSourceLabels[encounter.admissionSource ?? ''] ??
                               'Sin origen'}
                           </p>
@@ -319,7 +348,7 @@ export function EpisodesPage() {
                       </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2.5">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
                             <Users className="h-4 w-4 text-primary" />
                           </div>
                           <div>
@@ -346,7 +375,7 @@ export function EpisodesPage() {
                       </td>
                       <td className="hidden p-3 lg:table-cell">
                         <div>
-                          <p className="text-sm font-medium text-slate-900">
+                          <p className="font-medium text-slate-900">
                             {encounter.facility?.name ?? 'Sin sede'}
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -358,7 +387,7 @@ export function EpisodesPage() {
                       </td>
                       <td className="hidden p-3 xl:table-cell">
                         <div>
-                          <p className="text-sm font-medium text-slate-900">
+                          <p className="font-medium text-slate-900">
                             {encounter.attendingClinician?.fullName ??
                               'Sin asignar'}
                           </p>
@@ -397,7 +426,17 @@ export function EpisodesPage() {
                         )}
                       </td>
                       <td className="p-3">
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={(e) =>{
+
+                            e.stopPropagation()
+                          navigate(`/episodios/${encounter.encounterNumber}`)
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                       </td>
                     </tr>
                   );

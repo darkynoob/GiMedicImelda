@@ -15,8 +15,7 @@ import {
   Phone,
   Pill,
   Activity,
-  Eye,
-  Users,
+  Eye
 } from 'lucide-react';
 import { AppLayout } from '../../../components/layout/AppLayout';
 import { Badge } from '../../../components/ui/badge';
@@ -78,175 +77,173 @@ export function PatientDetailPage() {
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
-        <div>
-          <button
-            className="mb-3 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            onClick={() => navigate('/pacientes')}
-            type="button"
-          >
-            <ArrowLeft className="h-4 w-4" /> Volver a pacientes
-          </button>
+        <button
+          className="mb-3 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          onClick={() => navigate('/pacientes')}
+          type="button"
+        >
+          <ArrowLeft className="h-4 w-4" /> Volver a pacientes
+        </button>
 
-          <div className="clinical-card p-5">
-            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
-              <div className="flex items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50 border border-blue-100">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary font-semibold">
-                      {getInitials(patient?.fullName) || 'P'}
-                    </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-                      {patient?.fullName ?? 'Paciente'}
-                    </h1>
-                    <Badge
-                      variant={
-                        (patient?.patientStatus ?? 'Activo') === 'Activo'
-                          ? 'success'
-                          : 'secondary'
-                      }
-                    >
-                      {patient?.patientStatus ?? 'Activo'}
-                    </Badge>
+        <div className="clinical-card p-5">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-primary font-semibold">
+                    {getInitials(patient?.fullName) || 'P'}
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                    <span>
-                      {SEX_LABELS[patient?.sexAtBirth ?? ''] ?? 'No especificado'} · {' '}
-                      {age !== null ? `${age} años` : 'Edad no disponible'}
-                    </span>
-                    <span className="text-xs text-muted-foreground/70">
-                      Sangre: {patient?.bloodType ?? 'Sin dato'}
-                    </span>
-                    <span className="text-xs text-muted-foreground/70">
-                      Tipo: {patient?.patientType ?? 'Sin dato'}
-                    </span>
-                    <span className="text-xs text-muted-foreground/70">
-                      CURP: {patient?.curp ?? 'No disponible'}
-                    </span>
-                  </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+                    {patient?.fullName ?? 'Paciente'}
+                  </h1>
+                  <Badge
+                    variant={
+                      (patient?.patientStatus ?? 'Activo') === 'Activo'
+                        ? 'success'
+                        : 'secondary'
+                    }
+                  >
+                    {patient?.patientStatus ?? 'Activo'}
+                  </Badge>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span
-                  className="cursor-pointer text-xs text-muted-foreground"
-                  onClick={() => navigator.clipboard.writeText(patient?.id ?? '')}
-                  title="Copiar ID completo"
-                >
-                  ID: {patient?.id?.slice(0, 8)}
-                </span>
-                <span>•</span>
-                <span>
-                  Actualizado:{' '}
-                  {patient?.updatedAt
-                    ? formatDateTime(patient.updatedAt)
-                    : 'Sin dato'}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  className="gap-1.5"
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" /> Ver expediente
-                </Button>
-                <Button
-                  className="gap-1.5"
-                  onClick={() => setIsEditModalOpen(true)}
-                  size="sm"
-                  type="button"
-                >
-                  <Edit className="h-3.5 w-3.5" /> Editar
-                </Button>
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                  <span>
+                    {SEX_LABELS[patient?.sexAtBirth ?? ''] ?? 'No especificado'} · {' '}
+                    {age !== null ? `${age} años` : 'Edad no disponible'}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Sangre: {patient?.bloodType ?? 'Sin dato'}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Tipo: {patient?.patientType ?? 'Sin dato'}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
+                    CURP: {patient?.curp ?? 'No disponible'}
+                  </span>
+                </div>
               </div>
             </div>
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span
+                className="cursor-pointer text-xs text-muted-foreground"
+                onClick={() => navigator.clipboard.writeText(patient?.id ?? '')}
+                title="Copiar ID completo"
+              >
+                ID: {patient?.id?.slice(0, 8)}
+              </span>
+              <span>•</span>
+              <span>
+                Actualizado:{' '}
+                {patient?.updatedAt
+                  ? formatDateTime(patient.updatedAt)
+                  : 'Sin dato'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                className="gap-1.5"
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <FolderOpen className="h-3.5 w-3.5" /> Ver expediente
+              </Button>
+              <Button
+                className="gap-1.5"
+                onClick={() => setIsEditModalOpen(true)}
+                size="sm"
+                type="button"
+              >
+                <Edit className="h-3.5 w-3.5" /> Editar
+              </Button>
+            </div>
+          </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-gray-100 pt-4 sm:grid-cols-3">
-              <div className="flex items-center gap-2 text-sm">
-                <Phone className="h-4 w-4 text-muted-foreground/80" />
-                <div>
-                  <p className="text-xs">Teléfono: {patient?.phone ?? 'No registrado'}</p>
-                  {patient?.alternatePhone && (
-                    <p className="text-xs text-muted-foreground">
-                      Alterno: {patient.alternatePhone}
-                    </p>
-                  )}
-                </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 border-t border-gray-100 pt-4 sm:grid-cols-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Phone className="h-4 w-4 text-muted-foreground/80" />
+              <div>
+                <p className="text-xs">Teléfono: {patient?.phone ?? 'No registrado'}</p>
+                {patient?.alternatePhone && (
+                  <p className="text-xs text-muted-foreground">
+                    Alterno: {patient.alternatePhone}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                <Mail className="h-4 w-4 text-muted-foreground/80" />
-                <span>{patient?.email ?? 'Sin correo'}</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                <MapPin className="h-4 w-4 text-muted-foreground/80" />
-                <span className="truncate">
-                  {[
-                    [patient?.street, patient?.exteriorNumber]
-                      .filter(Boolean)
-                      .join(' '),
-                    patient?.interiorNumber
-                      ? `Int. ${patient.interiorNumber}`
-                      : null,
-                    patient?.neighborhood,
-                    patient?.municipality,
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <Mail className="h-4 w-4 text-muted-foreground/80" />
+              <span>{patient?.email ?? 'Sin correo'}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <MapPin className="h-4 w-4 text-muted-foreground/80" />
+              <span className="truncate">
+                {[
+                  [patient?.street, patient?.exteriorNumber]
+                    .filter(Boolean)
+                    .join(' '),
+                  patient?.interiorNumber
+                    ? `Int. ${patient.interiorNumber}`
+                    : null,
+                  patient?.neighborhood,
+                  patient?.municipality,
+                  patient?.city,
+                  patient?.state,
+                ]
+                  .filter(Boolean)
+                  .join(', ') ||
+                  [
+                    patient?.addressLine1,
+                    patient?.addressLine2,
                     patient?.city,
                     patient?.state,
                   ]
                     .filter(Boolean)
                     .join(', ') ||
-                    [
-                      patient?.addressLine1,
-                      patient?.addressLine2,
-                      patient?.city,
-                      patient?.state,
-                    ]
-                      .filter(Boolean)
-                      .join(', ') ||
-                    'Sin direccion'}
-                </span>
+                  'Sin direccion'}
+              </span>
+            </div>
+          </div>
+
+          {patient?.hasKnownAllergies === true ? (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500 bg-red-50 p-4">
+              <AlertTriangle className="mt-0.5 h-4 w-4 text-red-600" />
+              <div>
+                <p className="text-sm font-semibold text-red-700">
+                  Alergias conocidas
+                </p>
+                <p className="mt-1 text-sm text-red-700/80">
+                  {patient.allergiesNotes ?? 'Sin detalle capturado'}
+                </p>
               </div>
             </div>
-
-            {patient?.hasKnownAllergies === true ? (
-              <div className="mt-4 flex items-start gap-3 rounded-xl border border-red-500 bg-red-50 p-4">
-                <AlertTriangle className="mt-0.5 h-4 w-4 text-red-600" />
-                <div>
-                  <p className="text-sm font-semibold text-red-700">
-                    Alergias conocidas
-                  </p>
-                  <p className="mt-1 text-sm text-red-700/80">
-                    {patient.allergiesNotes ?? 'Sin detalle capturado'}
-                  </p>
-                </div>
+          ) : patient?.hasKnownAllergies === false ? (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <CheckCircle className="mt-0.5 h-4 w-4 text-emerald-600" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-700">
+                  Sin alergias conocidas
+                </p>
+                <p className="mt-1 text-sm text-emerald-700/80">
+                  El paciente no reporta alergias.
+                </p>
               </div>
-            ) : patient?.hasKnownAllergies === false ? (
-              <div className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <CheckCircle className="mt-0.5 h-4 w-4 text-emerald-600" />
-                <div>
-                  <p className="text-sm font-semibold text-emerald-700">
-                    Sin alergias conocidas
-                  </p>
-                  <p className="mt-1 text-sm text-emerald-700/80">
-                    El paciente no reporta alergias.
-                  </p>
-                </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-700">
+                  Alergias no registradas
+                </p>
+                <p className="mt-1 text-sm text-amber-700/80">
+                  No hay informacion sobre alergias del paciente.
+                </p>
               </div>
-            ) : (
-              <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-700">
-                    Alergias no registradas
-                  </p>
-                  <p className="mt-1 text-sm text-amber-700/80">
-                    No hay informacion sobre alergias del paciente.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -409,13 +406,13 @@ export function PatientDetailPage() {
                 </div>
 
                 <Button size="sm" variant="ghost">
-                  + Subir
+                  + Crear
                 </Button>
               </div>
               <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
                 <p>No hay documentos disponibles</p>
                 <Button size="sm" variant="outline">
-                  Subir documento
+                  Crear documento
                 </Button>
               </div>
               <div className="px-4 py-6 text-sm text-muted-foreground px-4 py-2 text-sm gap-2">
