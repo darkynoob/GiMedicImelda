@@ -6551,10 +6551,9 @@ export function EpisodeDetailPage() {
           metaQuery.data ?? null,
         )
       : null;
-  const isConsultationLaboratoryRequestDocument =
+  const isOutpatientConsultationDocument =
     isConsultationDocumentsSection &&
-    detail.encounterType === 'OUTPATIENT' &&
-    recordForm?.noteType === 'Solicitud de laboratorio';
+    detail.encounterType === 'OUTPATIENT';
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -7829,7 +7828,7 @@ export function EpisodeDetailPage() {
                                 </Badge>
                               </div>
                             </div>
-                          ) : isConsultationLaboratoryRequestDocument ? (
+                          ) : isOutpatientConsultationDocument ? (
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">
                                 Tipo de documento
@@ -7875,7 +7874,7 @@ export function EpisodeDetailPage() {
                               </div>
                             </div>
                           ) : isConsultationDocumentsSection &&
-                            !isConsultationLaboratoryRequestDocument ? (
+                            !isOutpatientConsultationDocument ? (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de documento</span>
                               <select
@@ -8051,7 +8050,7 @@ export function EpisodeDetailPage() {
 
                         {isConsultationDocumentsSection &&
                         currentDocumentLegalSnapshot &&
-                        !isConsultationLaboratoryRequestDocument ? (
+                        !isOutpatientConsultationDocument ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
                               <p className="text-sm font-semibold text-slate-900">
@@ -8375,7 +8374,7 @@ export function EpisodeDetailPage() {
                                           : '';
 
                                     if (
-                                      isConsultationLaboratoryRequestDocument &&
+                                      isOutpatientConsultationDocument &&
                                       !isPrintableDocumentValue(readonlyValue)
                                     ) {
                                       return null;
@@ -8506,7 +8505,7 @@ export function EpisodeDetailPage() {
                                       : '';
 
                                   if (
-                                    isConsultationLaboratoryRequestDocument &&
+                                    isOutpatientConsultationDocument &&
                                     !isPrintableDocumentValue(readonlyValue)
                                   ) {
                                     return null;
@@ -8900,7 +8899,7 @@ export function EpisodeDetailPage() {
                     ) : null}
 
                     {activeTab === 'Documentos' &&
-                    !isConsultationLaboratoryRequestDocument ? (
+                    !isOutpatientConsultationDocument ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>

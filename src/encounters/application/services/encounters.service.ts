@@ -14167,12 +14167,9 @@ export class EncountersService {
     verificationCode: string;
     downloadCount: number;
   }) {
-    if (
-      input.encounter.encounterType === EncounterType.OUTPATIENT &&
-      input.noteType === 'Solicitud de laboratorio'
-    ) {
+    if (input.encounter.encounterType === EncounterType.OUTPATIENT) {
       return this.renderSimplePdf(
-        this.buildConsultationLaboratoryRequestPdfLines(input),
+        this.buildConsultationDocumentPdfLines(input),
       );
     }
 
@@ -14332,7 +14329,7 @@ export class EncountersService {
     return this.renderSimplePdf(lines);
   }
 
-  private buildConsultationLaboratoryRequestPdfLines(input: {
+  private buildConsultationDocumentPdfLines(input: {
     encounter: TenantEncounterRecord;
     noteType: string;
     recordTitle: string;
@@ -14373,15 +14370,114 @@ export class EncountersService {
           line('Especialidad', professionalSpecialty),
           line('Cédula profesional', professionalLicense),
         );
+    const diagnosisLines = this.readDiagnosesArrayFromUnknown(
+      input.formData.documentoDiagnosticos,
+    )
+      .map((item, index) =>
+        lines(
+          line('Diagnóstico', item.diagnostico),
+          line('CIE-10', item.cie10),
+          line('Estado', item.estado),
+        ).length
+          ? `${index + 1}. ${lines(
+              line('Diagnóstico', item.diagnostico),
+              line('CIE-10', item.cie10),
+              line('Estado', item.estado),
+            )
+              .map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''))
+              .join(' · ')}`
+          : null,
+      )
+      .filter((item): item is string => Boolean(item));
+    const consentWitnessLines = this.readObjectArray(
+      input.formData.documentoTestigosConsentimiento,
+    )
+      .map((item, index) => {
+        const witnessParts = lines(
+          line('Nombre', item.nombre),
+          line('Firma', item.firma),
+        ).map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''));
 
-    const clinicalLines = lines(
-      line('Motivo de solicitud', input.formData.documentoMotivoSolicitud),
-      line('Estudios solicitados', input.formData.documentoEstudiosSolicitados),
-      line('Diagnóstico asociado', input.formData.documentoDiagnosticoPrincipal),
-      line('CIE-10', input.formData.documentoDiagnosticoCie10),
-      line('Observaciones', input.formData.documentoObservaciones),
-      line('Prioridad', input.formData.documentoPrioridad),
-    );
+        return witnessParts.length
+          ? `${index + 1}. ${witnessParts.join(' · ')}`
+          : null;
+      })
+      .filter((item): item is string => Boolean(item));
+    const restRange = lines(
+      line('Inicio', input.formData.documentoReposoInicio),
+      line('Fin', input.formData.documentoReposoFin),
+    )
+      .map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''))
+      .join(' al ');
+    const clinicalLinesByDocument: Record<string, string[]> = {
+      'Solicitud de laboratorio': lines(
+        line('Motivo de solicitud', input.formData.documentoMotivoSolicitud),
+        line('Estudios solicitados', input.formData.documentoEstudiosSolicitados),
+        line('Diagnóstico asociado', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Observaciones', input.formData.documentoObservaciones),
+        line('Prioridad', input.formData.documentoPrioridad),
+      ),
+      'Solicitud de imagenología': lines(
+        line('Motivo de estudio', input.formData.documentoMotivoSolicitud),
+        line(
+          'Estudio solicitado',
+          value(input.formData.documentoEstudioImagen) ||
+            value(input.formData.documentoEstudiosSolicitados),
+        ),
+        line('Región anatómica', input.formData.documentoRegionAnatomica),
+        line('Diagnóstico presuntivo', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Indicaciones especiales', input.formData.documentoIndicacionesEspeciales),
+        line('Prioridad', input.formData.documentoPrioridad),
+      ),
+      'Referencia / contrarreferencia': lines(
+        line('Tipo', input.formData.documentoTipoReferencia),
+        line('Unidad destino', input.formData.documentoUnidadDestino),
+        line('Motivo de envío', input.formData.documentoMotivoEnvio),
+        line('Resumen clínico', input.formData.documentoResumenClinico),
+        ...(diagnosisLines.length ? ['Diagnósticos:', ...diagnosisLines] : []),
+        line('Tratamiento actual', input.formData.documentoTratamientoActual),
+        line('Estudios realizados', input.formData.documentoEstudiosRealizados),
+        line('Recomendaciones', input.formData.documentoRecomendaciones),
+      ),
+      'Consentimiento informado': lines(
+        line('Tipo de procedimiento', input.formData.documentoProcedimientoTipo),
+        line(
+          'Descripción del procedimiento',
+          input.formData.documentoProcedimientoDescripcion,
+        ),
+        line('Riesgos', input.formData.documentoRiesgos),
+        line('Beneficios', input.formData.documentoBeneficios),
+        line('Alternativas', input.formData.documentoAlternativas),
+        line(
+          'Pronóstico sin tratamiento',
+          input.formData.documentoPronosticoSinTratamiento,
+        ),
+        line('Nombre paciente / tutor', input.formData.documentoNombreTutor),
+        line('Relación', input.formData.documentoRelacionTutor),
+        line('Firma paciente / tutor', input.formData.documentoFirmaPaciente),
+        ...(consentWitnessLines.length ? ['Testigos:', ...consentWitnessLines] : []),
+      ),
+      'Certificado / constancia': lines(
+        line('Tipo', input.formData.documentoTipoCertificado),
+        line('Uso del documento', input.formData.documentoUsoDocumento),
+        line('Motivo', input.formData.documentoMotivo),
+        line('Diagnóstico', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Reposo', restRange),
+        line('Observaciones', input.formData.documentoObservaciones),
+      ),
+      'Nota de cierre': lines(
+        line('Motivo de cierre', input.formData.documentoMotivoCierre),
+        line('Resumen clínico final', input.formData.documentoResumenClinicoFinal),
+        ...(diagnosisLines.length ? ['Diagnósticos finales:', ...diagnosisLines] : []),
+        line('Estado final', input.formData.documentoEstadoFinal),
+        line('Indicaciones al egreso', input.formData.documentoIndicacionesEgreso),
+        line('Plan de seguimiento', input.formData.documentoPlanSeguimiento),
+      ),
+    };
+    const clinicalLines = clinicalLinesByDocument[input.noteType] ?? [];
     const legalLines = lines(
       'Datos legales y firma',
       line('Tipo de documento', input.noteType),
@@ -14414,7 +14510,7 @@ export class EncountersService {
       ...headerLines,
       line('Paciente', input.encounter.patient.fullName),
       line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
-      'Solicitud de laboratorio',
+      input.noteType,
       ...clinicalLines,
       ...legalLines,
       ...footerLines,
