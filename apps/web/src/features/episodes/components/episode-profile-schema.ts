@@ -505,6 +505,9 @@ const consultationConsentComprehensionOptions: EpisodeFieldOption[] = [
   },
 ];
 
+const consultationPrescriptionPatientComprehensionOptions =
+  consultationConsentComprehensionOptions;
+
 export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
   OUTPATIENT: [
     {
@@ -1306,7 +1309,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               label: 'Comprensión del paciente',
               type: 'select',
               inheritanceMode: 'fresh_capture',
-              options: comprehensionOptions,
+              options: consultationPrescriptionPatientComprehensionOptions,
             },
             {
               key: 'recetaMaterialEducativo',

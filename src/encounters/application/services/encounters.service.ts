@@ -43,6 +43,9 @@ const consultationConsentComprehensionValues = [
   'Requiere apoyo o acompañante',
 ] as const;
 
+const consultationPrescriptionPatientComprehensionValues =
+  consultationConsentComprehensionValues;
+
 const consultationPrescriptionRecordType = 'Receta e indicaciones';
 const consultationPrescriptionTabKey = 'Receta e indicaciones';
 const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
@@ -5956,6 +5959,10 @@ export class EncountersService {
         randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
       const prescriptionTitle =
         this.buildConsultationPrescriptionTitle(versionNumber);
+      const patientComprehension =
+        this.normalizeConsultationPrescriptionPatientComprehension(
+          input.input.formData.recetaComprensionPaciente,
+        );
 
       return {
         tabKey: consultationPrescriptionTabKey,
@@ -5967,6 +5974,7 @@ export class EncountersService {
             : EncounterRecordStatus.DRAFT,
         formData: {
           ...input.input.formData,
+          recetaComprensionPaciente: patientComprehension,
           recetaFolio: prescriptionFolio,
           recetaCodigoVerificacion: verificationCode,
           recetaDiagnosticoPrincipal:
@@ -12519,6 +12527,26 @@ export class EncountersService {
 
     throw new BadRequestException(
       'La comprensión del consentimiento informado no es válida',
+    );
+  }
+
+  private normalizeConsultationPrescriptionPatientComprehension(value: unknown) {
+    const comprehensionValue = this.readStringValue(value).trim();
+
+    if (!comprehensionValue) {
+      return '';
+    }
+
+    if (
+      consultationPrescriptionPatientComprehensionValues.includes(
+        comprehensionValue as (typeof consultationPrescriptionPatientComprehensionValues)[number],
+      )
+    ) {
+      return comprehensionValue;
+    }
+
+    throw new BadRequestException(
+      'La comprensión del paciente en receta no es válida',
     );
   }
 

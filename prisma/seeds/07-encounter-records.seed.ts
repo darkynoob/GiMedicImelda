@@ -559,7 +559,7 @@ export async function seedEncounterRecords({ prisma, ctx }: SeedDeps) {
             'Se explica al paciente el uso de la receta y el motivo de vigilancia estrecha.',
           recetaIndicacionesNoFarmacologicas:
             'Continuar autoexploración mamaria y acudir con estudios realizados.',
-          recetaComprensionPaciente: 'COMPLETA',
+          recetaComprensionPaciente: 'Comprende y acepta',
           recetaMaterialEducativo: ['Autoexploración mamaria'],
           recetaSeguimientoFecha: '2026-01-22',
           recetaSeguimientoTipo: 'CONSULTA',
