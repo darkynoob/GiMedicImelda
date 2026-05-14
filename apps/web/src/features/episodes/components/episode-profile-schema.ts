@@ -44,6 +44,7 @@ export type EpisodeFieldDefinition = {
   itemRemoveLabel?: string;
   disableItemRemoval?: boolean;
   actionLabel?: string;
+  required?: boolean;
 };
 
 export type EpisodeSectionDefinition = {
@@ -395,6 +396,34 @@ const normalAlteredOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'NORMAL', label: 'Normal' },
   { value: 'ALTERADO', label: 'Alterado' },
+];
+
+const emergencyTriageAirwayOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PERMEABLE', label: 'Permeable' },
+  { value: 'COMPROMETIDA', label: 'Comprometida' },
+  { value: 'INTUBADA', label: 'Intubada' },
+];
+
+const emergencyTriageHemodynamicOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESTABLE', label: 'Estable' },
+  { value: 'INESTABLE', label: 'Inestable' },
+  { value: 'CHOQUE', label: 'Choque' },
+];
+
+const emergencyTriageNeurologicalOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ALERTA', label: 'Alerta' },
+  { value: 'RESPONDE_VOZ', label: 'Responde a voz' },
+  { value: 'RESPONDE_DOLOR', label: 'Responde a dolor' },
+  { value: 'INCONSCIENTE', label: 'Inconsciente' },
+];
+
+export const emergencyTriageClinicalQuickStateFields: EpisodeFieldDefinition[] = [
+  { key: 'viaAerea', label: 'Vía aérea', type: 'select', options: emergencyTriageAirwayOptions, required: true },
+  { key: 'estadoHemodinamico', label: 'Estado hemodinámico', type: 'select', options: emergencyTriageHemodynamicOptions, required: true },
+  { key: 'estadoNeurologico', label: 'Estado neurológico', type: 'select', options: emergencyTriageNeurologicalOptions, required: true },
 ];
 
 const currentUseOptions: EpisodeFieldOption[] = [
@@ -1581,11 +1610,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         {
           key: 'triage_estado_rapido',
           title: 'Estado clínico rápido',
-          fields: [
-            { key: 'viaAerea', label: 'Vía aérea', type: 'select', options: normalAlteredOptions },
-            { key: 'estadoHemodinamico', label: 'Estado hemodinámico', type: 'select', options: clinicalStateOptions },
-            { key: 'estadoNeurologico', label: 'Estado neurológico', type: 'select', options: normalAlteredOptions },
-          ],
+          fields: emergencyTriageClinicalQuickStateFields,
         },
         {
           key: 'triage_glasgow',

@@ -65,6 +65,7 @@ import {
 } from './episode-helpers';
 import {
   buildDefaultFieldValue,
+  emergencyTriageClinicalQuickStateFields,
   getAmbulatoryProcedureDocumentTabDefinition,
   getConsultationDocumentTabDefinition,
   getEpisodeDocumentTypes,
@@ -114,6 +115,22 @@ type RecordFormState = {
   recordedAt: string;
   formData: Record<string, RecordFieldValue>;
 };
+
+const emergencyTriageClinicalQuickStateFieldKeys =
+  emergencyTriageClinicalQuickStateFields.map((field) => field.key);
+const emergencyTriageClinicalQuickStateFieldLabels =
+  Object.fromEntries(
+    emergencyTriageClinicalQuickStateFields.map((field) => [field.key, field.label]),
+  );
+const emergencyTriageClinicalQuickStateAllowedValues =
+  Object.fromEntries(
+    emergencyTriageClinicalQuickStateFields.map((field) => [
+      field.key,
+      (field.options ?? [])
+        .map((option) => option.value)
+        .filter((value) => value.length > 0),
+    ]),
+  );
 
 function getHistoryTypeLabel(historyType: string | null | undefined) {
   if (historyType === 'INICIAL') {
@@ -6221,6 +6238,41 @@ export function EpisodeDetailPage() {
 
     setFeedback(null);
 
+    if (isEmergencyTriageSection) {
+      const missingClinicalQuickStateFields =
+        emergencyTriageClinicalQuickStateFieldKeys.filter((fieldKey) => {
+          const value = recordForm.formData[fieldKey];
+          return typeof value !== 'string' || value.trim().length === 0;
+        });
+
+      if (missingClinicalQuickStateFields.length > 0) {
+        setFeedback(
+          `Completa Estado clínico rápido: ${missingClinicalQuickStateFields
+            .map((fieldKey) => emergencyTriageClinicalQuickStateFieldLabels[fieldKey])
+            .join(', ')}.`,
+        );
+        return;
+      }
+
+      const invalidClinicalQuickStateFields =
+        emergencyTriageClinicalQuickStateFieldKeys.filter((fieldKey) => {
+          const value = recordForm.formData[fieldKey];
+          return (
+            typeof value !== 'string' ||
+            !emergencyTriageClinicalQuickStateAllowedValues[fieldKey].includes(value)
+          );
+        });
+
+      if (invalidClinicalQuickStateFields.length > 0) {
+        setFeedback(
+          `Actualiza Estado clínico rápido: ${invalidClinicalQuickStateFields
+            .map((fieldKey) => emergencyTriageClinicalQuickStateFieldLabels[fieldKey])
+            .join(', ')}.`,
+        );
+        return;
+      }
+    }
+
     const payload = {
       tabKey: activeRecordTabKey,
       noteType: recordForm.noteType.trim(),
@@ -8694,6 +8746,9 @@ export function EpisodeDetailPage() {
                                     <label className="space-y-2 text-sm" key={field.key}>
                                       <span className="font-medium text-slate-900">
                                         {field.label}
+                                        {field.required ? (
+                                          <span className="ml-1 text-red-600">*</span>
+                                        ) : null}
                                       </span>
                                       <select
                                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -8704,6 +8759,7 @@ export function EpisodeDetailPage() {
                                             event.target.value,
                                           )
                                         }
+                                        required={field.required}
                                         value={typeof fieldValue === 'string' ? fieldValue : ''}
                                       >
                                         {(field.options ?? []).map((option) => (

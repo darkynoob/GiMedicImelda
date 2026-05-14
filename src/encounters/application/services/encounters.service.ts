@@ -68,6 +68,23 @@ const triageClinicalDiscriminatorFields = [
   { key: 'discOtro', label: 'Otro' },
 ] as const;
 const triageOtherClinicalDiscriminatorFieldKey = 'discOtroEspecificacion';
+const emergencyTriageClinicalQuickStateFields = [
+  {
+    key: 'viaAerea',
+    label: 'Vía aérea',
+    allowedValues: ['PERMEABLE', 'COMPROMETIDA', 'INTUBADA'],
+  },
+  {
+    key: 'estadoHemodinamico',
+    label: 'Estado hemodinámico',
+    allowedValues: ['ESTABLE', 'INESTABLE', 'CHOQUE'],
+  },
+  {
+    key: 'estadoNeurologico',
+    label: 'Estado neurológico',
+    allowedValues: ['ALERTA', 'RESPONDE_VOZ', 'RESPONDE_DOLOR', 'INCONSCIENTE'],
+  },
+] as const;
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8085,6 +8102,7 @@ export class EncountersService {
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       triageLegalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
     };
+    this.assertEmergencyTriageClinicalQuickState(baseFormData);
     const tiempoObjetivoAtencion = this.calculateTriageTargetTime(
       baseFormData.nivelPrioridadTriage,
     );
@@ -8122,6 +8140,33 @@ export class EncountersService {
 
   private hasSelectedTriageClinicalDiscriminator(formData: Record<string, unknown>) {
     return triageClinicalDiscriminatorFields.some(({ key }) => formData[key] === true);
+  }
+
+  private assertEmergencyTriageClinicalQuickState(formData: Record<string, unknown>) {
+    const missingFields = emergencyTriageClinicalQuickStateFields
+      .filter(({ key }) => !this.hasCapturedValue(formData[key]))
+      .map(({ label }) => label);
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `Completa Estado clínico rápido: ${missingFields.join(', ')}.`,
+      );
+    }
+
+    const invalidFields = emergencyTriageClinicalQuickStateFields
+      .filter(({ key, allowedValues }) => {
+        const value = this.readStringValue(formData[key]);
+        return !allowedValues.some((allowedValue) => allowedValue === value);
+      })
+      .map(({ label }) => label);
+
+    if (invalidFields.length > 0) {
+      throw new BadRequestException(
+        `Estado clínico rápido contiene valores no permitidos: ${invalidFields.join(
+          ', ',
+        )}.`,
+      );
+    }
   }
 
   private calculateAdmissionAssessmentTime(openedAt: Date, recordedAt: Date) {
@@ -15538,6 +15583,9 @@ export class EncountersService {
           'fr',
           'temp',
           'spo2',
+          'viaAerea',
+          'estadoHemodinamico',
+          'estadoNeurologico',
           'destinoInicial',
         ]
       : [];
@@ -15887,6 +15935,10 @@ export class EncountersService {
 
     if (this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyOrdersReadyForSignature(formData);
+    }
+
+    if (this.isEmergencyTriageRecord(input.encounterType, input.tabKey)) {
+      this.assertEmergencyTriageClinicalQuickState(formData);
     }
   }
 
