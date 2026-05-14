@@ -105,6 +105,27 @@ const triageCategoryOptions: EpisodeFieldOption[] = [
   { value: 'OTRO', label: 'Otro' },
 ];
 
+export const triageClinicalDiscriminatorFields = [
+  { key: 'discDolorToracico', label: 'Dolor torácico' },
+  { key: 'discDisneaSevera', label: 'Disnea severa' },
+  { key: 'discEstadoMentalAlterado', label: 'Estado mental alterado' },
+  { key: 'discSangradoActivo', label: 'Sangrado activo' },
+  { key: 'discFiebreMayor385', label: 'Fiebre mayor a 38.5 °C' },
+  {
+    key: 'discHipotensionSistolicaMenor90',
+    label: 'Hipotensión sistólica menor a 90 mmHg',
+  },
+  { key: 'discConvulsiones', label: 'Convulsiones' },
+  { key: 'discDeficitNeurologicoFocal', label: 'Déficit neurológico focal' },
+  { key: 'discDolorAbdominalSevero', label: 'Dolor abdominal severo' },
+  { key: 'discSepsis', label: 'Sospecha de sepsis' },
+  { key: 'discTraumaMayor', label: 'Trauma mayor' },
+  { key: 'discOtro', label: 'Otro' },
+] as const;
+
+export const triageOtherClinicalDiscriminatorFieldKey =
+  'discOtroEspecificacion';
+
 const triageArrivalModeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'AMBULANCIA', label: 'Ambulancia' },
@@ -1529,12 +1550,15 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'triage_discriminadores',
           title: 'Discriminadores clínicos',
           fields: [
-            { key: 'discDolorToracico', label: 'Dolor torácico', type: 'checkbox' },
-            { key: 'discDisneaSevera', label: 'Disnea severa', type: 'checkbox' },
-            { key: 'discSangradoActivo', label: 'Sangrado activo', type: 'checkbox' },
-            { key: 'discAlteracionConciencia', label: 'Alteración de conciencia', type: 'checkbox' },
-            { key: 'discSepsis', label: 'Sospecha de sepsis', type: 'checkbox' },
-            { key: 'discTraumaMayor', label: 'Trauma mayor', type: 'checkbox' },
+            ...triageClinicalDiscriminatorFields.map((field) => ({
+              ...field,
+              type: 'checkbox' as const,
+            })),
+            {
+              key: triageOtherClinicalDiscriminatorFieldKey,
+              label: 'Especificar otro discriminador clínico',
+              type: 'textarea',
+            },
             { key: 'banderaRojaAutomatica', label: 'Bandera roja automática', type: 'readonly' },
           ],
         },

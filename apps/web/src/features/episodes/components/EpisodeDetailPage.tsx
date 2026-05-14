@@ -72,6 +72,8 @@ import {
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  triageClinicalDiscriminatorFields,
+  triageOtherClinicalDiscriminatorFieldKey,
   type EpisodeFieldDefinition,
   isConsultationHistoryTab,
   type EpisodeTabDefinition,
@@ -189,8 +191,15 @@ function mergeEmergencyTriageSystemFields(
   detail: EncounterDetailResponse,
 ) {
   const cleanFormData = { ...formData };
+  if (cleanFormData.discAlteracionConciencia === true) {
+    cleanFormData.discEstadoMentalAlterado = true;
+  }
+  if (cleanFormData.discOtro !== true) {
+    cleanFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
+  }
   delete cleanFormData.tipoRegistro;
   delete cleanFormData.tipoTriage;
+  delete cleanFormData.discAlteracionConciencia;
 
   return {
     ...cleanFormData,
@@ -1049,18 +1058,14 @@ function calculateNews2(formData: Record<string, RecordFieldValue>) {
 
 function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) {
   const alerts: string[] = [];
-  const discriminators = [
-    ['discDolorToracico', 'Dolor torácico'],
-    ['discDisneaSevera', 'Disnea severa'],
-    ['discSangradoActivo', 'Sangrado activo'],
-    ['discAlteracionConciencia', 'Alteración del estado de conciencia'],
-    ['discSepsis', 'Sospecha de sepsis'],
-    ['discTraumaMayor', 'Trauma mayor'],
-  ] as const;
-
-  discriminators.forEach(([key, label]) => {
+  triageClinicalDiscriminatorFields.forEach(({ key, label }) => {
     if (formData[key] === true) {
-      alerts.push(label);
+      const otherDetail =
+        key === 'discOtro' &&
+        typeof formData[triageOtherClinicalDiscriminatorFieldKey] === 'string'
+          ? formData[triageOtherClinicalDiscriminatorFieldKey].trim()
+          : '';
+      alerts.push(otherDetail ? `${label}: ${otherDetail}` : label);
     }
   });
 
@@ -1079,6 +1084,12 @@ function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) 
   if (news2Total !== null && news2Total >= 5) alerts.push('NEWS2 alto');
 
   return [...new Set(alerts)].join('\n');
+}
+
+function hasSelectedTriageClinicalDiscriminator(
+  formData: Record<string, RecordFieldValue>,
+) {
+  return triageClinicalDiscriminatorFields.some(({ key }) => formData[key] === true);
 }
 
 function getLatestRecordByTab(
@@ -4052,7 +4063,11 @@ export function EpisodeDetailPage() {
       news2Total: calculateNews2(recordForm.formData),
     };
     nextFormData.alertasAutomaticas = buildTriageAutomaticAlerts(nextFormData);
-    nextFormData.banderaRojaAutomatica = nextFormData.alertasAutomaticas ? 'SI' : 'NO';
+    nextFormData.banderaRojaAutomatica = hasSelectedTriageClinicalDiscriminator(
+      nextFormData,
+    )
+      ? 'Sí'
+      : 'No';
 
     const hasChanges = Object.entries(nextFormData).some(
       ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
@@ -6152,6 +6167,13 @@ export function EpisodeDetailPage() {
               ...currentValue.formData,
               [fieldKey]: value,
             };
+            if (
+              isEmergencyTriageSection &&
+              fieldKey === 'discOtro' &&
+              value !== true
+            ) {
+              nextFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
+            }
             if (
               isHospitalNursingSection &&
               (fieldKey === 'ingresosMlEnfHosp' ||
@@ -8631,6 +8653,13 @@ export function EpisodeDetailPage() {
                                   );
                                 }
 
+                                if (
+                                  field.key === triageOtherClinicalDiscriminatorFieldKey &&
+                                  recordForm.formData.discOtro !== true
+                                ) {
+                                  return null;
+                                }
+
                                 if (field.type === 'textarea') {
                                   return (
                                     <label
@@ -8649,6 +8678,11 @@ export function EpisodeDetailPage() {
                                           )
                                         }
                                         placeholder={field.placeholder}
+                                        required={
+                                          field.key ===
+                                            triageOtherClinicalDiscriminatorFieldKey &&
+                                          recordForm.formData.discOtro === true
+                                        }
                                         value={typeof fieldValue === 'string' ? fieldValue : ''}
                                       />
                                     </label>

@@ -50,6 +50,24 @@ const consultationPrescriptionRecordType = 'Receta e indicaciones';
 const consultationPrescriptionTabKey = 'Receta e indicaciones';
 const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
 const emergencyInitialTriageType = 'Triaje inicial';
+const triageClinicalDiscriminatorFields = [
+  { key: 'discDolorToracico', label: 'Dolor torácico' },
+  { key: 'discDisneaSevera', label: 'Disnea severa' },
+  { key: 'discEstadoMentalAlterado', label: 'Estado mental alterado' },
+  { key: 'discSangradoActivo', label: 'Sangrado activo' },
+  { key: 'discFiebreMayor385', label: 'Fiebre mayor a 38.5 °C' },
+  {
+    key: 'discHipotensionSistolicaMenor90',
+    label: 'Hipotensión sistólica menor a 90 mmHg',
+  },
+  { key: 'discConvulsiones', label: 'Convulsiones' },
+  { key: 'discDeficitNeurologicoFocal', label: 'Déficit neurológico focal' },
+  { key: 'discDolorAbdominalSevero', label: 'Dolor abdominal severo' },
+  { key: 'discSepsis', label: 'Sospecha de sepsis' },
+  { key: 'discTraumaMayor', label: 'Trauma mayor' },
+  { key: 'discOtro', label: 'Otro' },
+] as const;
+const triageOtherClinicalDiscriminatorFieldKey = 'discOtroEspecificacion';
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8042,6 +8060,23 @@ export class EncountersService {
     const cleanIncomingFormData = { ...input.incomingFormData };
     delete cleanIncomingFormData.tipoRegistro;
     delete cleanIncomingFormData.tipoTriage;
+    if (cleanIncomingFormData.discAlteracionConciencia === true) {
+      cleanIncomingFormData.discEstadoMentalAlterado = true;
+    }
+    delete cleanIncomingFormData.discAlteracionConciencia;
+    if (cleanIncomingFormData.discOtro !== true) {
+      cleanIncomingFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
+    }
+    if (
+      cleanIncomingFormData.discOtro === true &&
+      this.readStringValue(
+        cleanIncomingFormData[triageOtherClinicalDiscriminatorFieldKey],
+      ).trim().length === 0
+    ) {
+      throw new BadRequestException(
+        'Especifica el otro discriminador clínico seleccionado',
+      );
+    }
 
     const baseFormData: Record<string, unknown> = {
       ...cleanIncomingFormData,
@@ -8076,9 +8111,17 @@ export class EncountersService {
       tiempoEspera,
       glasgowTotal: glasgowTotal === null ? '' : String(glasgowTotal),
       news2Total: news2Total === null ? '' : String(news2Total),
-      banderaRojaAutomatica: alertasAutomaticas.length > 0 ? 'SI' : 'NO',
+      banderaRojaAutomatica: this.hasSelectedTriageClinicalDiscriminator(
+        baseFormData,
+      )
+        ? 'Sí'
+        : 'No',
       alertasAutomaticas: alertasAutomaticas.join('\n'),
     };
+  }
+
+  private hasSelectedTriageClinicalDiscriminator(formData: Record<string, unknown>) {
+    return triageClinicalDiscriminatorFields.some(({ key }) => formData[key] === true);
   }
 
   private calculateAdmissionAssessmentTime(openedAt: Date, recordedAt: Date) {
@@ -12456,18 +12499,15 @@ export class EncountersService {
     news2Total: number | null;
   }) {
     const alerts: string[] = [];
-    const discriminators = [
-      ['discDolorToracico', 'Dolor torácico'],
-      ['discDisneaSevera', 'Disnea severa'],
-      ['discSangradoActivo', 'Sangrado activo'],
-      ['discAlteracionConciencia', 'Alteración del estado de conciencia'],
-      ['discSepsis', 'Sospecha de sepsis'],
-      ['discTraumaMayor', 'Trauma mayor'],
-    ] as const;
-
-    for (const [key, label] of discriminators) {
+    for (const { key, label } of triageClinicalDiscriminatorFields) {
       if (input.formData[key] === true) {
-        alerts.push(label);
+        const otherDetail =
+          key === 'discOtro'
+            ? this.readStringValue(
+                input.formData[triageOtherClinicalDiscriminatorFieldKey],
+              ).trim()
+            : '';
+        alerts.push(otherDetail ? `${label}: ${otherDetail}` : label);
       }
     }
 
