@@ -182,6 +182,27 @@ function isEmergencyTriageTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Triage';
 }
 
+const emergencyInitialTriageType = 'Triaje inicial';
+
+function mergeEmergencyTriageSystemFields(
+  formData: Record<string, RecordFieldValue>,
+  detail: EncounterDetailResponse,
+) {
+  const cleanFormData = { ...formData };
+  delete cleanFormData.tipoRegistro;
+  delete cleanFormData.tipoTriage;
+
+  return {
+    ...cleanFormData,
+    tipoTriaje: emergencyInitialTriageType,
+    responsableTriage:
+      detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    triageLegalMedico:
+      detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    triageLegalCedula: detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+  };
+}
+
 function isEmergencyInitialNoteTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Nota inicial';
 }
@@ -4019,9 +4040,7 @@ export function EpisodeDetailPage() {
     }
 
     const nextFormData: Record<string, RecordFieldValue> = {
-      ...recordForm.formData,
-      tipoTriage: 'Triage',
-      tipoRegistro: 'Triage',
+      ...mergeEmergencyTriageSystemFields(recordForm.formData, detail),
       tiempoObjetivoAtencion: calculateTriageTargetTime(
         recordForm.formData.nivelPrioridadTriage,
       ),
@@ -4031,12 +4050,6 @@ export function EpisodeDetailPage() {
       ),
       glasgowTotal: calculateGlasgowTotal(recordForm.formData),
       news2Total: calculateNews2(recordForm.formData),
-      responsableTriage:
-        detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-      triageLegalMedico:
-        detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-      triageLegalCedula:
-        detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     };
     nextFormData.alertasAutomaticas = buildTriageAutomaticAlerts(nextFormData);
     nextFormData.banderaRojaAutomatica = nextFormData.alertasAutomaticas ? 'SI' : 'NO';
@@ -5108,8 +5121,6 @@ export function EpisodeDetailPage() {
             buildHistoryVersionPrefill(
               activeTabDefinition,
               latestHistoryRecord?.formData,
-              nextHistoryType,
-              nextRecordedAt,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -5251,8 +5262,7 @@ export function EpisodeDetailPage() {
           recordedAt: nextRecordedAt,
           rawFormData: {
             ...buildInitialStructuredSections(detail.encounterType)['Triage'],
-            tipoTriage: 'Triage',
-            tipoRegistro: 'Triage',
+            tipoTriaje: emergencyInitialTriageType,
             fechaLlegada: nextRecordedAt,
             horaLlegada: nextRecordedAt,
             horaTriage: nextRecordedAt,
@@ -5730,20 +5740,10 @@ export function EpisodeDetailPage() {
                       },
                     )
                   : isEmergencyTriageSection
-                    ? {
-                        ...(record.formData as Record<string, RecordFieldValue>),
-                        tipoTriage: 'Triage',
-                        tipoRegistro: 'Triage',
-                        responsableTriage:
-                          detail.attendingClinician?.fullName ??
-                          'Sin profesional responsable',
-                        triageLegalMedico:
-                          detail.attendingClinician?.fullName ??
-                          'Sin profesional responsable',
-                        triageLegalCedula:
-                          detail.attendingClinician?.professionalLicense ??
-                          'Sin cédula',
-                      }
+                    ? mergeEmergencyTriageSystemFields(
+                        record.formData as Record<string, RecordFieldValue>,
+                        detail,
+                      )
                     : isEmergencyInitialNoteSection
                       ? {
                           ...(record.formData as Record<string, RecordFieldValue>),
@@ -6233,19 +6233,7 @@ export function EpisodeDetailPage() {
                     },
                   )
                 : isEmergencyTriageSection
-                  ? {
-                      ...recordForm.formData,
-                      tipoTriage: 'Triage',
-                      tipoRegistro: 'Triage',
-                      responsableTriage:
-                        detail.attendingClinician?.fullName ??
-                        'Sin profesional responsable',
-                      triageLegalMedico:
-                        detail.attendingClinician?.fullName ??
-                        'Sin profesional responsable',
-                      triageLegalCedula:
-                        detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
-                    }
+                  ? mergeEmergencyTriageSystemFields(recordForm.formData, detail)
                   : isEmergencyInitialNoteSection
                     ? {
                         ...recordForm.formData,
@@ -6515,8 +6503,7 @@ export function EpisodeDetailPage() {
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
   const currentHistoryType =
-    (selectedRecord?.metadata.historyType as 'INICIAL' | 'SUBSECUENTE' | null) ??
-    nextHistoryType;
+    historyVersionNumber === 1 ? 'INICIAL' : nextHistoryType;
   const historyTypeLabel = getHistoryTypeLabel(
     currentHistoryType,
   );

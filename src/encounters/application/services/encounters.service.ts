@@ -49,6 +49,7 @@ const consultationPrescriptionPatientComprehensionValues =
 const consultationPrescriptionRecordType = 'Receta e indicaciones';
 const consultationPrescriptionTabKey = 'Receta e indicaciones';
 const legacyConsultationPrescriptionTabKey = 'Receta / Indicaciones';
+const emergencyInitialTriageType = 'Triaje inicial';
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8038,10 +8039,13 @@ export class EncountersService {
       professionalLicense: string | null;
     } | null;
   }) {
+    const cleanIncomingFormData = { ...input.incomingFormData };
+    delete cleanIncomingFormData.tipoRegistro;
+    delete cleanIncomingFormData.tipoTriage;
+
     const baseFormData: Record<string, unknown> = {
-      ...input.incomingFormData,
-      tipoTriage: 'Triage',
-      tipoRegistro: 'Triage',
+      ...cleanIncomingFormData,
+      tipoTriaje: emergencyInitialTriageType,
       triageLegalMedico:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       triageLegalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',

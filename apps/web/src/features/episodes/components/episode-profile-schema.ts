@@ -1460,10 +1460,9 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       sections: [
         {
           key: 'triage_tipo',
-          title: 'Tipo de registro',
+          title: 'Encabezado',
           fields: [
-            { key: 'tipoTriage', label: 'Tipo de triage', type: 'readonly' },
-            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+            { key: 'tipoTriaje', label: 'Tipo de triaje', type: 'readonly' },
           ],
         },
         {
