@@ -1616,10 +1616,10 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'triage_glasgow',
           title: 'Glasgow',
           fields: [
-            { key: 'glasgowE', label: 'E', type: 'select', options: glasgowEyeOptions },
-            { key: 'glasgowV', label: 'V', type: 'select', options: glasgowVerbalOptions },
-            { key: 'glasgowM', label: 'M', type: 'select', options: glasgowMotorOptions },
-            { key: 'glasgowTotal', label: 'Total', type: 'readonly' },
+            { key: 'glasgowE', label: 'Ocular (E)', type: 'select', options: glasgowEyeOptions },
+            { key: 'glasgowV', label: 'Verbal (V)', type: 'select', options: glasgowVerbalOptions },
+            { key: 'glasgowM', label: 'Motora (M)', type: 'select', options: glasgowMotorOptions },
+            { key: 'glasgowTotal', label: 'Total Glasgow', type: 'readonly' },
           ],
         },
         {
