@@ -1038,6 +1038,34 @@ function calculateGlasgowTotal(formData: Record<string, RecordFieldValue>) {
     : String(eye + verbal + motor);
 }
 
+function scoreNews2RespiratoryRate(value: number) {
+  return value <= 8 ? 3 : value <= 11 ? 1 : value <= 20 ? 0 : value <= 24 ? 2 : 3;
+}
+
+function scoreNews2OxygenSaturation(value: number) {
+  return value <= 91 ? 3 : value <= 93 ? 2 : value <= 95 ? 1 : 0;
+}
+
+function scoreNews2Temperature(value: number) {
+  return value <= 35 ? 3 : value <= 36 ? 1 : value <= 38 ? 0 : value <= 39 ? 1 : 2;
+}
+
+function scoreNews2SystolicPressure(value: number) {
+  return value <= 90
+    ? 3
+    : value <= 100
+      ? 2
+      : value <= 110
+        ? 1
+        : value <= 219
+          ? 0
+          : 3;
+}
+
+function scoreNews2HeartRate(value: number) {
+  return value <= 40 ? 3 : value <= 50 ? 1 : value <= 90 ? 0 : value <= 110 ? 1 : value <= 130 ? 2 : 3;
+}
+
 function calculateNews2(formData: Record<string, RecordFieldValue>) {
   const fr = readNumericFormValue(formData.fr);
   const spo2 = readNumericFormValue(formData.spo2);
@@ -1055,22 +1083,13 @@ function calculateNews2(formData: Record<string, RecordFieldValue>) {
     return '';
   }
 
-  const scoreFr = fr <= 8 ? 3 : fr <= 11 ? 1 : fr <= 20 ? 0 : fr <= 24 ? 2 : 3;
-  const scoreSpo2 = spo2 <= 91 ? 3 : spo2 <= 93 ? 2 : spo2 <= 95 ? 1 : 0;
-  const scoreTemp = temp <= 35 ? 3 : temp <= 36 ? 1 : temp <= 38 ? 0 : temp <= 39 ? 1 : 2;
-  const scoreTa =
-    taSistolica <= 90
-      ? 3
-      : taSistolica <= 100
-        ? 2
-        : taSistolica <= 110
-          ? 1
-          : taSistolica <= 219
-            ? 0
-            : 3;
-  const scoreFc = fc <= 40 ? 3 : fc <= 50 ? 1 : fc <= 90 ? 0 : fc <= 110 ? 1 : fc <= 130 ? 2 : 3;
-
-  return String(scoreFr + scoreSpo2 + scoreTemp + scoreTa + scoreFc);
+  return String(
+    scoreNews2RespiratoryRate(fr) +
+      scoreNews2OxygenSaturation(spo2) +
+      scoreNews2Temperature(temp) +
+      scoreNews2SystolicPressure(taSistolica) +
+      scoreNews2HeartRate(fc),
+  );
 }
 
 function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) {
@@ -3533,6 +3552,204 @@ function ReadOnlyField({
       <span className="font-medium text-slate-900">{label}</span>
       <div className="flex min-h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
         {value || 'Sin dato disponible'}
+      </div>
+    </div>
+  );
+}
+
+type News2ParameterScoreCard = {
+  key: string;
+  label: string;
+  value: string;
+  score: number | null;
+};
+
+const news2RiskStyles = {
+  unknown: {
+    label: 'Sin cálculo',
+    className: 'border-slate-200 bg-slate-50 text-slate-700',
+  },
+  low: {
+    label: 'Bajo riesgo',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  },
+  mild: {
+    label: 'Riesgo leve',
+    className: 'border-amber-200 bg-amber-50 text-amber-800',
+  },
+  medium: {
+    label: 'Riesgo medio',
+    className: 'border-orange-200 bg-orange-50 text-orange-800',
+  },
+  high: {
+    label: 'Alto riesgo',
+    className: 'border-red-200 bg-red-50 text-red-800',
+  },
+} as const;
+
+function getNews2RiskStyle(total: number | null) {
+  if (total === null) return news2RiskStyles.unknown;
+  if (total === 0) return news2RiskStyles.low;
+  if (total <= 4) return news2RiskStyles.mild;
+  if (total <= 6) return news2RiskStyles.medium;
+  return news2RiskStyles.high;
+}
+
+function getNews2ScoreClass(score: number | null) {
+  if (score === null) return 'border-slate-200 bg-slate-50 text-slate-600';
+  if (score === 0) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (score === 1) return 'border-amber-200 bg-amber-50 text-amber-700';
+  if (score === 2) return 'border-orange-200 bg-orange-50 text-orange-700';
+  return 'border-red-200 bg-red-50 text-red-700';
+}
+
+function getNews2ParameterScoreCards(
+  formData: Record<string, RecordFieldValue>,
+): News2ParameterScoreCard[] {
+  const respiratoryRate = readNumericFormValue(formData.fr);
+  const oxygenSaturation = readNumericFormValue(formData.spo2);
+  const systolicPressure = readNumericFormValue(formData.taSistolica);
+  const heartRate = readNumericFormValue(formData.fc);
+  const temperature = readNumericFormValue(formData.temp);
+  const glasgowTotal = readNumericFormValue(formData.glasgowTotal);
+
+  return [
+    {
+      key: 'fr',
+      label: 'Frecuencia respiratoria (FR)',
+      value: respiratoryRate === null ? 'Sin dato' : `${respiratoryRate} rpm`,
+      score:
+        respiratoryRate === null ? null : scoreNews2RespiratoryRate(respiratoryRate),
+    },
+    {
+      key: 'spo2',
+      label: 'Saturación de oxígeno (SpO₂)',
+      value: oxygenSaturation === null ? 'Sin dato' : `${oxygenSaturation}%`,
+      score:
+        oxygenSaturation === null
+          ? null
+          : scoreNews2OxygenSaturation(oxygenSaturation),
+    },
+    {
+      key: 'taSistolica',
+      label: 'Presión arterial sistólica (TA sistólica)',
+      value: systolicPressure === null ? 'Sin dato' : `${systolicPressure} mmHg`,
+      score:
+        systolicPressure === null
+          ? null
+          : scoreNews2SystolicPressure(systolicPressure),
+    },
+    {
+      key: 'fc',
+      label: 'Frecuencia cardiaca (FC)',
+      value: heartRate === null ? 'Sin dato' : `${heartRate} lpm`,
+      score: heartRate === null ? null : scoreNews2HeartRate(heartRate),
+    },
+    {
+      key: 'temp',
+      label: 'Temperatura',
+      value: temperature === null ? 'Sin dato' : `${temperature} °C`,
+      score: temperature === null ? null : scoreNews2Temperature(temperature),
+    },
+    {
+      key: 'estadoConciencia',
+      label: 'Estado de conciencia',
+      value: glasgowTotal === null ? 'Sin dato' : `Glasgow ${glasgowTotal}`,
+      score: 0,
+    },
+    {
+      key: 'oxigenoSuplementario',
+      label: 'Uso de oxígeno suplementario',
+      value: 'No documentado',
+      score: 0,
+    },
+  ];
+}
+
+function getPrioritizedTriageAlerts(formData: Record<string, RecordFieldValue>) {
+  const rawAlerts =
+    typeof formData.alertasAutomaticas === 'string' &&
+    formData.alertasAutomaticas.trim().length > 0
+      ? formData.alertasAutomaticas
+      : buildTriageAutomaticAlerts(formData);
+  const priorityByPattern = [
+    { pattern: /NEWS2 alto/i, priority: 0 },
+    { pattern: /TA sistólica/i, priority: 1 },
+    { pattern: /SpO2|SpO₂/i, priority: 2 },
+    { pattern: /Frecuencia cardiaca/i, priority: 3 },
+    { pattern: /Glasgow/i, priority: 4 },
+    { pattern: /Fiebre/i, priority: 5 },
+  ];
+
+  return [...new Set(rawAlerts.split('\n').map((alert) => alert.trim()).filter(Boolean))]
+    .sort((left, right) => {
+      const leftPriority =
+        priorityByPattern.find(({ pattern }) => pattern.test(left))?.priority ?? 10;
+      const rightPriority =
+        priorityByPattern.find(({ pattern }) => pattern.test(right))?.priority ?? 10;
+      return leftPriority - rightPriority;
+    })
+    .slice(0, 5);
+}
+
+function News2StructuredPanel({
+  formData,
+}: {
+  formData: Record<string, RecordFieldValue>;
+}) {
+  const total =
+    readNumericFormValue(formData.news2Total) ??
+    readNumericFormValue(calculateNews2(formData));
+  const riskStyle = getNews2RiskStyle(total);
+  const alerts = getPrioritizedTriageAlerts(formData);
+
+  return (
+    <div className="space-y-4 md:col-span-2">
+      <div className={`rounded-2xl border px-4 py-3 ${riskStyle.className}`}>
+        <p className="text-sm font-semibold">
+          NEWS2: {total === null ? '—' : total} — {riskStyle.label}
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {getNews2ParameterScoreCards(formData).map((item) => (
+          <div
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            key={item.key}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.value}</p>
+              </div>
+              <span
+                className={`inline-flex min-w-10 justify-center rounded-md border px-2 py-1 text-sm font-semibold ${getNews2ScoreClass(item.score)}`}
+              >
+                {item.score === null ? '—' : item.score}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <p className="text-sm font-semibold text-slate-900">Alertas automáticas</p>
+        {alerts.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {alerts.map((alert) => (
+              <span
+                className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
+                key={alert}
+              >
+                {alert}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sin alertas clínicas activas.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -8551,6 +8768,10 @@ export function EpisodeDetailPage() {
                                 </p>
                               ) : null}
                             </div>
+                            {isEmergencyTriageSection &&
+                            section.key === 'triage_news_alertas' ? (
+                              <News2StructuredPanel formData={recordForm.formData} />
+                            ) : (
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
                                 if (field.inheritanceMode === 'system') {
@@ -9061,6 +9282,7 @@ export function EpisodeDetailPage() {
                                 );
                               })}
                             </div>
+                            )}
                           </div>
                         ))}
                       </div>
