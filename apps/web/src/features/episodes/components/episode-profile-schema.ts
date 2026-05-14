@@ -138,11 +138,28 @@ const triageArrivalModeOptions: EpisodeFieldOption[] = [
 
 const triageDestinationOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
-  { value: 'CHOQUE', label: 'Área de choque' },
-  { value: 'CONSULTORIO_URGENCIAS', label: 'Consultorio de urgencias' },
+  { value: 'SALA_ESPERA', label: 'Sala de espera' },
   { value: 'OBSERVACION', label: 'Observación' },
-  { value: 'CAMA_URGENCIAS', label: 'Cama de urgencias' },
-  { value: 'REFERENCIA', label: 'Referencia / traslado' },
+  { value: 'SALA_CHOQUE', label: 'Sala de choque' },
+  { value: 'CONSULTA_MEDICA', label: 'Consulta médica' },
+  { value: 'UCI', label: 'UCI' },
+  { value: 'HOSPITALIZACION', label: 'Hospitalización' },
+];
+
+const triageReevaluationRequiredOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
+];
+
+const triageReevaluationPriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'SIN_CAMBIO', label: 'Sin cambio' },
+  { value: 'REANIMACION', label: 'Reanimación' },
+  { value: 'EMERGENCIA', label: 'Emergencia' },
+  { value: 'URGENTE', label: 'Urgente' },
+  { value: 'MENOR_URGENCIA', label: 'Menor urgencia' },
+  { value: 'NO_URGENTE', label: 'No urgente' },
 ];
 
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
@@ -1634,8 +1651,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'triage_destino',
           title: 'Destino y reevaluación',
           fields: [
-            { key: 'destinoInicial', label: 'Destino inicial', type: 'select', options: triageDestinationOptions },
-            { key: 'reevaluacion', label: 'Reevaluación', type: 'textarea' },
+            { key: 'destinoInicial', label: 'Destino inicial', type: 'select', options: triageDestinationOptions, required: true },
+            { key: 'requiereReevaluacion', label: 'Requiere reevaluación', type: 'select', options: triageReevaluationRequiredOptions, required: true },
+            { key: 'horaReevaluacion', label: 'Hora de reevaluación', type: 'time', required: true },
+            { key: 'nuevaPrioridadReevaluacion', label: 'Nueva prioridad', type: 'select', options: triageReevaluationPriorityOptions, required: true },
+            { key: 'motivoCambioReevaluacion', label: 'Motivo del cambio', type: 'textarea', required: true },
           ],
         },
         {

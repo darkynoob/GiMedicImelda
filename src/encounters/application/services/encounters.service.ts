@@ -85,6 +85,28 @@ const emergencyTriageClinicalQuickStateFields = [
     allowedValues: ['ALERTA', 'RESPONDE_VOZ', 'RESPONDE_DOLOR', 'INCONSCIENTE'],
   },
 ] as const;
+const emergencyTriageDestinationAllowedValues = [
+  'SALA_ESPERA',
+  'OBSERVACION',
+  'SALA_CHOQUE',
+  'CONSULTA_MEDICA',
+  'UCI',
+  'HOSPITALIZACION',
+] as const;
+const emergencyTriageReevaluationRequiredValues = ['NO', 'SI'] as const;
+const emergencyTriageReevaluationPriorityAllowedValues = [
+  'SIN_CAMBIO',
+  'REANIMACION',
+  'EMERGENCIA',
+  'URGENTE',
+  'MENOR_URGENCIA',
+  'NO_URGENTE',
+] as const;
+const emergencyTriageReevaluationFieldKeys = [
+  'horaReevaluacion',
+  'nuevaPrioridadReevaluacion',
+  'motivoCambioReevaluacion',
+] as const;
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8081,6 +8103,7 @@ export class EncountersService {
       cleanIncomingFormData.discEstadoMentalAlterado = true;
     }
     delete cleanIncomingFormData.discAlteracionConciencia;
+    delete cleanIncomingFormData.reevaluacion;
     if (cleanIncomingFormData.discOtro !== true) {
       cleanIncomingFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
     }
@@ -8103,6 +8126,7 @@ export class EncountersService {
       triageLegalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
     };
     this.assertEmergencyTriageClinicalQuickState(baseFormData);
+    this.normalizeAndAssertEmergencyTriageDestination(baseFormData);
     const tiempoObjetivoAtencion = this.calculateTriageTargetTime(
       baseFormData.nivelPrioridadTriage,
     );
@@ -8166,6 +8190,59 @@ export class EncountersService {
           ', ',
         )}.`,
       );
+    }
+  }
+
+  private normalizeAndAssertEmergencyTriageDestination(
+    formData: Record<string, unknown>,
+  ) {
+    const destinoInicial = this.readStringValue(formData.destinoInicial);
+    if (
+      !emergencyTriageDestinationAllowedValues.some(
+        (allowedValue) => allowedValue === destinoInicial,
+      )
+    ) {
+      throw new BadRequestException('Selecciona un destino inicial válido');
+    }
+
+    const requiereReevaluacion = this.readStringValue(
+      formData.requiereReevaluacion,
+    );
+    if (
+      !emergencyTriageReevaluationRequiredValues.some(
+        (allowedValue) => allowedValue === requiereReevaluacion,
+      )
+    ) {
+      throw new BadRequestException('Indica si el paciente requiere reevaluación');
+    }
+
+    if (requiereReevaluacion !== 'SI') {
+      for (const fieldKey of emergencyTriageReevaluationFieldKeys) {
+        formData[fieldKey] = '';
+      }
+      return;
+    }
+
+    const horaReevaluacion = this.readStringValue(formData.horaReevaluacion);
+    const nuevaPrioridad = this.readStringValue(
+      formData.nuevaPrioridadReevaluacion,
+    );
+    const motivoCambio = this.readStringValue(formData.motivoCambioReevaluacion);
+
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaReevaluacion)) {
+      throw new BadRequestException('Captura una hora de reevaluación válida');
+    }
+
+    if (
+      !emergencyTriageReevaluationPriorityAllowedValues.some(
+        (allowedValue) => allowedValue === nuevaPrioridad,
+      )
+    ) {
+      throw new BadRequestException('Selecciona una nueva prioridad válida');
+    }
+
+    if (!motivoCambio) {
+      throw new BadRequestException('Captura el motivo del cambio de reevaluación');
     }
   }
 
@@ -15587,6 +15664,7 @@ export class EncountersService {
           'estadoHemodinamico',
           'estadoNeurologico',
           'destinoInicial',
+          'requiereReevaluacion',
         ]
       : [];
     const emergencyInitialNoteRequiredFields = this.isEmergencyInitialNoteRecord(
@@ -15939,6 +16017,7 @@ export class EncountersService {
 
     if (this.isEmergencyTriageRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyTriageClinicalQuickState(formData);
+      this.normalizeAndAssertEmergencyTriageDestination(formData);
     }
   }
 

@@ -131,6 +131,36 @@ const emergencyTriageClinicalQuickStateAllowedValues =
         .filter((value) => value.length > 0),
     ]),
   );
+const emergencyTriageStructuredDestinationFieldLabels: Record<string, string> = {
+  destinoInicial: 'Destino inicial',
+  requiereReevaluacion: 'Requiere reevaluación',
+  horaReevaluacion: 'Hora de reevaluación',
+  nuevaPrioridadReevaluacion: 'Nueva prioridad',
+  motivoCambioReevaluacion: 'Motivo del cambio',
+};
+const emergencyTriageDestinationAllowedValues = [
+  'SALA_ESPERA',
+  'OBSERVACION',
+  'SALA_CHOQUE',
+  'CONSULTA_MEDICA',
+  'UCI',
+  'HOSPITALIZACION',
+];
+const emergencyTriageReevaluationRequiredValues = ['NO', 'SI'];
+const emergencyTriageReevaluationPriorityValues = [
+  'SIN_CAMBIO',
+  'REANIMACION',
+  'EMERGENCIA',
+  'URGENTE',
+  'MENOR_URGENCIA',
+  'NO_URGENTE',
+];
+const emergencyTriageConditionalReevaluationFields = [
+  'horaReevaluacion',
+  'nuevaPrioridadReevaluacion',
+  'motivoCambioReevaluacion',
+];
+const emergencyTriageReevaluationTimePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function getHistoryTypeLabel(historyType: string | null | undefined) {
   if (historyType === 'INICIAL') {
@@ -6409,6 +6439,15 @@ export function EpisodeDetailPage() {
               nextFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
             }
             if (
+              isEmergencyTriageSection &&
+              fieldKey === 'requiereReevaluacion' &&
+              value !== 'SI'
+            ) {
+              for (const reevaluationFieldKey of emergencyTriageConditionalReevaluationFields) {
+                nextFormData[reevaluationFieldKey] = '';
+              }
+            }
+            if (
               isHospitalNursingSection &&
               (fieldKey === 'ingresosMlEnfHosp' ||
                 fieldKey === 'egresosMlEnfHosp')
@@ -6487,6 +6526,61 @@ export function EpisodeDetailPage() {
             .join(', ')}.`,
         );
         return;
+      }
+
+      const destinoInicial =
+        typeof recordForm.formData.destinoInicial === 'string'
+          ? recordForm.formData.destinoInicial
+          : '';
+      const requiereReevaluacion =
+        typeof recordForm.formData.requiereReevaluacion === 'string'
+          ? recordForm.formData.requiereReevaluacion
+          : '';
+
+      if (!emergencyTriageDestinationAllowedValues.includes(destinoInicial)) {
+        setFeedback('Selecciona un destino inicial válido.');
+        return;
+      }
+
+      if (!emergencyTriageReevaluationRequiredValues.includes(requiereReevaluacion)) {
+        setFeedback('Indica si el paciente requiere reevaluación.');
+        return;
+      }
+
+      if (requiereReevaluacion === 'SI') {
+        const missingReevaluationFields =
+          emergencyTriageConditionalReevaluationFields.filter((fieldKey) => {
+            const value = recordForm.formData[fieldKey];
+            return typeof value !== 'string' || value.trim().length === 0;
+          });
+
+        if (missingReevaluationFields.length > 0) {
+          setFeedback(
+            `Completa reevaluación: ${missingReevaluationFields
+              .map((fieldKey) => emergencyTriageStructuredDestinationFieldLabels[fieldKey])
+              .join(', ')}.`,
+          );
+          return;
+        }
+
+        const nuevaPrioridad =
+          typeof recordForm.formData.nuevaPrioridadReevaluacion === 'string'
+            ? recordForm.formData.nuevaPrioridadReevaluacion
+            : '';
+        const horaReevaluacion =
+          typeof recordForm.formData.horaReevaluacion === 'string'
+            ? recordForm.formData.horaReevaluacion
+            : '';
+
+        if (!emergencyTriageReevaluationTimePattern.test(horaReevaluacion)) {
+          setFeedback('Captura una hora de reevaluación válida.');
+          return;
+        }
+
+        if (!emergencyTriageReevaluationPriorityValues.includes(nuevaPrioridad)) {
+          setFeedback('Selecciona una nueva prioridad válida.');
+          return;
+        }
       }
     }
 
@@ -8840,6 +8934,17 @@ export function EpisodeDetailPage() {
                                   return null;
                                 }
 
+                                if (
+                                  isEmergencyTriageSection &&
+                                  section.key === 'triage_destino' &&
+                                  emergencyTriageConditionalReevaluationFields.includes(
+                                    field.key,
+                                  ) &&
+                                  recordForm.formData.requiereReevaluacion !== 'SI'
+                                ) {
+                                  return null;
+                                }
+
                                 const fieldValue = recordForm.formData[field.key];
 
                                 if (field.type === 'action') {
@@ -8850,6 +8955,9 @@ export function EpisodeDetailPage() {
                                     >
                                       <span className="font-medium text-slate-900">
                                         {field.label}
+                                        {field.required ? (
+                                          <span className="ml-1 text-red-600">*</span>
+                                        ) : null}
                                       </span>
                                       <Button
                                         disabled={isRecordLocked}
@@ -9265,6 +9373,9 @@ export function EpisodeDetailPage() {
                                   <label className="space-y-2 text-sm" key={field.key}>
                                     <span className="font-medium text-slate-900">
                                       {field.label}
+                                      {field.required ? (
+                                        <span className="ml-1 text-red-600">*</span>
+                                      ) : null}
                                     </span>
                                     <Input
                                       disabled={isRecordLocked}
