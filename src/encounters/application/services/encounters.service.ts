@@ -128,6 +128,40 @@ const emergencyTriageReferenceFieldKeys = [
   'unidadQueRefiere',
   'documentoReferencia',
 ] as const;
+const emergencyTriageInitialStateFields = [
+  {
+    key: 'estadoGeneralInicial',
+    label: 'Estado general inicial',
+    allowedValues: ['BUENO', 'REGULAR', 'GRAVE'],
+  },
+  {
+    key: 'estadoMentalInicial',
+    label: 'Estado mental inicial',
+    allowedValues: [
+      'ORIENTADO_COOPERADOR',
+      'CONFUSO',
+      'AGITADO',
+      'SOMNOLIENTO',
+      'ESTUPOROSO',
+      'COMATOSO',
+    ],
+  },
+  {
+    key: 'riesgoVitalAparente',
+    label: 'Riesgo vital aparente',
+    allowedValues: ['NO', 'SI', 'INDETERMINADO'],
+  },
+  {
+    key: 'aislamientoRequerido',
+    label: 'Aislamiento requerido',
+    allowedValues: ['NO', 'CONTACTO', 'GOTAS', 'AEROSOLES'],
+  },
+] as const;
+const emergencyTriageObsoleteInitialStateFieldKeys = [
+  'estadoGeneral',
+  'estadoMental',
+  'riesgoVital',
+] as const;
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8160,6 +8194,9 @@ export class EncountersService {
     delete cleanIncomingFormData.tipoTriage;
     delete cleanIncomingFormData.responsableTriage;
     delete cleanIncomingFormData.procedenciaAdministrativa;
+    for (const fieldKey of emergencyTriageObsoleteInitialStateFieldKeys) {
+      delete cleanIncomingFormData[fieldKey];
+    }
     if (cleanIncomingFormData.discAlteracionConciencia === true) {
       cleanIncomingFormData.discEstadoMentalAlterado = true;
     }
@@ -8193,6 +8230,7 @@ export class EncountersService {
     this.assertEmergencyTriageClinicalQuickState(baseFormData);
     this.normalizeAndAssertEmergencyTriageDestination(baseFormData);
     this.normalizeAndAssertEmergencyTriageOrigin(baseFormData);
+    this.assertEmergencyTriageInitialState(baseFormData);
     const tiempoObjetivoAtencion = this.calculateTriageTargetTime(
       baseFormData.nivelPrioridadTriage,
     );
@@ -8257,6 +8295,51 @@ export class EncountersService {
         )}.`,
       );
     }
+  }
+
+  private assertEmergencyTriageInitialState(formData: Record<string, unknown>) {
+    const missingFields = emergencyTriageInitialStateFields
+      .filter(({ key }) => !this.hasCapturedValue(formData[key]))
+      .map(({ label }) => label);
+
+    if (missingFields.length > 0) {
+      throw new BadRequestException(
+        `Completa Estado general y mental inicial: ${missingFields.join(', ')}.`,
+      );
+    }
+
+    const invalidFields = emergencyTriageInitialStateFields
+      .filter(({ key, allowedValues }) => {
+        const value = this.readStringValue(formData[key]);
+        return !allowedValues.some((allowedValue) => allowedValue === value);
+      })
+      .map(({ label }) => label);
+
+    if (invalidFields.length > 0) {
+      throw new BadRequestException(
+        `Estado general y mental inicial contiene valores no permitidos: ${invalidFields.join(
+          ', ',
+        )}.`,
+      );
+    }
+  }
+
+  private mapInitialMentalStatusToLegacyValue(value: unknown) {
+    if (value === 'NORMAL' || value === 'ALTERADO') {
+      return value;
+    }
+    if (value === 'ORIENTADO_COOPERADOR') {
+      return 'NORMAL';
+    }
+    if (
+      emergencyTriageInitialStateFields
+        .find(({ key }) => key === 'estadoMentalInicial')
+        ?.allowedValues.some((allowedValue) => allowedValue === value)
+    ) {
+      return 'ALTERADO';
+    }
+
+    return '';
   }
 
   private inferEmergencyTriageResponsibleType(
@@ -8472,7 +8555,9 @@ export class EncountersService {
       evaNota: triageFormData.eva,
       glucosaNota: triageFormData.glucosa,
       glasgowNota: triageFormData.glasgowTotal,
-      estadoMentalNota: triageFormData.estadoMental,
+      estadoMentalNota: this.mapInitialMentalStatusToLegacyValue(
+        triageFormData.estadoMentalInicial ?? triageFormData.estadoMental,
+      ),
     };
 
     for (const [fieldKey, value] of Object.entries(triageSnapshotFields)) {
@@ -15842,6 +15927,10 @@ export class EncountersService {
           'requiereReevaluacion',
           'procedenciaIngreso',
           'ingresoPorReferencia',
+          'estadoGeneralInicial',
+          'estadoMentalInicial',
+          'riesgoVitalAparente',
+          'aislamientoRequerido',
         ]
       : [];
     const emergencyInitialNoteRequiredFields = this.isEmergencyInitialNoteRecord(
@@ -16196,6 +16285,7 @@ export class EncountersService {
       this.assertEmergencyTriageClinicalQuickState(formData);
       this.normalizeAndAssertEmergencyTriageDestination(formData);
       this.normalizeAndAssertEmergencyTriageOrigin(formData);
+      this.assertEmergencyTriageInitialState(formData);
     }
   }
 

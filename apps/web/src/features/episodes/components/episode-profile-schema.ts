@@ -188,6 +188,38 @@ const triageReevaluationPriorityOptions: EpisodeFieldOption[] = [
   { value: 'NO_URGENTE', label: 'No urgente' },
 ];
 
+const triageInitialGeneralConditionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'BUENO', label: 'Bueno' },
+  { value: 'REGULAR', label: 'Regular' },
+  { value: 'GRAVE', label: 'Grave' },
+];
+
+const triageInitialMentalStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ORIENTADO_COOPERADOR', label: 'Orientado y cooperador' },
+  { value: 'CONFUSO', label: 'Confuso' },
+  { value: 'AGITADO', label: 'Agitado' },
+  { value: 'SOMNOLIENTO', label: 'Somnoliento' },
+  { value: 'ESTUPOROSO', label: 'Estuporoso' },
+  { value: 'COMATOSO', label: 'Comatoso' },
+];
+
+const triageApparentLifeRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
+  { value: 'INDETERMINADO', label: 'Indeterminado' },
+];
+
+const triageRequiredIsolationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'CONTACTO', label: 'Contacto' },
+  { value: 'GOTAS', label: 'Gotas' },
+  { value: 'AEROSOLES', label: 'Aerosoles' },
+];
+
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'MEDICO', label: 'Médico' },
@@ -1709,11 +1741,12 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'triage_estado_inicial',
-          title: 'Estado inicial',
+          title: 'Estado general y mental inicial',
           fields: [
-            { key: 'estadoGeneral', label: 'Estado general', type: 'textarea' },
-            { key: 'estadoMental', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
-            { key: 'riesgoVital', label: 'Riesgo vital', type: 'select', options: riskClassificationOptions },
+            { key: 'estadoGeneralInicial', label: 'Estado general inicial', type: 'select', options: triageInitialGeneralConditionOptions, required: true },
+            { key: 'estadoMentalInicial', label: 'Estado mental inicial', type: 'select', options: triageInitialMentalStatusOptions, required: true },
+            { key: 'riesgoVitalAparente', label: 'Riesgo vital aparente', type: 'select', options: triageApparentLifeRiskOptions, required: true },
+            { key: 'aislamientoRequerido', label: 'Aislamiento requerido', type: 'select', options: triageRequiredIsolationOptions, required: true },
           ],
         },
         {

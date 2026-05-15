@@ -184,6 +184,30 @@ const emergencyTriageConditionalReferenceFields = [
   'documentoReferencia',
 ];
 const emergencyTriagePhonePattern = /^[0-9+\-\s()]{7,20}$/;
+const emergencyTriageInitialStateFieldLabels: Record<string, string> = {
+  estadoGeneralInicial: 'Estado general inicial',
+  estadoMentalInicial: 'Estado mental inicial',
+  riesgoVitalAparente: 'Riesgo vital aparente',
+  aislamientoRequerido: 'Aislamiento requerido',
+};
+const emergencyTriageInitialStateAllowedValues: Record<string, string[]> = {
+  estadoGeneralInicial: ['BUENO', 'REGULAR', 'GRAVE'],
+  estadoMentalInicial: [
+    'ORIENTADO_COOPERADOR',
+    'CONFUSO',
+    'AGITADO',
+    'SOMNOLIENTO',
+    'ESTUPOROSO',
+    'COMATOSO',
+  ],
+  riesgoVitalAparente: ['NO', 'SI', 'INDETERMINADO'],
+  aislamientoRequerido: ['NO', 'CONTACTO', 'GOTAS', 'AEROSOLES'],
+};
+const emergencyTriageObsoleteInitialStateFields = [
+  'estadoGeneral',
+  'estadoMental',
+  'riesgoVital',
+];
 
 function getHistoryTypeLabel(historyType: string | null | undefined) {
   if (historyType === 'INICIAL') {
@@ -304,6 +328,19 @@ function buildTriageResponsibleSnapshot(input: {
   };
 }
 
+function mapInitialMentalStatusToLegacyValue(value: unknown) {
+  if (value === 'NORMAL' || value === 'ALTERADO') return value;
+  if (value === 'ORIENTADO_COOPERADOR') return 'NORMAL';
+  if (
+    typeof value === 'string' &&
+    emergencyTriageInitialStateAllowedValues.estadoMentalInicial.includes(value)
+  ) {
+    return 'ALTERADO';
+  }
+
+  return '';
+}
+
 function mergeEmergencyTriageSystemFields(
   formData: Record<string, RecordFieldValue>,
   detail: EncounterDetailResponse,
@@ -327,6 +364,9 @@ function mergeEmergencyTriageSystemFields(
   delete cleanFormData.discAlteracionConciencia;
   delete cleanFormData.responsableTriage;
   delete cleanFormData.procedenciaAdministrativa;
+  for (const fieldKey of emergencyTriageObsoleteInitialStateFields) {
+    delete cleanFormData[fieldKey];
+  }
 
   return {
     ...cleanFormData,
@@ -1292,7 +1332,11 @@ function buildEmergencyInitialNoteSnapshot(args: {
     evaNota: readCurrentOrTriage('evaNota', 'eva'),
     glucosaNota: readCurrentOrTriage('glucosaNota', 'glucosa'),
     glasgowNota: readCurrentOrTriage('glasgowNota', 'glasgowTotal'),
-    estadoMentalNota: readCurrentOrTriage('estadoMentalNota', 'estadoMental'),
+    estadoMentalNota:
+      readCurrentOrTriage('estadoMentalNota', 'estadoMentalNota') ||
+      mapInitialMentalStatusToLegacyValue(
+        triageFormData.estadoMentalInicial ?? triageFormData.estadoMental,
+      ),
     llegadaVisual: readString(triageFormData.horaLlegada),
     triageVisual: readString(triageFormData.horaTriage),
     inicioAtencionVisual:
@@ -6749,6 +6793,38 @@ export function EpisodeDetailPage() {
         !emergencyTriagePhonePattern.test(telefonoAcompanante)
       ) {
         setFeedback('Captura un teléfono de acompañante válido.');
+        return;
+      }
+
+      const missingInitialStateFields = Object.entries(
+        emergencyTriageInitialStateFieldLabels,
+      ).filter(([fieldKey]) => {
+        const value = recordForm.formData[fieldKey];
+        return typeof value !== 'string' || value.trim().length === 0;
+      });
+
+      if (missingInitialStateFields.length > 0) {
+        setFeedback(
+          `Completa Estado general y mental inicial: ${missingInitialStateFields
+            .map(([, label]) => label)
+            .join(', ')}.`,
+        );
+        return;
+      }
+
+      const invalidInitialStateFields = Object.entries(
+        emergencyTriageInitialStateAllowedValues,
+      ).filter(([fieldKey, allowedValues]) => {
+        const value = recordForm.formData[fieldKey];
+        return typeof value !== 'string' || !allowedValues.includes(value);
+      });
+
+      if (invalidInitialStateFields.length > 0) {
+        setFeedback(
+          `Estado general y mental inicial contiene valores no permitidos: ${invalidInitialStateFields
+            .map(([fieldKey]) => emergencyTriageInitialStateFieldLabels[fieldKey])
+            .join(', ')}.`,
+        );
         return;
       }
     }
