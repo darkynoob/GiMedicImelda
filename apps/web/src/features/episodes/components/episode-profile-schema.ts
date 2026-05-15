@@ -220,6 +220,23 @@ const triageRequiredIsolationOptions: EpisodeFieldOption[] = [
   { value: 'AEROSOLES', label: 'Aerosoles' },
 ];
 
+const emergencyInitialNoteConsentOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PACIENTE', label: 'Otorgado por paciente' },
+  { value: 'FAMILIAR', label: 'Otorgado por familiar' },
+  { value: 'TUTOR_LEGAL', label: 'Otorgado por tutor legal' },
+  { value: 'URGENCIA_VITAL', label: 'Urgencia vital (sin consentimiento)' },
+  { value: 'PRIVILEGIO_TERAPEUTICO', label: 'Privilegio terapéutico' },
+];
+
+const emergencyInitialNoteConsentTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'GENERAL_ATENCION', label: 'General de atención' },
+  { value: 'PROCEDIMIENTO_ESPECIFICO', label: 'Procedimiento específico' },
+  { value: 'ANESTESIA', label: 'Anestesia' },
+  { value: 'TRANSFUSION', label: 'Transfusión' },
+];
+
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'MEDICO', label: 'Médico' },
@@ -1840,9 +1857,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'nota_inicial_consentimiento',
-          title: 'Consentimiento',
+          title: 'Consentimiento informado',
           fields: [
-            { key: 'consentimientoInicial', label: 'Consentimiento informado', type: 'textarea' },
+            { key: 'consentimientoUrgenciasNota', label: 'Consentimiento de urgencias', type: 'select', options: emergencyInitialNoteConsentOptions, required: true },
+            { key: 'tipoConsentimientoNota', label: 'Tipo de consentimiento', type: 'select', options: emergencyInitialNoteConsentTypeOptions, required: true },
+            { key: 'observacionesConsentimientoNota', label: 'Observaciones de consentimiento', type: 'textarea' },
           ],
         },
         {

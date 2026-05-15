@@ -1517,7 +1517,7 @@ function buildEmergencyEvolutionSnapshot(args: {
     consentimientoVigenteUrg: readCurrentOrSource(
       'consentimientoVigenteUrg',
       'consentimientoVigenteUrg',
-      'consentimientoInicial',
+      'consentimientoUrgenciasNota',
     )
       ? readString(currentFormData.consentimientoVigenteUrg) ||
         readString(previousFormData.consentimientoVigenteUrg) ||
@@ -1526,7 +1526,7 @@ function buildEmergencyEvolutionSnapshot(args: {
     informacionBrindadaUrg: readCurrentOrSource(
       'informacionBrindadaUrg',
       'informacionBrindadaUrg',
-      'consentimientoInicial',
+      'observacionesConsentimientoNota',
     ),
     resultadosEstudiosIntegrados:
       args.detail.metrics.labs || args.detail.metrics.imaging

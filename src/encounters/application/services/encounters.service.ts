@@ -162,6 +162,19 @@ const emergencyTriageObsoleteInitialStateFieldKeys = [
   'estadoMental',
   'riesgoVital',
 ] as const;
+const emergencyInitialNoteConsentAllowedValues = [
+  'PACIENTE',
+  'FAMILIAR',
+  'TUTOR_LEGAL',
+  'URGENCIA_VITAL',
+  'PRIVILEGIO_TERAPEUTICO',
+] as const;
+const emergencyInitialNoteConsentTypeAllowedValues = [
+  'GENERAL_ATENCION',
+  'PROCEDIMIENTO_ESPECIFICO',
+  'ANESTESIA',
+  'TRANSFUSION',
+] as const;
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8001,6 +8014,7 @@ export class EncountersService {
           .join(' · ') || 'Lugar no configurado',
     };
     delete baseFormData.exploracionFisicaNota;
+    delete baseFormData.consentimientoInicial;
 
     const suggestions: Record<string, unknown> = {
       motivoIngresoEgresoHosp:
@@ -8733,12 +8747,22 @@ export class EncountersService {
         latestInitialNoteFormData.resumenPronostico,
       consentimientoVigenteUrg:
         latestEvolutionFormData.consentimientoVigenteUrg ??
-        (this.hasCapturedValue(latestInitialNoteFormData.consentimientoInicial)
+        (this.hasCapturedValue(
+          latestInitialNoteFormData.consentimientoUrgenciasNota,
+        )
           ? 'VIGENTE'
           : ''),
       informacionBrindadaUrg:
         latestEvolutionFormData.informacionBrindadaUrg ??
-        latestInitialNoteFormData.consentimientoInicial,
+        [
+          this.readStringValue(latestInitialNoteFormData.consentimientoUrgenciasNota),
+          this.readStringValue(latestInitialNoteFormData.tipoConsentimientoNota),
+          this.readStringValue(
+            latestInitialNoteFormData.observacionesConsentimientoNota,
+          ),
+        ]
+          .filter((value) => value.length > 0)
+          .join(' · '),
     };
 
     for (const [fieldKey, value] of Object.entries(vitalSnapshotMap)) {
@@ -11577,6 +11601,12 @@ export class EncountersService {
         painEva: this.readNumericValue(input.formData.evaNota),
         glucose: this.readNumericValue(input.formData.glucosaNota),
         glasgow: this.readNumericValue(input.formData.glasgowNota),
+        emergencyConsent:
+          this.readStringValue(input.formData.consentimientoUrgenciasNota) || null,
+        consentType:
+          this.readStringValue(input.formData.tipoConsentimientoNota) || null,
+        consentObservations:
+          this.readStringValue(input.formData.observacionesConsentimientoNota) || null,
       },
       update: {
         sourceTriageRecordId:
@@ -11600,6 +11630,12 @@ export class EncountersService {
         painEva: this.readNumericValue(input.formData.evaNota),
         glucose: this.readNumericValue(input.formData.glucosaNota),
         glasgow: this.readNumericValue(input.formData.glasgowNota),
+        emergencyConsent:
+          this.readStringValue(input.formData.consentimientoUrgenciasNota) || null,
+        consentType:
+          this.readStringValue(input.formData.tipoConsentimientoNota) || null,
+        consentObservations:
+          this.readStringValue(input.formData.observacionesConsentimientoNota) || null,
       },
     });
   }
@@ -16090,6 +16126,8 @@ export class EncountersService {
           'exploracionCardiovascularNota',
           'exploracionRespiratoriaNota',
           'exploracionNeurologicaNota',
+          'consentimientoUrgenciasNota',
+          'tipoConsentimientoNota',
           'riesgoVitalNota',
           'estudiosAnalisis',
           'diagnosticoNota',
@@ -16436,6 +16474,35 @@ export class EncountersService {
       this.normalizeAndAssertEmergencyTriageDestination(formData);
       this.normalizeAndAssertEmergencyTriageOrigin(formData);
       this.assertEmergencyTriageInitialState(formData);
+    }
+    if (this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)) {
+      this.assertEmergencyInitialNoteConsent(formData);
+    }
+  }
+
+  private assertEmergencyInitialNoteConsent(formData: Record<string, unknown>) {
+    const emergencyConsent = this.readStringValue(
+      formData.consentimientoUrgenciasNota,
+    );
+    const consentType = this.readStringValue(formData.tipoConsentimientoNota);
+
+    if (
+      !emergencyInitialNoteConsentAllowedValues.some(
+        (allowedValue) => allowedValue === emergencyConsent,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un consentimiento de urgencias válido',
+      );
+    }
+    if (
+      !emergencyInitialNoteConsentTypeAllowedValues.some(
+        (allowedValue) => allowedValue === consentType,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un tipo de consentimiento válido',
+      );
     }
   }
 

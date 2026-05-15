@@ -1466,6 +1466,9 @@ model EmergencyInitialNoteObjective {
   painEva Decimal? @db.Decimal(8, 2)
   glucose Decimal? @db.Decimal(8, 2)
   glasgow Decimal? @db.Decimal(8, 2)
+  emergencyConsent String?
+  consentType String?
+  consentObservations String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
