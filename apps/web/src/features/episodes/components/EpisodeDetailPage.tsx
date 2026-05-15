@@ -40,6 +40,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { formatDate, formatDateTime } from '../../../shared/lib/formatters';
 import type {
+  CurrentUserResponse,
   EncounterDetailResponse,
   UpdateEncounterRequest,
 } from '../../../shared/types/contracts';
@@ -161,6 +162,28 @@ const emergencyTriageConditionalReevaluationFields = [
   'motivoCambioReevaluacion',
 ];
 const emergencyTriageReevaluationTimePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+const emergencyTriageOriginAllowedValues = [
+  'DOMICILIO',
+  'VIA_PUBLICA',
+  'TRABAJO',
+  'ESCUELA',
+  'OTRA_UNIDAD_MEDICA',
+  'OTRO',
+];
+const emergencyTriageReferenceAdmissionValues = ['NO', 'SI'];
+const emergencyTriageCompanionRelationshipValues = [
+  'ESPOSO_A',
+  'HIJO_A',
+  'PADRE_MADRE',
+  'HERMANO_A',
+  'OTRO',
+  'NINGUNO',
+];
+const emergencyTriageConditionalReferenceFields = [
+  'unidadQueRefiere',
+  'documentoReferencia',
+];
+const emergencyTriagePhonePattern = /^[0-9+\-\s()]{7,20}$/;
 
 function getHistoryTypeLabel(historyType: string | null | undefined) {
   if (historyType === 'INICIAL') {
@@ -233,9 +256,59 @@ function isEmergencyTriageTab(encounterType: string, tabTitle: string) {
 
 const emergencyInitialTriageType = 'Triaje inicial';
 
+function inferTriageResponsibleType(
+  sessionUser: CurrentUserResponse | null | undefined,
+) {
+  const roleText = (sessionUser?.roles ?? [])
+    .map((role) => `${role.code} ${role.name}`.toLowerCase())
+    .join(' ');
+
+  if (roleText.includes('paramed')) return 'Paramédico';
+  if (roleText.includes('enferm') || roleText.includes('nurse')) return 'Enfermería';
+  if (roleText.includes('medic') || roleText.includes('physician') || roleText.includes('doctor')) {
+    return 'Médico';
+  }
+
+  return 'Médico';
+}
+
+function resolveTriageResponsibleShift(dateValue: string) {
+  const date = dateValue ? new Date(dateValue) : new Date();
+  const hour = Number.isNaN(date.getTime()) ? new Date().getHours() : date.getHours();
+
+  if (hour >= 6 && hour < 14) return 'Matutino';
+  if (hour >= 14 && hour < 22) return 'Vespertino';
+  return 'Nocturno';
+}
+
+function buildTriageResponsibleSnapshot(input: {
+  sessionUser: CurrentUserResponse | null | undefined;
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+}) {
+  const user = input.sessionUser;
+
+  return {
+    triageResponsableUserId: user?.id ?? '',
+    triageResponsableNombre:
+      user?.fullName ??
+      input.detail.attendingClinician?.fullName ??
+      'Sin profesional responsable',
+    triageResponsableCedula:
+      user?.professionalLicense ??
+      input.detail.attendingClinician?.professionalLicense ??
+      'Sin cédula',
+    triageResponsableTipo: inferTriageResponsibleType(user),
+    triageResponsableTurno: resolveTriageResponsibleShift(input.recordedAt),
+    triageResponsableArea: 'Urgencias — Triaje',
+  };
+}
+
 function mergeEmergencyTriageSystemFields(
   formData: Record<string, RecordFieldValue>,
   detail: EncounterDetailResponse,
+  sessionUser: CurrentUserResponse | null | undefined,
+  recordedAt: string,
 ) {
   const cleanFormData = { ...formData };
   if (cleanFormData.discAlteracionConciencia === true) {
@@ -244,18 +317,33 @@ function mergeEmergencyTriageSystemFields(
   if (cleanFormData.discOtro !== true) {
     cleanFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
   }
+  if (cleanFormData.ingresoPorReferencia !== 'SI') {
+    for (const referenceFieldKey of emergencyTriageConditionalReferenceFields) {
+      cleanFormData[referenceFieldKey] = '';
+    }
+  }
   delete cleanFormData.tipoRegistro;
   delete cleanFormData.tipoTriage;
   delete cleanFormData.discAlteracionConciencia;
+  delete cleanFormData.responsableTriage;
+  delete cleanFormData.procedenciaAdministrativa;
 
   return {
     ...cleanFormData,
     tipoTriaje: emergencyInitialTriageType,
-    responsableTriage:
-      detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+    ...buildTriageResponsibleSnapshot({
+      sessionUser,
+      detail,
+      recordedAt,
+    }),
     triageLegalMedico:
-      detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-    triageLegalCedula: detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+      sessionUser?.fullName ??
+      detail.attendingClinician?.fullName ??
+      'Sin profesional responsable',
+    triageLegalCedula:
+      sessionUser?.professionalLicense ??
+      detail.attendingClinician?.professionalLicense ??
+      'Sin cédula',
   };
 }
 
@@ -4315,7 +4403,12 @@ export function EpisodeDetailPage() {
     }
 
     const nextFormData: Record<string, RecordFieldValue> = {
-      ...mergeEmergencyTriageSystemFields(recordForm.formData, detail),
+      ...mergeEmergencyTriageSystemFields(
+        recordForm.formData,
+        detail,
+        session?.user ?? null,
+        recordForm.recordedAt,
+      ),
       tiempoObjetivoAtencion: calculateTriageTargetTime(
         recordForm.formData.nivelPrioridadTriage,
       ),
@@ -5545,11 +5638,17 @@ export function EpisodeDetailPage() {
             fechaLlegada: nextRecordedAt,
             horaLlegada: nextRecordedAt,
             horaTriage: nextRecordedAt,
-            responsableTriage:
-              detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+            ...buildTriageResponsibleSnapshot({
+              sessionUser: session?.user ?? null,
+              detail,
+              recordedAt: nextRecordedAt,
+            }),
             triageLegalMedico:
-              detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+              session?.user.fullName ??
+              detail.attendingClinician?.fullName ??
+              'Sin profesional responsable',
             triageLegalCedula:
+              session?.user.professionalLicense ??
               detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
           },
         }),
@@ -6022,6 +6121,8 @@ export function EpisodeDetailPage() {
                     ? mergeEmergencyTriageSystemFields(
                         record.formData as Record<string, RecordFieldValue>,
                         detail,
+                        session?.user ?? null,
+                        record.recordedAt.slice(0, 16),
                       )
                     : isEmergencyInitialNoteSection
                       ? {
@@ -6448,6 +6549,22 @@ export function EpisodeDetailPage() {
               }
             }
             if (
+              isEmergencyTriageSection &&
+              fieldKey === 'ingresoPorReferencia' &&
+              value !== 'SI'
+            ) {
+              for (const referenceFieldKey of emergencyTriageConditionalReferenceFields) {
+                nextFormData[referenceFieldKey] = '';
+              }
+            }
+            if (
+              isEmergencyTriageSection &&
+              fieldKey === 'parentescoAcompanante' &&
+              value === 'NINGUNO'
+            ) {
+              nextFormData.telefonoAcompanante = '';
+            }
+            if (
               isHospitalNursingSection &&
               (fieldKey === 'ingresosMlEnfHosp' ||
                 fieldKey === 'egresosMlEnfHosp')
@@ -6582,6 +6699,58 @@ export function EpisodeDetailPage() {
           return;
         }
       }
+
+      const procedenciaIngreso =
+        typeof recordForm.formData.procedenciaIngreso === 'string'
+          ? recordForm.formData.procedenciaIngreso
+          : '';
+      const ingresoPorReferencia =
+        typeof recordForm.formData.ingresoPorReferencia === 'string'
+          ? recordForm.formData.ingresoPorReferencia
+          : '';
+      const parentescoAcompanante =
+        typeof recordForm.formData.parentescoAcompanante === 'string'
+          ? recordForm.formData.parentescoAcompanante
+          : '';
+      const telefonoAcompanante =
+        typeof recordForm.formData.telefonoAcompanante === 'string'
+          ? recordForm.formData.telefonoAcompanante.trim()
+          : '';
+
+      if (!emergencyTriageOriginAllowedValues.includes(procedenciaIngreso)) {
+        setFeedback('Selecciona una procedencia válida.');
+        return;
+      }
+
+      if (!emergencyTriageReferenceAdmissionValues.includes(ingresoPorReferencia)) {
+        setFeedback('Indica si el ingreso es por referencia.');
+        return;
+      }
+
+      if (
+        ingresoPorReferencia === 'SI' &&
+        (typeof recordForm.formData.unidadQueRefiere !== 'string' ||
+          recordForm.formData.unidadQueRefiere.trim().length === 0)
+      ) {
+        setFeedback('Captura la unidad que refiere.');
+        return;
+      }
+
+      if (
+        parentescoAcompanante &&
+        !emergencyTriageCompanionRelationshipValues.includes(parentescoAcompanante)
+      ) {
+        setFeedback('Selecciona un parentesco válido para el acompañante.');
+        return;
+      }
+
+      if (
+        telefonoAcompanante &&
+        !emergencyTriagePhonePattern.test(telefonoAcompanante)
+      ) {
+        setFeedback('Captura un teléfono de acompañante válido.');
+        return;
+      }
     }
 
     const payload = {
@@ -6618,7 +6787,12 @@ export function EpisodeDetailPage() {
                     },
                   )
                 : isEmergencyTriageSection
-                  ? mergeEmergencyTriageSystemFields(recordForm.formData, detail)
+                  ? mergeEmergencyTriageSystemFields(
+                      recordForm.formData,
+                      detail,
+                      session?.user ?? null,
+                      recordForm.recordedAt,
+                    )
                   : isEmergencyInitialNoteSection
                     ? {
                         ...recordForm.formData,
@@ -8941,6 +9115,16 @@ export function EpisodeDetailPage() {
                                     field.key,
                                   ) &&
                                   recordForm.formData.requiereReevaluacion !== 'SI'
+                                ) {
+                                  return null;
+                                }
+                                if (
+                                  isEmergencyTriageSection &&
+                                  section.key === 'triage_procedencia_ingreso' &&
+                                  emergencyTriageConditionalReferenceFields.includes(
+                                    field.key,
+                                  ) &&
+                                  recordForm.formData.ingresoPorReferencia !== 'SI'
                                 ) {
                                   return null;
                                 }

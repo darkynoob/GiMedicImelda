@@ -107,6 +107,27 @@ const emergencyTriageReevaluationFieldKeys = [
   'nuevaPrioridadReevaluacion',
   'motivoCambioReevaluacion',
 ] as const;
+const emergencyTriageOriginAllowedValues = [
+  'DOMICILIO',
+  'VIA_PUBLICA',
+  'TRABAJO',
+  'ESCUELA',
+  'OTRA_UNIDAD_MEDICA',
+  'OTRO',
+] as const;
+const emergencyTriageReferenceAdmissionValues = ['NO', 'SI'] as const;
+const emergencyTriageCompanionRelationshipAllowedValues = [
+  'ESPOSO_A',
+  'HIJO_A',
+  'PADRE_MADRE',
+  'HERMANO_A',
+  'OTRO',
+  'NINGUNO',
+] as const;
+const emergencyTriageReferenceFieldKeys = [
+  'unidadQueRefiere',
+  'documentoReferencia',
+] as const;
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -213,6 +234,16 @@ type UploadedAttachmentFile = {
   size: number;
   buffer: Buffer;
 };
+
+type TriageResponsibleUser = Prisma.UserGetPayload<{
+  include: {
+    roles: {
+      include: {
+        role: true;
+      };
+    };
+  };
+}>;
 
 type RecordVersionContext = {
   latestRecord: {
@@ -826,6 +857,12 @@ export class EncountersService {
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
+    const triageResponsibleUser = this.isEmergencyTriageRecord(
+      encounter.encounterType,
+      input.tabKey,
+    )
+      ? await this.findTriageResponsibleUser(userId)
+      : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
       patientId: encounter.patientId,
       encounterType: encounter.encounterType,
@@ -1004,6 +1041,7 @@ export class EncountersService {
       ambulatoryDischargePrescriptionVersionContext,
       ambulatoryDischargeVersionContext,
       responsibleUser,
+      triageResponsibleUser,
     });
 
     let createdRecord: EncounterSectionRecord;
@@ -1340,6 +1378,12 @@ export class EncountersService {
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
+    const triageResponsibleUser = this.isEmergencyTriageRecord(
+      encounter.encounterType,
+      input.tabKey,
+    )
+      ? await this.findTriageResponsibleUser(userId)
+      : null;
     const historyVersionContext = await this.resolveHistoryVersionContext({
       patientId: encounter.patientId,
       encounterType: encounter.encounterType,
@@ -1533,6 +1577,7 @@ export class EncountersService {
       ambulatoryDischargePrescriptionVersionContext,
       ambulatoryDischargeVersionContext,
       responsibleUser,
+      triageResponsibleUser,
     });
 
     await this.prisma.encounterSectionRecord.update({
@@ -4691,6 +4736,19 @@ export class EncountersService {
     };
   }
 
+  private findTriageResponsibleUser(userId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+      },
+    });
+  }
+
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
     currentRecord:
@@ -4780,6 +4838,7 @@ export class EncountersService {
       fullName: string;
       professionalLicense: string | null;
     } | null;
+    triageResponsibleUser: TriageResponsibleUser | null;
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
   }) {
@@ -5355,7 +5414,7 @@ export class EncountersService {
       const formData = this.buildEmergencyTriageFormData({
         incomingFormData: input.input.formData,
         recordedAt: input.recordedAt,
-        responsibleUser: input.responsibleUser,
+        responsibleUser: input.triageResponsibleUser ?? input.responsibleUser,
       });
 
       return {
@@ -8090,15 +8149,17 @@ export class EncountersService {
   private buildEmergencyTriageFormData(input: {
     incomingFormData: Record<string, unknown>;
     recordedAt: Date;
-    responsibleUser: {
+    responsibleUser: (Partial<TriageResponsibleUser> & {
       id: string;
       fullName: string;
       professionalLicense: string | null;
-    } | null;
+    }) | null;
   }) {
     const cleanIncomingFormData = { ...input.incomingFormData };
     delete cleanIncomingFormData.tipoRegistro;
     delete cleanIncomingFormData.tipoTriage;
+    delete cleanIncomingFormData.responsableTriage;
+    delete cleanIncomingFormData.procedenciaAdministrativa;
     if (cleanIncomingFormData.discAlteracionConciencia === true) {
       cleanIncomingFormData.discEstadoMentalAlterado = true;
     }
@@ -8121,12 +8182,17 @@ export class EncountersService {
     const baseFormData: Record<string, unknown> = {
       ...cleanIncomingFormData,
       tipoTriaje: emergencyInitialTriageType,
+      ...this.buildEmergencyTriageResponsibleSnapshot(
+        input.responsibleUser,
+        input.recordedAt,
+      ),
       triageLegalMedico:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       triageLegalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
     };
     this.assertEmergencyTriageClinicalQuickState(baseFormData);
     this.normalizeAndAssertEmergencyTriageDestination(baseFormData);
+    this.normalizeAndAssertEmergencyTriageOrigin(baseFormData);
     const tiempoObjetivoAtencion = this.calculateTriageTargetTime(
       baseFormData.nivelPrioridadTriage,
     );
@@ -8193,6 +8259,64 @@ export class EncountersService {
     }
   }
 
+  private inferEmergencyTriageResponsibleType(
+    responsibleUser:
+      | (Partial<TriageResponsibleUser> & {
+          id: string;
+          fullName: string;
+          professionalLicense: string | null;
+        })
+      | null,
+  ) {
+    const roleText = (responsibleUser?.roles ?? [])
+      .map((assignment) => `${assignment.role.code} ${assignment.role.name}`.toLowerCase())
+      .join(' ');
+
+    if (roleText.includes('paramed')) return 'Paramédico';
+    if (roleText.includes('enferm') || roleText.includes('nurse')) return 'Enfermería';
+    if (
+      roleText.includes('medic') ||
+      roleText.includes('physician') ||
+      roleText.includes('doctor')
+    ) {
+      return 'Médico';
+    }
+
+    return 'Médico';
+  }
+
+  private resolveEmergencyTriageResponsibleShift(recordedAt: Date) {
+    const hour = recordedAt.getHours();
+
+    if (hour >= 6 && hour < 14) return 'Matutino';
+    if (hour >= 14 && hour < 22) return 'Vespertino';
+    return 'Nocturno';
+  }
+
+  private buildEmergencyTriageResponsibleSnapshot(
+    responsibleUser:
+      | (Partial<TriageResponsibleUser> & {
+          id: string;
+          fullName: string;
+          professionalLicense: string | null;
+        })
+      | null,
+    recordedAt: Date,
+  ) {
+    return {
+      triageResponsableUserId: responsibleUser?.id ?? '',
+      triageResponsableNombre:
+        responsibleUser?.fullName ?? 'Sin profesional responsable',
+      triageResponsableCedula:
+        responsibleUser?.professionalLicense ?? 'Sin cédula',
+      triageResponsableTipo:
+        this.inferEmergencyTriageResponsibleType(responsibleUser),
+      triageResponsableTurno:
+        this.resolveEmergencyTriageResponsibleShift(recordedAt),
+      triageResponsableArea: 'Urgencias — Triaje',
+    };
+  }
+
   private normalizeAndAssertEmergencyTriageDestination(
     formData: Record<string, unknown>,
   ) {
@@ -8243,6 +8367,57 @@ export class EncountersService {
 
     if (!motivoCambio) {
       throw new BadRequestException('Captura el motivo del cambio de reevaluación');
+    }
+  }
+
+  private normalizeAndAssertEmergencyTriageOrigin(formData: Record<string, unknown>) {
+    const procedencia = this.readStringValue(formData.procedenciaIngreso);
+    if (
+      !emergencyTriageOriginAllowedValues.some(
+        (allowedValue) => allowedValue === procedencia,
+      )
+    ) {
+      throw new BadRequestException('Selecciona una procedencia válida');
+    }
+
+    const ingresoPorReferencia = this.readStringValue(
+      formData.ingresoPorReferencia,
+    );
+    if (
+      !emergencyTriageReferenceAdmissionValues.some(
+        (allowedValue) => allowedValue === ingresoPorReferencia,
+      )
+    ) {
+      throw new BadRequestException('Indica si el ingreso es por referencia');
+    }
+
+    if (ingresoPorReferencia !== 'SI') {
+      for (const fieldKey of emergencyTriageReferenceFieldKeys) {
+        formData[fieldKey] = '';
+      }
+    } else if (!this.readStringValue(formData.unidadQueRefiere)) {
+      throw new BadRequestException('Captura la unidad que refiere');
+    }
+
+    const parentesco = this.readStringValue(formData.parentescoAcompanante);
+    if (
+      parentesco &&
+      !emergencyTriageCompanionRelationshipAllowedValues.some(
+        (allowedValue) => allowedValue === parentesco,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un parentesco válido para el acompañante',
+      );
+    }
+
+    if (parentesco === 'NINGUNO') {
+      formData.telefonoAcompanante = '';
+    }
+
+    const telefono = this.readStringValue(formData.telefonoAcompanante);
+    if (telefono && !/^[0-9+\-\s()]{7,20}$/.test(telefono)) {
+      throw new BadRequestException('Captura un teléfono de acompañante válido');
     }
   }
 
@@ -15665,6 +15840,8 @@ export class EncountersService {
           'estadoNeurologico',
           'destinoInicial',
           'requiereReevaluacion',
+          'procedenciaIngreso',
+          'ingresoPorReferencia',
         ]
       : [];
     const emergencyInitialNoteRequiredFields = this.isEmergencyInitialNoteRecord(
@@ -16018,6 +16195,7 @@ export class EncountersService {
     if (this.isEmergencyTriageRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyTriageClinicalQuickState(formData);
       this.normalizeAndAssertEmergencyTriageDestination(formData);
+      this.normalizeAndAssertEmergencyTriageOrigin(formData);
     }
   }
 

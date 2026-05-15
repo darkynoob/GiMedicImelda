@@ -146,6 +146,32 @@ const triageDestinationOptions: EpisodeFieldOption[] = [
   { value: 'HOSPITALIZACION', label: 'Hospitalización' },
 ];
 
+const triageOriginOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'DOMICILIO', label: 'Domicilio' },
+  { value: 'VIA_PUBLICA', label: 'Vía pública' },
+  { value: 'TRABAJO', label: 'Trabajo' },
+  { value: 'ESCUELA', label: 'Escuela' },
+  { value: 'OTRA_UNIDAD_MEDICA', label: 'Otra unidad médica' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const triageReferenceAdmissionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
+];
+
+const triageCompanionRelationshipOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESPOSO_A', label: 'Esposo(a)' },
+  { value: 'HIJO_A', label: 'Hijo(a)' },
+  { value: 'PADRE_MADRE', label: 'Padre/Madre' },
+  { value: 'HERMANO_A', label: 'Hermano(a)' },
+  { value: 'OTRO', label: 'Otro' },
+  { value: 'NINGUNO', label: 'Ninguno' },
+];
+
 const triageReevaluationRequiredOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
   { value: 'NO', label: 'No' },
@@ -1659,11 +1685,26 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           ],
         },
         {
-          key: 'triage_responsable_procedencia',
-          title: 'Responsable y procedencia',
+          key: 'triage_responsable',
+          title: 'Responsable de triaje',
           fields: [
-            { key: 'responsableTriage', label: 'Responsable', type: 'readonly' },
-            { key: 'procedenciaAdministrativa', label: 'Procedencia', type: 'textarea' },
+            { key: 'triageResponsableNombre', label: 'Nombre del profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableCedula', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableTipo', label: 'Tipo de responsable', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableTurno', label: 'Turno', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableArea', label: 'Área', type: 'readonly', inheritanceMode: 'system' },
+          ],
+        },
+        {
+          key: 'triage_procedencia_ingreso',
+          title: 'Procedencia e ingreso',
+          fields: [
+            { key: 'procedenciaIngreso', label: 'Procedencia', type: 'select', options: triageOriginOptions, required: true },
+            { key: 'ingresoPorReferencia', label: 'Ingreso por referencia', type: 'select', options: triageReferenceAdmissionOptions, required: true },
+            { key: 'unidadQueRefiere', label: 'Unidad que refiere', type: 'text', required: true },
+            { key: 'parentescoAcompanante', label: 'Parentesco', type: 'select', options: triageCompanionRelationshipOptions },
+            { key: 'telefonoAcompanante', label: 'Teléfono del acompañante', type: 'text' },
+            { key: 'documentoReferencia', label: 'Folio o descripción breve', type: 'text' },
           ],
         },
         {
