@@ -40,6 +40,7 @@ import { Input } from '../../../components/ui/input';
 import { Textarea } from '../../../components/ui/textarea';
 import { formatDate, formatDateTime } from '../../../shared/lib/formatters';
 import type {
+  CurrentUserResponse,
   EncounterDetailResponse,
   UpdateEncounterRequest,
 } from '../../../shared/types/contracts';
@@ -65,6 +66,7 @@ import {
 } from './episode-helpers';
 import {
   buildDefaultFieldValue,
+  emergencyTriageClinicalQuickStateFields,
   getAmbulatoryProcedureDocumentTabDefinition,
   getConsultationDocumentTabDefinition,
   getEpisodeDocumentTypes,
@@ -72,6 +74,8 @@ import {
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  triageClinicalDiscriminatorFields,
+  triageOtherClinicalDiscriminatorFieldKey,
   type EpisodeFieldDefinition,
   isConsultationHistoryTab,
   type EpisodeTabDefinition,
@@ -112,6 +116,98 @@ type RecordFormState = {
   recordedAt: string;
   formData: Record<string, RecordFieldValue>;
 };
+
+const emergencyTriageClinicalQuickStateFieldKeys =
+  emergencyTriageClinicalQuickStateFields.map((field) => field.key);
+const emergencyTriageClinicalQuickStateFieldLabels =
+  Object.fromEntries(
+    emergencyTriageClinicalQuickStateFields.map((field) => [field.key, field.label]),
+  );
+const emergencyTriageClinicalQuickStateAllowedValues =
+  Object.fromEntries(
+    emergencyTriageClinicalQuickStateFields.map((field) => [
+      field.key,
+      (field.options ?? [])
+        .map((option) => option.value)
+        .filter((value) => value.length > 0),
+    ]),
+  );
+const emergencyTriageStructuredDestinationFieldLabels: Record<string, string> = {
+  destinoInicial: 'Destino inicial',
+  requiereReevaluacion: 'Requiere reevaluación',
+  horaReevaluacion: 'Hora de reevaluación',
+  nuevaPrioridadReevaluacion: 'Nueva prioridad',
+  motivoCambioReevaluacion: 'Motivo del cambio',
+};
+const emergencyTriageDestinationAllowedValues = [
+  'SALA_ESPERA',
+  'OBSERVACION',
+  'SALA_CHOQUE',
+  'CONSULTA_MEDICA',
+  'UCI',
+  'HOSPITALIZACION',
+];
+const emergencyTriageReevaluationRequiredValues = ['NO', 'SI'];
+const emergencyTriageReevaluationPriorityValues = [
+  'SIN_CAMBIO',
+  'REANIMACION',
+  'EMERGENCIA',
+  'URGENTE',
+  'MENOR_URGENCIA',
+  'NO_URGENTE',
+];
+const emergencyTriageConditionalReevaluationFields = [
+  'horaReevaluacion',
+  'nuevaPrioridadReevaluacion',
+  'motivoCambioReevaluacion',
+];
+const emergencyTriageReevaluationTimePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+const emergencyTriageOriginAllowedValues = [
+  'DOMICILIO',
+  'VIA_PUBLICA',
+  'TRABAJO',
+  'ESCUELA',
+  'OTRA_UNIDAD_MEDICA',
+  'OTRO',
+];
+const emergencyTriageReferenceAdmissionValues = ['NO', 'SI'];
+const emergencyTriageCompanionRelationshipValues = [
+  'ESPOSO_A',
+  'HIJO_A',
+  'PADRE_MADRE',
+  'HERMANO_A',
+  'OTRO',
+  'NINGUNO',
+];
+const emergencyTriageConditionalReferenceFields = [
+  'unidadQueRefiere',
+  'documentoReferencia',
+];
+const emergencyTriagePhonePattern = /^[0-9+\-\s()]{7,20}$/;
+const emergencyTriageInitialStateFieldLabels: Record<string, string> = {
+  estadoGeneralInicial: 'Estado general inicial',
+  estadoMentalInicial: 'Estado mental inicial',
+  riesgoVitalAparente: 'Riesgo vital aparente',
+  aislamientoRequerido: 'Aislamiento requerido',
+};
+const emergencyTriageInitialStateAllowedValues: Record<string, string[]> = {
+  estadoGeneralInicial: ['BUENO', 'REGULAR', 'GRAVE'],
+  estadoMentalInicial: [
+    'ORIENTADO_COOPERADOR',
+    'CONFUSO',
+    'AGITADO',
+    'SOMNOLIENTO',
+    'ESTUPOROSO',
+    'COMATOSO',
+  ],
+  riesgoVitalAparente: ['NO', 'SI', 'INDETERMINADO'],
+  aislamientoRequerido: ['NO', 'CONTACTO', 'GOTAS', 'AEROSOLES'],
+};
+const emergencyTriageObsoleteInitialStateFields = [
+  'estadoGeneral',
+  'estadoMental',
+  'riesgoVital',
+];
 
 function getHistoryTypeLabel(historyType: string | null | undefined) {
   if (historyType === 'INICIAL') {
@@ -180,6 +276,115 @@ function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
 
 function isEmergencyTriageTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Triage';
+}
+
+const emergencyInitialTriageType = 'Triaje inicial';
+
+function inferTriageResponsibleType(
+  sessionUser: CurrentUserResponse | null | undefined,
+) {
+  const roleText = (sessionUser?.roles ?? [])
+    .map((role) => `${role.code} ${role.name}`.toLowerCase())
+    .join(' ');
+
+  if (roleText.includes('paramed')) return 'Paramédico';
+  if (roleText.includes('enferm') || roleText.includes('nurse')) return 'Enfermería';
+  if (roleText.includes('medic') || roleText.includes('physician') || roleText.includes('doctor')) {
+    return 'Médico';
+  }
+
+  return 'Médico';
+}
+
+function resolveTriageResponsibleShift(dateValue: string) {
+  const date = dateValue ? new Date(dateValue) : new Date();
+  const hour = Number.isNaN(date.getTime()) ? new Date().getHours() : date.getHours();
+
+  if (hour >= 6 && hour < 14) return 'Matutino';
+  if (hour >= 14 && hour < 22) return 'Vespertino';
+  return 'Nocturno';
+}
+
+function buildTriageResponsibleSnapshot(input: {
+  sessionUser: CurrentUserResponse | null | undefined;
+  detail: EncounterDetailResponse;
+  recordedAt: string;
+}) {
+  const user = input.sessionUser;
+
+  return {
+    triageResponsableUserId: user?.id ?? '',
+    triageResponsableNombre:
+      user?.fullName ??
+      input.detail.attendingClinician?.fullName ??
+      'Sin profesional responsable',
+    triageResponsableCedula:
+      user?.professionalLicense ??
+      input.detail.attendingClinician?.professionalLicense ??
+      'Sin cédula',
+    triageResponsableTipo: inferTriageResponsibleType(user),
+    triageResponsableTurno: resolveTriageResponsibleShift(input.recordedAt),
+    triageResponsableArea: 'Urgencias — Triaje',
+  };
+}
+
+function mapInitialMentalStatusToLegacyValue(value: unknown) {
+  if (value === 'NORMAL' || value === 'ALTERADO') return value;
+  if (value === 'ORIENTADO_COOPERADOR') return 'NORMAL';
+  if (
+    typeof value === 'string' &&
+    emergencyTriageInitialStateAllowedValues.estadoMentalInicial.includes(value)
+  ) {
+    return 'ALTERADO';
+  }
+
+  return '';
+}
+
+function mergeEmergencyTriageSystemFields(
+  formData: Record<string, RecordFieldValue>,
+  detail: EncounterDetailResponse,
+  sessionUser: CurrentUserResponse | null | undefined,
+  recordedAt: string,
+) {
+  const cleanFormData = { ...formData };
+  if (cleanFormData.discAlteracionConciencia === true) {
+    cleanFormData.discEstadoMentalAlterado = true;
+  }
+  if (cleanFormData.discOtro !== true) {
+    cleanFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
+  }
+  if (cleanFormData.ingresoPorReferencia !== 'SI') {
+    for (const referenceFieldKey of emergencyTriageConditionalReferenceFields) {
+      cleanFormData[referenceFieldKey] = '';
+    }
+  }
+  delete cleanFormData.tipoRegistro;
+  delete cleanFormData.tipoTriage;
+  delete cleanFormData.discAlteracionConciencia;
+  delete cleanFormData.responsableTriage;
+  delete cleanFormData.procedenciaAdministrativa;
+  for (const fieldKey of emergencyTriageObsoleteInitialStateFields) {
+    delete cleanFormData[fieldKey];
+  }
+
+  return {
+    ...cleanFormData,
+    tipoTriaje: emergencyInitialTriageType,
+    ...buildTriageResponsibleSnapshot({
+      sessionUser,
+      detail,
+      recordedAt,
+    }),
+    triageLegalMedico:
+      sessionUser?.fullName ??
+      detail.attendingClinician?.fullName ??
+      'Sin profesional responsable',
+    triageLegalCedula:
+      sessionUser?.professionalLicense ??
+      detail.attendingClinician?.professionalLicense ??
+      'Sin cédula',
+  };
 }
 
 function isEmergencyInitialNoteTab(encounterType: string, tabTitle: string) {
@@ -307,6 +512,19 @@ function isAmbulatoryDischargePrescriptionTab(
     encounterType === 'SURGERY' &&
     (tabTitle === 'Receta e indicaciones de egreso' ||
       tabTitle === 'Indicaciones / Receta')
+  );
+}
+
+function getDisplayedRecordStatusConfig(
+  status: string,
+  isAmbulatoryClinicalSection: boolean,
+) {
+  if (isAmbulatoryClinicalSection && status === 'CLOSED') {
+    return { label: 'Completo', badgeVariant: 'success' as const };
+  }
+
+  return (
+    encounterRecordStatusConfig[status] ?? encounterRecordStatusConfig.DRAFT
   );
 }
 
@@ -991,6 +1209,34 @@ function calculateGlasgowTotal(formData: Record<string, RecordFieldValue>) {
     : String(eye + verbal + motor);
 }
 
+function scoreNews2RespiratoryRate(value: number) {
+  return value <= 8 ? 3 : value <= 11 ? 1 : value <= 20 ? 0 : value <= 24 ? 2 : 3;
+}
+
+function scoreNews2OxygenSaturation(value: number) {
+  return value <= 91 ? 3 : value <= 93 ? 2 : value <= 95 ? 1 : 0;
+}
+
+function scoreNews2Temperature(value: number) {
+  return value <= 35 ? 3 : value <= 36 ? 1 : value <= 38 ? 0 : value <= 39 ? 1 : 2;
+}
+
+function scoreNews2SystolicPressure(value: number) {
+  return value <= 90
+    ? 3
+    : value <= 100
+      ? 2
+      : value <= 110
+        ? 1
+        : value <= 219
+          ? 0
+          : 3;
+}
+
+function scoreNews2HeartRate(value: number) {
+  return value <= 40 ? 3 : value <= 50 ? 1 : value <= 90 ? 0 : value <= 110 ? 1 : value <= 130 ? 2 : 3;
+}
+
 function calculateNews2(formData: Record<string, RecordFieldValue>) {
   const fr = readNumericFormValue(formData.fr);
   const spo2 = readNumericFormValue(formData.spo2);
@@ -1008,38 +1254,25 @@ function calculateNews2(formData: Record<string, RecordFieldValue>) {
     return '';
   }
 
-  const scoreFr = fr <= 8 ? 3 : fr <= 11 ? 1 : fr <= 20 ? 0 : fr <= 24 ? 2 : 3;
-  const scoreSpo2 = spo2 <= 91 ? 3 : spo2 <= 93 ? 2 : spo2 <= 95 ? 1 : 0;
-  const scoreTemp = temp <= 35 ? 3 : temp <= 36 ? 1 : temp <= 38 ? 0 : temp <= 39 ? 1 : 2;
-  const scoreTa =
-    taSistolica <= 90
-      ? 3
-      : taSistolica <= 100
-        ? 2
-        : taSistolica <= 110
-          ? 1
-          : taSistolica <= 219
-            ? 0
-            : 3;
-  const scoreFc = fc <= 40 ? 3 : fc <= 50 ? 1 : fc <= 90 ? 0 : fc <= 110 ? 1 : fc <= 130 ? 2 : 3;
-
-  return String(scoreFr + scoreSpo2 + scoreTemp + scoreTa + scoreFc);
+  return String(
+    scoreNews2RespiratoryRate(fr) +
+      scoreNews2OxygenSaturation(spo2) +
+      scoreNews2Temperature(temp) +
+      scoreNews2SystolicPressure(taSistolica) +
+      scoreNews2HeartRate(fc),
+  );
 }
 
 function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) {
   const alerts: string[] = [];
-  const discriminators = [
-    ['discDolorToracico', 'Dolor torácico'],
-    ['discDisneaSevera', 'Disnea severa'],
-    ['discSangradoActivo', 'Sangrado activo'],
-    ['discAlteracionConciencia', 'Alteración del estado de conciencia'],
-    ['discSepsis', 'Sospecha de sepsis'],
-    ['discTraumaMayor', 'Trauma mayor'],
-  ] as const;
-
-  discriminators.forEach(([key, label]) => {
+  triageClinicalDiscriminatorFields.forEach(({ key, label }) => {
     if (formData[key] === true) {
-      alerts.push(label);
+      const otherDetail =
+        key === 'discOtro' &&
+        typeof formData[triageOtherClinicalDiscriminatorFieldKey] === 'string'
+          ? formData[triageOtherClinicalDiscriminatorFieldKey].trim()
+          : '';
+      alerts.push(otherDetail ? `${label}: ${otherDetail}` : label);
     }
   });
 
@@ -1058,6 +1291,12 @@ function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) 
   if (news2Total !== null && news2Total >= 5) alerts.push('NEWS2 alto');
 
   return [...new Set(alerts)].join('\n');
+}
+
+function hasSelectedTriageClinicalDiscriminator(
+  formData: Record<string, RecordFieldValue>,
+) {
+  return triageClinicalDiscriminatorFields.some(({ key }) => formData[key] === true);
 }
 
 function getLatestRecordByTab(
@@ -1106,7 +1345,11 @@ function buildEmergencyInitialNoteSnapshot(args: {
     evaNota: readCurrentOrTriage('evaNota', 'eva'),
     glucosaNota: readCurrentOrTriage('glucosaNota', 'glucosa'),
     glasgowNota: readCurrentOrTriage('glasgowNota', 'glasgowTotal'),
-    estadoMentalNota: readCurrentOrTriage('estadoMentalNota', 'estadoMental'),
+    estadoMentalNota:
+      readCurrentOrTriage('estadoMentalNota', 'estadoMentalNota') ||
+      mapInitialMentalStatusToLegacyValue(
+        triageFormData.estadoMentalInicial ?? triageFormData.estadoMental,
+      ),
     llegadaVisual: readString(triageFormData.horaLlegada),
     triageVisual: readString(triageFormData.horaTriage),
     inicioAtencionVisual:
@@ -3489,6 +3732,204 @@ function ReadOnlyField({
   );
 }
 
+type News2ParameterScoreCard = {
+  key: string;
+  label: string;
+  value: string;
+  score: number | null;
+};
+
+const news2RiskStyles = {
+  unknown: {
+    label: 'Sin cálculo',
+    className: 'border-slate-200 bg-slate-50 text-slate-700',
+  },
+  low: {
+    label: 'Bajo riesgo',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  },
+  mild: {
+    label: 'Riesgo leve',
+    className: 'border-amber-200 bg-amber-50 text-amber-800',
+  },
+  medium: {
+    label: 'Riesgo medio',
+    className: 'border-orange-200 bg-orange-50 text-orange-800',
+  },
+  high: {
+    label: 'Alto riesgo',
+    className: 'border-red-200 bg-red-50 text-red-800',
+  },
+} as const;
+
+function getNews2RiskStyle(total: number | null) {
+  if (total === null) return news2RiskStyles.unknown;
+  if (total === 0) return news2RiskStyles.low;
+  if (total <= 4) return news2RiskStyles.mild;
+  if (total <= 6) return news2RiskStyles.medium;
+  return news2RiskStyles.high;
+}
+
+function getNews2ScoreClass(score: number | null) {
+  if (score === null) return 'border-slate-200 bg-slate-50 text-slate-600';
+  if (score === 0) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (score === 1) return 'border-amber-200 bg-amber-50 text-amber-700';
+  if (score === 2) return 'border-orange-200 bg-orange-50 text-orange-700';
+  return 'border-red-200 bg-red-50 text-red-700';
+}
+
+function getNews2ParameterScoreCards(
+  formData: Record<string, RecordFieldValue>,
+): News2ParameterScoreCard[] {
+  const respiratoryRate = readNumericFormValue(formData.fr);
+  const oxygenSaturation = readNumericFormValue(formData.spo2);
+  const systolicPressure = readNumericFormValue(formData.taSistolica);
+  const heartRate = readNumericFormValue(formData.fc);
+  const temperature = readNumericFormValue(formData.temp);
+  const glasgowTotal = readNumericFormValue(formData.glasgowTotal);
+
+  return [
+    {
+      key: 'fr',
+      label: 'Frecuencia respiratoria (FR)',
+      value: respiratoryRate === null ? 'Sin dato' : `${respiratoryRate} rpm`,
+      score:
+        respiratoryRate === null ? null : scoreNews2RespiratoryRate(respiratoryRate),
+    },
+    {
+      key: 'spo2',
+      label: 'Saturación de oxígeno (SpO₂)',
+      value: oxygenSaturation === null ? 'Sin dato' : `${oxygenSaturation}%`,
+      score:
+        oxygenSaturation === null
+          ? null
+          : scoreNews2OxygenSaturation(oxygenSaturation),
+    },
+    {
+      key: 'taSistolica',
+      label: 'Presión arterial sistólica (TA sistólica)',
+      value: systolicPressure === null ? 'Sin dato' : `${systolicPressure} mmHg`,
+      score:
+        systolicPressure === null
+          ? null
+          : scoreNews2SystolicPressure(systolicPressure),
+    },
+    {
+      key: 'fc',
+      label: 'Frecuencia cardiaca (FC)',
+      value: heartRate === null ? 'Sin dato' : `${heartRate} lpm`,
+      score: heartRate === null ? null : scoreNews2HeartRate(heartRate),
+    },
+    {
+      key: 'temp',
+      label: 'Temperatura',
+      value: temperature === null ? 'Sin dato' : `${temperature} °C`,
+      score: temperature === null ? null : scoreNews2Temperature(temperature),
+    },
+    {
+      key: 'estadoConciencia',
+      label: 'Estado de conciencia',
+      value: glasgowTotal === null ? 'Sin dato' : `Glasgow ${glasgowTotal}`,
+      score: 0,
+    },
+    {
+      key: 'oxigenoSuplementario',
+      label: 'Uso de oxígeno suplementario',
+      value: 'No documentado',
+      score: 0,
+    },
+  ];
+}
+
+function getPrioritizedTriageAlerts(formData: Record<string, RecordFieldValue>) {
+  const rawAlerts =
+    typeof formData.alertasAutomaticas === 'string' &&
+    formData.alertasAutomaticas.trim().length > 0
+      ? formData.alertasAutomaticas
+      : buildTriageAutomaticAlerts(formData);
+  const priorityByPattern = [
+    { pattern: /NEWS2 alto/i, priority: 0 },
+    { pattern: /TA sistólica/i, priority: 1 },
+    { pattern: /SpO2|SpO₂/i, priority: 2 },
+    { pattern: /Frecuencia cardiaca/i, priority: 3 },
+    { pattern: /Glasgow/i, priority: 4 },
+    { pattern: /Fiebre/i, priority: 5 },
+  ];
+
+  return [...new Set(rawAlerts.split('\n').map((alert) => alert.trim()).filter(Boolean))]
+    .sort((left, right) => {
+      const leftPriority =
+        priorityByPattern.find(({ pattern }) => pattern.test(left))?.priority ?? 10;
+      const rightPriority =
+        priorityByPattern.find(({ pattern }) => pattern.test(right))?.priority ?? 10;
+      return leftPriority - rightPriority;
+    })
+    .slice(0, 5);
+}
+
+function News2StructuredPanel({
+  formData,
+}: {
+  formData: Record<string, RecordFieldValue>;
+}) {
+  const total =
+    readNumericFormValue(formData.news2Total) ??
+    readNumericFormValue(calculateNews2(formData));
+  const riskStyle = getNews2RiskStyle(total);
+  const alerts = getPrioritizedTriageAlerts(formData);
+
+  return (
+    <div className="space-y-4 md:col-span-2">
+      <div className={`rounded-2xl border px-4 py-3 ${riskStyle.className}`}>
+        <p className="text-sm font-semibold">
+          NEWS2: {total === null ? '—' : total} — {riskStyle.label}
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {getNews2ParameterScoreCards(formData).map((item) => (
+          <div
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            key={item.key}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{item.value}</p>
+              </div>
+              <span
+                className={`inline-flex min-w-10 justify-center rounded-md border px-2 py-1 text-sm font-semibold ${getNews2ScoreClass(item.score)}`}
+              >
+                {item.score === null ? '—' : item.score}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <p className="text-sm font-semibold text-slate-900">Alertas automáticas</p>
+        {alerts.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {alerts.map((alert) => (
+              <span
+                className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
+                key={alert}
+              >
+                {alert}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sin alertas clínicas activas.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function normalizeRecordFormData(
   tabDefinition: EpisodeTabDefinition | undefined,
   rawFormData?: Record<string, unknown>,
@@ -4019,9 +4460,12 @@ export function EpisodeDetailPage() {
     }
 
     const nextFormData: Record<string, RecordFieldValue> = {
-      ...recordForm.formData,
-      tipoTriage: 'Triage',
-      tipoRegistro: 'Triage',
+      ...mergeEmergencyTriageSystemFields(
+        recordForm.formData,
+        detail,
+        session?.user ?? null,
+        recordForm.recordedAt,
+      ),
       tiempoObjetivoAtencion: calculateTriageTargetTime(
         recordForm.formData.nivelPrioridadTriage,
       ),
@@ -4031,15 +4475,13 @@ export function EpisodeDetailPage() {
       ),
       glasgowTotal: calculateGlasgowTotal(recordForm.formData),
       news2Total: calculateNews2(recordForm.formData),
-      responsableTriage:
-        detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-      triageLegalMedico:
-        detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-      triageLegalCedula:
-        detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     };
     nextFormData.alertasAutomaticas = buildTriageAutomaticAlerts(nextFormData);
-    nextFormData.banderaRojaAutomatica = nextFormData.alertasAutomaticas ? 'SI' : 'NO';
+    nextFormData.banderaRojaAutomatica = hasSelectedTriageClinicalDiscriminator(
+      nextFormData,
+    )
+      ? 'Sí'
+      : 'No';
 
     const hasChanges = Object.entries(nextFormData).some(
       ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
@@ -4323,15 +4765,12 @@ export function EpisodeDetailPage() {
       return;
     }
 
-    const signedPreprocedureRecord =
+    const latestPreprocedureRecord =
       getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
     const synchronizedSystemFields = buildAmbulatoryProcedureSnapshot({
       detail,
       recordedAt: recordForm.recordedAt,
-      preprocedureRecord:
-        signedPreprocedureRecord?.status === 'SIGNED'
-          ? signedPreprocedureRecord
-          : null,
+      preprocedureRecord: latestPreprocedureRecord,
       currentFormData: recordForm.formData,
     });
     const nextTitle =
@@ -4373,15 +4812,14 @@ export function EpisodeDetailPage() {
       return;
     }
 
-    const signedProcedureRecord = getLatestRecordByTab(
+    const latestProcedureRecord = getLatestRecordByTab(
       detail.sectionRecords,
       'Procedimiento',
     );
     const synchronizedSystemFields = buildAmbulatoryRecoveryEvaluationSnapshot({
       detail,
       recordedAt: recordForm.recordedAt,
-      procedureRecord:
-        signedProcedureRecord?.status === 'SIGNED' ? signedProcedureRecord : null,
+      procedureRecord: latestProcedureRecord,
       currentFormData: recordForm.formData,
     });
     const nextTitle =
@@ -4495,10 +4933,9 @@ export function EpisodeDetailPage() {
       detail,
       recordedAt: recordForm.recordedAt,
       currentFormData: recordForm.formData,
-      procedureRecord: latestProcedure?.status === 'SIGNED' ? latestProcedure : null,
-      recoveryRecord: latestRecovery?.status === 'SIGNED' ? latestRecovery : null,
-      prescriptionRecord:
-        latestPrescription?.status === 'SIGNED' ? latestPrescription : null,
+      procedureRecord: latestProcedure,
+      recoveryRecord: latestRecovery,
+      prescriptionRecord: latestPrescription,
       versionNumber,
     });
     const nextTitle =
@@ -4706,6 +5143,12 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isAmbulatoryClinicalSection =
+    isAmbulatoryPreprocedureSection ||
+    isAmbulatoryProcedureSection ||
+    isAmbulatoryRecoveryEvaluationSection ||
+    isAmbulatoryDischargePrescriptionSection ||
+    isAmbulatoryDischargeSection;
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -4898,43 +5341,15 @@ export function EpisodeDetailPage() {
 
     const nextRecordedAt = new Date().toISOString().slice(0, 16);
 
-    if (
-      isAmbulatoryProcedureSection &&
-      !detail.sectionRecords.some(
-        (record) =>
-          record.tabKey === 'Valoración preprocedimiento' &&
-          record.status === 'SIGNED',
-      )
-    ) {
-      setFeedback(
-        'Firma la valoración preprocedimiento antes de avanzar a Procedimiento.',
-      );
-      return;
-    }
-
-    if (
-      isAmbulatoryRecoveryEvaluationSection &&
-      !detail.sectionRecords.some(
-        (record) =>
-          record.tabKey === 'Procedimiento' && record.status === 'SIGNED',
-      )
-    ) {
-      setFeedback(
-        'Firma el procedimiento antes de iniciar Recuperación / Evaluación.',
-      );
-      return;
-    }
-
     if (isAmbulatoryProcedureSection) {
       if (!activeTabDefinition) {
         return;
       }
 
-      const signedPreprocedureRecord =
-        getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
-          ?.status === 'SIGNED'
-          ? getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
-          : null;
+      const latestPreprocedureRecord = getLatestRecordByTab(
+        detail.sectionRecords,
+        'Valoración preprocedimiento',
+      );
       setFeedback(null);
       setActiveRecordId(null);
       setIsCreatingRecord(true);
@@ -4948,7 +5363,7 @@ export function EpisodeDetailPage() {
           rawFormData: buildAmbulatoryProcedureSnapshot({
             detail,
             recordedAt: nextRecordedAt,
-            preprocedureRecord: signedPreprocedureRecord,
+            preprocedureRecord: latestPreprocedureRecord,
             currentFormData: buildInitialStructuredSections(detail.encounterType)
               .Procedimiento as Record<string, RecordFieldValue>,
           }),
@@ -4962,11 +5377,10 @@ export function EpisodeDetailPage() {
         return;
       }
 
-      const signedProcedureRecord =
-        getLatestRecordByTab(detail.sectionRecords, 'Procedimiento')?.status ===
-        'SIGNED'
-          ? getLatestRecordByTab(detail.sectionRecords, 'Procedimiento')
-          : null;
+      const latestProcedureRecord = getLatestRecordByTab(
+        detail.sectionRecords,
+        'Procedimiento',
+      );
       setFeedback(null);
       setActiveRecordId(null);
       setIsCreatingRecord(true);
@@ -4982,7 +5396,7 @@ export function EpisodeDetailPage() {
           rawFormData: buildAmbulatoryRecoveryEvaluationSnapshot({
             detail,
             recordedAt: nextRecordedAt,
-            procedureRecord: signedProcedureRecord,
+            procedureRecord: latestProcedureRecord,
             currentFormData: buildInitialStructuredSections(detail.encounterType)[
               'Recuperación / Evaluación'
             ] as Record<string, RecordFieldValue>,
@@ -5108,8 +5522,6 @@ export function EpisodeDetailPage() {
             buildHistoryVersionPrefill(
               activeTabDefinition,
               latestHistoryRecord?.formData,
-              nextHistoryType,
-              nextRecordedAt,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -5251,16 +5663,21 @@ export function EpisodeDetailPage() {
           recordedAt: nextRecordedAt,
           rawFormData: {
             ...buildInitialStructuredSections(detail.encounterType)['Triage'],
-            tipoTriage: 'Triage',
-            tipoRegistro: 'Triage',
+            tipoTriaje: emergencyInitialTriageType,
             fechaLlegada: nextRecordedAt,
             horaLlegada: nextRecordedAt,
             horaTriage: nextRecordedAt,
-            responsableTriage:
-              detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+            ...buildTriageResponsibleSnapshot({
+              sessionUser: session?.user ?? null,
+              detail,
+              recordedAt: nextRecordedAt,
+            }),
             triageLegalMedico:
-              detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
+              session?.user.fullName ??
+              detail.attendingClinician?.fullName ??
+              'Sin profesional responsable',
             triageLegalCedula:
+              session?.user.professionalLicense ??
               detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
           },
         }),
@@ -5730,20 +6147,12 @@ export function EpisodeDetailPage() {
                       },
                     )
                   : isEmergencyTriageSection
-                    ? {
-                        ...(record.formData as Record<string, RecordFieldValue>),
-                        tipoTriage: 'Triage',
-                        tipoRegistro: 'Triage',
-                        responsableTriage:
-                          detail.attendingClinician?.fullName ??
-                          'Sin profesional responsable',
-                        triageLegalMedico:
-                          detail.attendingClinician?.fullName ??
-                          'Sin profesional responsable',
-                        triageLegalCedula:
-                          detail.attendingClinician?.professionalLicense ??
-                          'Sin cédula',
-                      }
+                    ? mergeEmergencyTriageSystemFields(
+                        record.formData as Record<string, RecordFieldValue>,
+                        detail,
+                        session?.user ?? null,
+                        record.recordedAt.slice(0, 16),
+                      )
                     : isEmergencyInitialNoteSection
                       ? {
                           ...(record.formData as Record<string, RecordFieldValue>),
@@ -6153,6 +6562,38 @@ export function EpisodeDetailPage() {
               [fieldKey]: value,
             };
             if (
+              isEmergencyTriageSection &&
+              fieldKey === 'discOtro' &&
+              value !== true
+            ) {
+              nextFormData[triageOtherClinicalDiscriminatorFieldKey] = '';
+            }
+            if (
+              isEmergencyTriageSection &&
+              fieldKey === 'requiereReevaluacion' &&
+              value !== 'SI'
+            ) {
+              for (const reevaluationFieldKey of emergencyTriageConditionalReevaluationFields) {
+                nextFormData[reevaluationFieldKey] = '';
+              }
+            }
+            if (
+              isEmergencyTriageSection &&
+              fieldKey === 'ingresoPorReferencia' &&
+              value !== 'SI'
+            ) {
+              for (const referenceFieldKey of emergencyTriageConditionalReferenceFields) {
+                nextFormData[referenceFieldKey] = '';
+              }
+            }
+            if (
+              isEmergencyTriageSection &&
+              fieldKey === 'parentescoAcompanante' &&
+              value === 'NINGUNO'
+            ) {
+              nextFormData.telefonoAcompanante = '';
+            }
+            if (
               isHospitalNursingSection &&
               (fieldKey === 'ingresosMlEnfHosp' ||
                 fieldKey === 'egresosMlEnfHosp')
@@ -6192,18 +6633,192 @@ export function EpisodeDetailPage() {
     );
   };
 
-  const saveRecord = () => {
+  const saveRecord = (statusOverride?: string) => {
     if (!recordForm) {
       return;
     }
 
     setFeedback(null);
 
+    if (isEmergencyTriageSection) {
+      const missingClinicalQuickStateFields =
+        emergencyTriageClinicalQuickStateFieldKeys.filter((fieldKey) => {
+          const value = recordForm.formData[fieldKey];
+          return typeof value !== 'string' || value.trim().length === 0;
+        });
+
+      if (missingClinicalQuickStateFields.length > 0) {
+        setFeedback(
+          `Completa Estado clínico rápido: ${missingClinicalQuickStateFields
+            .map((fieldKey) => emergencyTriageClinicalQuickStateFieldLabels[fieldKey])
+            .join(', ')}.`,
+        );
+        return;
+      }
+
+      const invalidClinicalQuickStateFields =
+        emergencyTriageClinicalQuickStateFieldKeys.filter((fieldKey) => {
+          const value = recordForm.formData[fieldKey];
+          return (
+            typeof value !== 'string' ||
+            !emergencyTriageClinicalQuickStateAllowedValues[fieldKey].includes(value)
+          );
+        });
+
+      if (invalidClinicalQuickStateFields.length > 0) {
+        setFeedback(
+          `Actualiza Estado clínico rápido: ${invalidClinicalQuickStateFields
+            .map((fieldKey) => emergencyTriageClinicalQuickStateFieldLabels[fieldKey])
+            .join(', ')}.`,
+        );
+        return;
+      }
+
+      const destinoInicial =
+        typeof recordForm.formData.destinoInicial === 'string'
+          ? recordForm.formData.destinoInicial
+          : '';
+      const requiereReevaluacion =
+        typeof recordForm.formData.requiereReevaluacion === 'string'
+          ? recordForm.formData.requiereReevaluacion
+          : '';
+
+      if (!emergencyTriageDestinationAllowedValues.includes(destinoInicial)) {
+        setFeedback('Selecciona un destino inicial válido.');
+        return;
+      }
+
+      if (!emergencyTriageReevaluationRequiredValues.includes(requiereReevaluacion)) {
+        setFeedback('Indica si el paciente requiere reevaluación.');
+        return;
+      }
+
+      if (requiereReevaluacion === 'SI') {
+        const missingReevaluationFields =
+          emergencyTriageConditionalReevaluationFields.filter((fieldKey) => {
+            const value = recordForm.formData[fieldKey];
+            return typeof value !== 'string' || value.trim().length === 0;
+          });
+
+        if (missingReevaluationFields.length > 0) {
+          setFeedback(
+            `Completa reevaluación: ${missingReevaluationFields
+              .map((fieldKey) => emergencyTriageStructuredDestinationFieldLabels[fieldKey])
+              .join(', ')}.`,
+          );
+          return;
+        }
+
+        const nuevaPrioridad =
+          typeof recordForm.formData.nuevaPrioridadReevaluacion === 'string'
+            ? recordForm.formData.nuevaPrioridadReevaluacion
+            : '';
+        const horaReevaluacion =
+          typeof recordForm.formData.horaReevaluacion === 'string'
+            ? recordForm.formData.horaReevaluacion
+            : '';
+
+        if (!emergencyTriageReevaluationTimePattern.test(horaReevaluacion)) {
+          setFeedback('Captura una hora de reevaluación válida.');
+          return;
+        }
+
+        if (!emergencyTriageReevaluationPriorityValues.includes(nuevaPrioridad)) {
+          setFeedback('Selecciona una nueva prioridad válida.');
+          return;
+        }
+      }
+
+      const procedenciaIngreso =
+        typeof recordForm.formData.procedenciaIngreso === 'string'
+          ? recordForm.formData.procedenciaIngreso
+          : '';
+      const ingresoPorReferencia =
+        typeof recordForm.formData.ingresoPorReferencia === 'string'
+          ? recordForm.formData.ingresoPorReferencia
+          : '';
+      const parentescoAcompanante =
+        typeof recordForm.formData.parentescoAcompanante === 'string'
+          ? recordForm.formData.parentescoAcompanante
+          : '';
+      const telefonoAcompanante =
+        typeof recordForm.formData.telefonoAcompanante === 'string'
+          ? recordForm.formData.telefonoAcompanante.trim()
+          : '';
+
+      if (!emergencyTriageOriginAllowedValues.includes(procedenciaIngreso)) {
+        setFeedback('Selecciona una procedencia válida.');
+        return;
+      }
+
+      if (!emergencyTriageReferenceAdmissionValues.includes(ingresoPorReferencia)) {
+        setFeedback('Indica si el ingreso es por referencia.');
+        return;
+      }
+
+      if (
+        ingresoPorReferencia === 'SI' &&
+        (typeof recordForm.formData.unidadQueRefiere !== 'string' ||
+          recordForm.formData.unidadQueRefiere.trim().length === 0)
+      ) {
+        setFeedback('Captura la unidad que refiere.');
+        return;
+      }
+
+      if (
+        parentescoAcompanante &&
+        !emergencyTriageCompanionRelationshipValues.includes(parentescoAcompanante)
+      ) {
+        setFeedback('Selecciona un parentesco válido para el acompañante.');
+        return;
+      }
+
+      if (
+        telefonoAcompanante &&
+        !emergencyTriagePhonePattern.test(telefonoAcompanante)
+      ) {
+        setFeedback('Captura un teléfono de acompañante válido.');
+        return;
+      }
+
+      const missingInitialStateFields = Object.entries(
+        emergencyTriageInitialStateFieldLabels,
+      ).filter(([fieldKey]) => {
+        const value = recordForm.formData[fieldKey];
+        return typeof value !== 'string' || value.trim().length === 0;
+      });
+
+      if (missingInitialStateFields.length > 0) {
+        setFeedback(
+          `Completa Estado general y mental inicial: ${missingInitialStateFields
+            .map(([, label]) => label)
+            .join(', ')}.`,
+        );
+        return;
+      }
+
+      const invalidInitialStateFields = Object.entries(
+        emergencyTriageInitialStateAllowedValues,
+      ).filter(([fieldKey, allowedValues]) => {
+        const value = recordForm.formData[fieldKey];
+        return typeof value !== 'string' || !allowedValues.includes(value);
+      });
+
+      if (invalidInitialStateFields.length > 0) {
+        setFeedback(
+          `Estado general y mental inicial contiene valores no permitidos: ${invalidInitialStateFields
+            .map(([fieldKey]) => emergencyTriageInitialStateFieldLabels[fieldKey])
+            .join(', ')}.`,
+        );
+        return;
+      }
+    }
+
     const payload = {
       tabKey: activeRecordTabKey,
       noteType: recordForm.noteType.trim(),
       title: recordForm.title.trim() || undefined,
-      status: recordForm.status || undefined,
+      status: (statusOverride ?? recordForm.status) || undefined,
       recordedAt: recordForm.recordedAt
         ? new Date(recordForm.recordedAt).toISOString()
         : undefined,
@@ -6233,19 +6848,12 @@ export function EpisodeDetailPage() {
                     },
                   )
                 : isEmergencyTriageSection
-                  ? {
-                      ...recordForm.formData,
-                      tipoTriage: 'Triage',
-                      tipoRegistro: 'Triage',
-                      responsableTriage:
-                        detail.attendingClinician?.fullName ??
-                        'Sin profesional responsable',
-                      triageLegalMedico:
-                        detail.attendingClinician?.fullName ??
-                        'Sin profesional responsable',
-                      triageLegalCedula:
-                        detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
-                    }
+                  ? mergeEmergencyTriageSystemFields(
+                      recordForm.formData,
+                      detail,
+                      session?.user ?? null,
+                      recordForm.recordedAt,
+                    )
                   : isEmergencyInitialNoteSection
                     ? {
                         ...recordForm.formData,
@@ -6515,8 +7123,7 @@ export function EpisodeDetailPage() {
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
   const currentHistoryType =
-    (selectedRecord?.metadata.historyType as 'INICIAL' | 'SUBSECUENTE' | null) ??
-    nextHistoryType;
+    historyVersionNumber === 1 ? 'INICIAL' : nextHistoryType;
   const historyTypeLabel = getHistoryTypeLabel(
     currentHistoryType,
   );
@@ -7083,13 +7690,21 @@ export function EpisodeDetailPage() {
                       </div>
                     </div>
 
+                    {detail.encounterType === 'SURGERY' ? (
+                      <p className="text-sm text-slate-500">
+                        Los tabs pueden capturarse en borrador de forma independiente; la firma
+                        valida cada documento sin bloquear otras secciones.
+                      </p>
+                    ) : null}
+
                     {!isShowingRecordForm ? (
                       activeTabRecords.length > 0 ? (
                         <div className="space-y-3">
                           {activeTabRecords.map((record) => {
-                            const recordStatusConfig =
-                              encounterRecordStatusConfig[record.status] ??
-                              encounterRecordStatusConfig.DRAFT;
+                            const recordStatusConfig = getDisplayedRecordStatusConfig(
+                              record.status,
+                              isAmbulatoryClinicalSection,
+                            );
 
                             return (
                               <button
@@ -7175,15 +7790,35 @@ export function EpisodeDetailPage() {
                                 isRecordLocked ||
                                 isEpisodeClosed
                               }
-                              onClick={saveRecord}
+                              onClick={() => saveRecord('DRAFT')}
                               type="button"
                             >
                               <Save className="h-4 w-4" />
                               {createRecordMutation.isPending ||
                               updateRecordMutation.isPending
                                 ? 'Guardando...'
-                                : 'Guardar registro'}
+                                : isAmbulatoryClinicalSection
+                                  ? 'Guardar borrador'
+                                  : 'Guardar registro'}
                             </Button>
+                            {isAmbulatoryClinicalSection &&
+                            recordForm.status !== 'SIGNED' ? (
+                              <Button
+                                className="gap-2 shadow-sm"
+                                disabled={
+                                  createRecordMutation.isPending ||
+                                  updateRecordMutation.isPending ||
+                                  isRecordLocked ||
+                                  isEpisodeClosed
+                                }
+                                onClick={() => saveRecord('CLOSED')}
+                                type="button"
+                                variant="outline"
+                              >
+                                <FileCheck className="h-4 w-4" />
+                                Marcar completo
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
 
@@ -8045,10 +8680,10 @@ export function EpisodeDetailPage() {
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Estado</span>
                               <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
-                                {
-                                  (encounterRecordStatusConfig[recordForm.status] ??
-                                    encounterRecordStatusConfig.DRAFT).label
-                                }
+                                {getDisplayedRecordStatusConfig(
+                                  recordForm.status,
+                                  isAmbulatoryClinicalSection,
+                                ).label}
                               </div>
                             </div>
                           ) : (
@@ -8490,6 +9125,10 @@ export function EpisodeDetailPage() {
                                 </p>
                               ) : null}
                             </div>
+                            {isEmergencyTriageSection &&
+                            section.key === 'triage_news_alertas' ? (
+                              <News2StructuredPanel formData={recordForm.formData} />
+                            ) : (
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
                                 if (field.inheritanceMode === 'system') {
@@ -8558,6 +9197,27 @@ export function EpisodeDetailPage() {
                                   return null;
                                 }
 
+                                if (
+                                  isEmergencyTriageSection &&
+                                  section.key === 'triage_destino' &&
+                                  emergencyTriageConditionalReevaluationFields.includes(
+                                    field.key,
+                                  ) &&
+                                  recordForm.formData.requiereReevaluacion !== 'SI'
+                                ) {
+                                  return null;
+                                }
+                                if (
+                                  isEmergencyTriageSection &&
+                                  section.key === 'triage_procedencia_ingreso' &&
+                                  emergencyTriageConditionalReferenceFields.includes(
+                                    field.key,
+                                  ) &&
+                                  recordForm.formData.ingresoPorReferencia !== 'SI'
+                                ) {
+                                  return null;
+                                }
+
                                 const fieldValue = recordForm.formData[field.key];
 
                                 if (field.type === 'action') {
@@ -8568,6 +9228,9 @@ export function EpisodeDetailPage() {
                                     >
                                       <span className="font-medium text-slate-900">
                                         {field.label}
+                                        {field.required ? (
+                                          <span className="ml-1 text-red-600">*</span>
+                                        ) : null}
                                       </span>
                                       <Button
                                         disabled={isRecordLocked}
@@ -8644,6 +9307,13 @@ export function EpisodeDetailPage() {
                                   );
                                 }
 
+                                if (
+                                  field.key === triageOtherClinicalDiscriminatorFieldKey &&
+                                  recordForm.formData.discOtro !== true
+                                ) {
+                                  return null;
+                                }
+
                                 if (field.type === 'textarea') {
                                   return (
                                     <label
@@ -8662,6 +9332,11 @@ export function EpisodeDetailPage() {
                                           )
                                         }
                                         placeholder={field.placeholder}
+                                        required={
+                                          field.key ===
+                                            triageOtherClinicalDiscriminatorFieldKey &&
+                                          recordForm.formData.discOtro === true
+                                        }
                                         value={typeof fieldValue === 'string' ? fieldValue : ''}
                                       />
                                     </label>
@@ -8673,6 +9348,9 @@ export function EpisodeDetailPage() {
                                     <label className="space-y-2 text-sm" key={field.key}>
                                       <span className="font-medium text-slate-900">
                                         {field.label}
+                                        {field.required ? (
+                                          <span className="ml-1 text-red-600">*</span>
+                                        ) : null}
                                       </span>
                                       <select
                                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -8683,6 +9361,7 @@ export function EpisodeDetailPage() {
                                             event.target.value,
                                           )
                                         }
+                                        required={field.required}
                                         value={typeof fieldValue === 'string' ? fieldValue : ''}
                                       >
                                         {(field.options ?? []).map((option) => (
@@ -8967,6 +9646,9 @@ export function EpisodeDetailPage() {
                                   <label className="space-y-2 text-sm" key={field.key}>
                                     <span className="font-medium text-slate-900">
                                       {field.label}
+                                      {field.required ? (
+                                        <span className="ml-1 text-red-600">*</span>
+                                      ) : null}
                                     </span>
                                     <Input
                                       disabled={isRecordLocked}
@@ -8984,6 +9666,7 @@ export function EpisodeDetailPage() {
                                 );
                               })}
                             </div>
+                            )}
                           </div>
                         ))}
                       </div>

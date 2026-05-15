@@ -44,6 +44,7 @@ export type EpisodeFieldDefinition = {
   itemRemoveLabel?: string;
   disableItemRemoval?: boolean;
   actionLabel?: string;
+  required?: boolean;
 };
 
 export type EpisodeSectionDefinition = {
@@ -105,6 +106,27 @@ const triageCategoryOptions: EpisodeFieldOption[] = [
   { value: 'OTRO', label: 'Otro' },
 ];
 
+export const triageClinicalDiscriminatorFields = [
+  { key: 'discDolorToracico', label: 'Dolor torácico' },
+  { key: 'discDisneaSevera', label: 'Disnea severa' },
+  { key: 'discEstadoMentalAlterado', label: 'Estado mental alterado' },
+  { key: 'discSangradoActivo', label: 'Sangrado activo' },
+  { key: 'discFiebreMayor385', label: 'Fiebre mayor a 38.5 °C' },
+  {
+    key: 'discHipotensionSistolicaMenor90',
+    label: 'Hipotensión sistólica menor a 90 mmHg',
+  },
+  { key: 'discConvulsiones', label: 'Convulsiones' },
+  { key: 'discDeficitNeurologicoFocal', label: 'Déficit neurológico focal' },
+  { key: 'discDolorAbdominalSevero', label: 'Dolor abdominal severo' },
+  { key: 'discSepsis', label: 'Sospecha de sepsis' },
+  { key: 'discTraumaMayor', label: 'Trauma mayor' },
+  { key: 'discOtro', label: 'Otro' },
+] as const;
+
+export const triageOtherClinicalDiscriminatorFieldKey =
+  'discOtroEspecificacion';
+
 const triageArrivalModeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'AMBULANCIA', label: 'Ambulancia' },
@@ -116,11 +138,86 @@ const triageArrivalModeOptions: EpisodeFieldOption[] = [
 
 const triageDestinationOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
-  { value: 'CHOQUE', label: 'Área de choque' },
-  { value: 'CONSULTORIO_URGENCIAS', label: 'Consultorio de urgencias' },
+  { value: 'SALA_ESPERA', label: 'Sala de espera' },
   { value: 'OBSERVACION', label: 'Observación' },
-  { value: 'CAMA_URGENCIAS', label: 'Cama de urgencias' },
-  { value: 'REFERENCIA', label: 'Referencia / traslado' },
+  { value: 'SALA_CHOQUE', label: 'Sala de choque' },
+  { value: 'CONSULTA_MEDICA', label: 'Consulta médica' },
+  { value: 'UCI', label: 'UCI' },
+  { value: 'HOSPITALIZACION', label: 'Hospitalización' },
+];
+
+const triageOriginOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'DOMICILIO', label: 'Domicilio' },
+  { value: 'VIA_PUBLICA', label: 'Vía pública' },
+  { value: 'TRABAJO', label: 'Trabajo' },
+  { value: 'ESCUELA', label: 'Escuela' },
+  { value: 'OTRA_UNIDAD_MEDICA', label: 'Otra unidad médica' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const triageReferenceAdmissionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
+];
+
+const triageCompanionRelationshipOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESPOSO_A', label: 'Esposo(a)' },
+  { value: 'HIJO_A', label: 'Hijo(a)' },
+  { value: 'PADRE_MADRE', label: 'Padre/Madre' },
+  { value: 'HERMANO_A', label: 'Hermano(a)' },
+  { value: 'OTRO', label: 'Otro' },
+  { value: 'NINGUNO', label: 'Ninguno' },
+];
+
+const triageReevaluationRequiredOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
+];
+
+const triageReevaluationPriorityOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'SIN_CAMBIO', label: 'Sin cambio' },
+  { value: 'REANIMACION', label: 'Reanimación' },
+  { value: 'EMERGENCIA', label: 'Emergencia' },
+  { value: 'URGENTE', label: 'Urgente' },
+  { value: 'MENOR_URGENCIA', label: 'Menor urgencia' },
+  { value: 'NO_URGENTE', label: 'No urgente' },
+];
+
+const triageInitialGeneralConditionOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'BUENO', label: 'Bueno' },
+  { value: 'REGULAR', label: 'Regular' },
+  { value: 'GRAVE', label: 'Grave' },
+];
+
+const triageInitialMentalStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ORIENTADO_COOPERADOR', label: 'Orientado y cooperador' },
+  { value: 'CONFUSO', label: 'Confuso' },
+  { value: 'AGITADO', label: 'Agitado' },
+  { value: 'SOMNOLIENTO', label: 'Somnoliento' },
+  { value: 'ESTUPOROSO', label: 'Estuporoso' },
+  { value: 'COMATOSO', label: 'Comatoso' },
+];
+
+const triageApparentLifeRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
+  { value: 'INDETERMINADO', label: 'Indeterminado' },
+];
+
+const triageRequiredIsolationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'NO', label: 'No' },
+  { value: 'CONTACTO', label: 'Contacto' },
+  { value: 'GOTAS', label: 'Gotas' },
+  { value: 'AEROSOLES', label: 'Aerosoles' },
 ];
 
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
@@ -374,6 +471,34 @@ const normalAlteredOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'NORMAL', label: 'Normal' },
   { value: 'ALTERADO', label: 'Alterado' },
+];
+
+const emergencyTriageAirwayOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PERMEABLE', label: 'Permeable' },
+  { value: 'COMPROMETIDA', label: 'Comprometida' },
+  { value: 'INTUBADA', label: 'Intubada' },
+];
+
+const emergencyTriageHemodynamicOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ESTABLE', label: 'Estable' },
+  { value: 'INESTABLE', label: 'Inestable' },
+  { value: 'CHOQUE', label: 'Choque' },
+];
+
+const emergencyTriageNeurologicalOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ALERTA', label: 'Alerta' },
+  { value: 'RESPONDE_VOZ', label: 'Responde a voz' },
+  { value: 'RESPONDE_DOLOR', label: 'Responde a dolor' },
+  { value: 'INCONSCIENTE', label: 'Inconsciente' },
+];
+
+export const emergencyTriageClinicalQuickStateFields: EpisodeFieldDefinition[] = [
+  { key: 'viaAerea', label: 'Vía aérea', type: 'select', options: emergencyTriageAirwayOptions, required: true },
+  { key: 'estadoHemodinamico', label: 'Estado hemodinámico', type: 'select', options: emergencyTriageHemodynamicOptions, required: true },
+  { key: 'estadoNeurologico', label: 'Estado neurológico', type: 'select', options: emergencyTriageNeurologicalOptions, required: true },
 ];
 
 const currentUseOptions: EpisodeFieldOption[] = [
@@ -1460,10 +1585,9 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       sections: [
         {
           key: 'triage_tipo',
-          title: 'Tipo de registro',
+          title: 'Encabezado',
           fields: [
-            { key: 'tipoTriage', label: 'Tipo de triage', type: 'readonly' },
-            { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly' },
+            { key: 'tipoTriaje', label: 'Tipo de triaje', type: 'readonly' },
           ],
         },
         {
@@ -1530,12 +1654,15 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'triage_discriminadores',
           title: 'Discriminadores clínicos',
           fields: [
-            { key: 'discDolorToracico', label: 'Dolor torácico', type: 'checkbox' },
-            { key: 'discDisneaSevera', label: 'Disnea severa', type: 'checkbox' },
-            { key: 'discSangradoActivo', label: 'Sangrado activo', type: 'checkbox' },
-            { key: 'discAlteracionConciencia', label: 'Alteración de conciencia', type: 'checkbox' },
-            { key: 'discSepsis', label: 'Sospecha de sepsis', type: 'checkbox' },
-            { key: 'discTraumaMayor', label: 'Trauma mayor', type: 'checkbox' },
+            ...triageClinicalDiscriminatorFields.map((field) => ({
+              ...field,
+              type: 'checkbox' as const,
+            })),
+            {
+              key: triageOtherClinicalDiscriminatorFieldKey,
+              label: 'Especificar otro discriminador clínico',
+              type: 'textarea',
+            },
             { key: 'banderaRojaAutomatica', label: 'Bandera roja automática', type: 'readonly' },
           ],
         },
@@ -1543,35 +1670,31 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'triage_signos_vitales',
           title: 'Signos vitales',
           fields: [
-            { key: 'taSistolica', label: 'TA sistólica', type: 'number' },
-            { key: 'taDiastolica', label: 'TA diastólica', type: 'number' },
-            { key: 'fc', label: 'FC', type: 'number' },
-            { key: 'fr', label: 'FR', type: 'number' },
-            { key: 'temp', label: 'Temp', type: 'number' },
-            { key: 'spo2', label: 'SpO2', type: 'number' },
-            { key: 'peso', label: 'Peso', type: 'number' },
-            { key: 'glucosa', label: 'Glucosa', type: 'number' },
-            { key: 'eva', label: 'EVA', type: 'number' },
-            { key: 'llenadoCapilar', label: 'Llenado capilar', type: 'text' },
+            { key: 'taSistolica', label: 'TA sistólica (mmHg)', type: 'number' },
+            { key: 'taDiastolica', label: 'TA diastólica (mmHg)', type: 'number' },
+            { key: 'fc', label: 'FC (lpm)', type: 'number' },
+            { key: 'fr', label: 'FR (rpm)', type: 'number' },
+            { key: 'temp', label: 'Temperatura (°C)', type: 'number' },
+            { key: 'spo2', label: 'SpO₂ (%)', type: 'number' },
+            { key: 'peso', label: 'Peso (kg)', type: 'number' },
+            { key: 'glucosa', label: 'Glucosa capilar (mg/dL)', type: 'number' },
+            { key: 'eva', label: 'EVA dolor (0-10)', type: 'number' },
+            { key: 'llenadoCapilar', label: 'Llenado capilar (segundos)', type: 'text' },
           ],
         },
         {
           key: 'triage_estado_rapido',
           title: 'Estado clínico rápido',
-          fields: [
-            { key: 'viaAerea', label: 'Vía aérea', type: 'select', options: normalAlteredOptions },
-            { key: 'estadoHemodinamico', label: 'Estado hemodinámico', type: 'select', options: clinicalStateOptions },
-            { key: 'estadoNeurologico', label: 'Estado neurológico', type: 'select', options: normalAlteredOptions },
-          ],
+          fields: emergencyTriageClinicalQuickStateFields,
         },
         {
           key: 'triage_glasgow',
           title: 'Glasgow',
           fields: [
-            { key: 'glasgowE', label: 'E', type: 'select', options: glasgowEyeOptions },
-            { key: 'glasgowV', label: 'V', type: 'select', options: glasgowVerbalOptions },
-            { key: 'glasgowM', label: 'M', type: 'select', options: glasgowMotorOptions },
-            { key: 'glasgowTotal', label: 'Total', type: 'readonly' },
+            { key: 'glasgowE', label: 'Ocular (E)', type: 'select', options: glasgowEyeOptions },
+            { key: 'glasgowV', label: 'Verbal (V)', type: 'select', options: glasgowVerbalOptions },
+            { key: 'glasgowM', label: 'Motora (M)', type: 'select', options: glasgowMotorOptions },
+            { key: 'glasgowTotal', label: 'Total Glasgow', type: 'readonly' },
           ],
         },
         {
@@ -1586,25 +1709,44 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'triage_destino',
           title: 'Destino y reevaluación',
           fields: [
-            { key: 'destinoInicial', label: 'Destino inicial', type: 'select', options: triageDestinationOptions },
-            { key: 'reevaluacion', label: 'Reevaluación', type: 'textarea' },
+            { key: 'destinoInicial', label: 'Destino inicial', type: 'select', options: triageDestinationOptions, required: true },
+            { key: 'requiereReevaluacion', label: 'Requiere reevaluación', type: 'select', options: triageReevaluationRequiredOptions, required: true },
+            { key: 'horaReevaluacion', label: 'Hora de reevaluación', type: 'time', required: true },
+            { key: 'nuevaPrioridadReevaluacion', label: 'Nueva prioridad', type: 'select', options: triageReevaluationPriorityOptions, required: true },
+            { key: 'motivoCambioReevaluacion', label: 'Motivo del cambio', type: 'textarea', required: true },
           ],
         },
         {
-          key: 'triage_responsable_procedencia',
-          title: 'Responsable y procedencia',
+          key: 'triage_responsable',
+          title: 'Responsable de triaje',
           fields: [
-            { key: 'responsableTriage', label: 'Responsable', type: 'readonly' },
-            { key: 'procedenciaAdministrativa', label: 'Procedencia', type: 'textarea' },
+            { key: 'triageResponsableNombre', label: 'Nombre del profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableCedula', label: 'Cédula profesional', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableTipo', label: 'Tipo de responsable', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableTurno', label: 'Turno', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'triageResponsableArea', label: 'Área', type: 'readonly', inheritanceMode: 'system' },
+          ],
+        },
+        {
+          key: 'triage_procedencia_ingreso',
+          title: 'Procedencia e ingreso',
+          fields: [
+            { key: 'procedenciaIngreso', label: 'Procedencia', type: 'select', options: triageOriginOptions, required: true },
+            { key: 'ingresoPorReferencia', label: 'Ingreso por referencia', type: 'select', options: triageReferenceAdmissionOptions, required: true },
+            { key: 'unidadQueRefiere', label: 'Unidad que refiere', type: 'text', required: true },
+            { key: 'parentescoAcompanante', label: 'Parentesco', type: 'select', options: triageCompanionRelationshipOptions },
+            { key: 'telefonoAcompanante', label: 'Teléfono del acompañante', type: 'text' },
+            { key: 'documentoReferencia', label: 'Folio o descripción breve', type: 'text' },
           ],
         },
         {
           key: 'triage_estado_inicial',
-          title: 'Estado inicial',
+          title: 'Estado general y mental inicial',
           fields: [
-            { key: 'estadoGeneral', label: 'Estado general', type: 'textarea' },
-            { key: 'estadoMental', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
-            { key: 'riesgoVital', label: 'Riesgo vital', type: 'select', options: riskClassificationOptions },
+            { key: 'estadoGeneralInicial', label: 'Estado general inicial', type: 'select', options: triageInitialGeneralConditionOptions, required: true },
+            { key: 'estadoMentalInicial', label: 'Estado mental inicial', type: 'select', options: triageInitialMentalStatusOptions, required: true },
+            { key: 'riesgoVitalAparente', label: 'Riesgo vital aparente', type: 'select', options: triageApparentLifeRiskOptions, required: true },
+            { key: 'aislamientoRequerido', label: 'Aislamiento requerido', type: 'select', options: triageRequiredIsolationOptions, required: true },
           ],
         },
         {
