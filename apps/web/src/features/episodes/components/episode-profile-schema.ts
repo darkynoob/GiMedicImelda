@@ -245,6 +245,13 @@ const emergencyInitialNotePrognosisOptions: EpisodeFieldOption[] = [
   { value: 'MUY_GRAVE', label: 'Muy grave' },
 ];
 
+const nursingFallRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'MEDIO', label: 'Medio' },
+  { value: 'ALTO', label: 'Alto' },
+];
+
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'MEDICO', label: 'Médico' },
@@ -1931,6 +1938,69 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             { key: 'notaInicialLegalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
             { key: 'notaInicialLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
             { key: 'firmarNotaInicial', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'Hoja de enfermería',
+      title: 'Hoja de enfermería',
+      description: 'Registro independiente de enfermería en urgencias.',
+      icon: HeartPulse,
+      sections: [
+        {
+          key: 'enfermeria_urg_valoracion',
+          title: 'Valoración de enfermería',
+          fields: [
+            { key: 'habitusExteriorEnfUrg', label: 'Habitus exterior', type: 'textarea', required: true },
+            { key: 'dolorEvaEnfUrg', label: 'Valoración del dolor (EVA 0-10)', type: 'number', required: true },
+            { key: 'riesgoCaidasEnfUrg', label: 'Riesgo de caídas', type: 'select', options: nursingFallRiskOptions, required: true },
+          ],
+        },
+        {
+          key: 'enfermeria_urg_intervenciones',
+          title: 'Intervenciones',
+          fields: [
+            {
+              key: 'medicacionAdministradaEnfUrg',
+              label: 'Medicación administrada',
+              type: 'object-array',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'horaAdministrada', label: 'Hora administrada', type: 'time' },
+                { key: 'estado', label: 'Estado', type: 'select', options: [
+                  { value: '', label: 'Selecciona una opción' },
+                  { value: 'ADMINISTRADO', label: 'Administrado' },
+                  { value: 'NO_ADMINISTRADO', label: 'No administrado' },
+                  { value: 'DIFERIDO', label: 'Diferido' },
+                ] },
+                { key: 'observaciones', label: 'Observaciones', type: 'textarea' },
+                { key: 'responsable', label: 'Responsable', type: 'readonly', inheritanceMode: 'system' },
+              ],
+            },
+            {
+              key: 'procedimientosEnfermeriaEnfUrg',
+              label: 'Procedimientos de enfermería realizados',
+              type: 'object-array',
+              itemAddLabel: 'Agregar procedimiento',
+              itemFields: [
+                { key: 'procedimiento', label: 'Procedimiento', type: 'text' },
+                { key: 'hora', label: 'Hora', type: 'time' },
+                { key: 'observaciones', label: 'Observaciones', type: 'textarea' },
+                { key: 'responsable', label: 'Responsable', type: 'readonly', inheritanceMode: 'system' },
+              ],
+            },
+            { key: 'observacionesEnfermeriaEnfUrg', label: 'Observaciones de enfermería', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'enfermeria_urg_firma',
+          title: 'Firma',
+          fields: [
+            { key: 'elaboroEnfUrg', label: 'Elaboró', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'cedulaEnfUrg', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarEnfermeriaUrg', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],

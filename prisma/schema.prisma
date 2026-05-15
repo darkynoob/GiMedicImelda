@@ -4952,6 +4952,75 @@ model NursingNote {
   @@index([authoredByUserId])
 }
 
+/// Hoja de enfermería independiente para episodios de Urgencias.
+/// El documento legal vive en EncounterSectionRecord; esta proyección normaliza
+/// los campos consultables y conserva trazabilidad de firma.
+model EmergencyNursingSheet {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  habitusExterior String?
+  painEva Int?
+  fallRiskLevel String?
+  observations String?
+  professionalName String?
+  professionalLicense String?
+  signerUserId String?
+  signedAt DateTime?
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  medicationAdministrations EmergencyNursingMedicationAdministration[]
+  procedures EmergencyNursingProcedure[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([signerUserId])
+}
+
+model EmergencyNursingMedicationAdministration {
+  id String @id @default(uuid())
+  nursingSheetId String
+  medicationName String
+  administeredTime String?
+  status String?
+  observations String?
+  responsibleName String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nursingSheet EmergencyNursingSheet @relation(fields: [nursingSheetId], references: [id], onDelete: Cascade)
+
+  @@index([nursingSheetId])
+}
+
+model EmergencyNursingProcedure {
+  id String @id @default(uuid())
+  nursingSheetId String
+  procedureName String
+  performedTime String?
+  observations String?
+  responsibleName String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nursingSheet EmergencyNursingSheet @relation(fields: [nursingSheetId], references: [id], onDelete: Cascade)
+
+  @@index([nursingSheetId])
+}
+
 //////////////////////////////////////////////////////
 // LEGAL / DISCHARGE / DEATH
 //////////////////////////////////////////////////////
