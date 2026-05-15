@@ -175,6 +175,20 @@ const emergencyInitialNoteConsentTypeAllowedValues = [
   'ANESTESIA',
   'TRANSFUSION',
 ] as const;
+const emergencyInitialNotePrognosisAllowedValues = [
+  'BUENO',
+  'RESERVADO',
+  'MALO',
+  'MUY_GRAVE',
+] as const;
+const emergencyInitialNoteMentalStatusAllowedValues = [
+  'ORIENTADO_COOPERADOR',
+  'CONFUSO',
+  'AGITADO',
+  'SOMNOLIENTO',
+  'ESTUPOROSO',
+  'COMATOSO',
+] as const;
 type TriageClinicalAlert = {
   code: string;
   message: string;
@@ -16141,6 +16155,7 @@ export class EncountersService {
           'medicamentosPlan',
           'destinoPlan',
           'pronosticoNota',
+          'resumenPronostico',
         ]
       : [];
     const emergencyEvolutionRequiredFields = this.isEmergencyEvolutionRecord(
@@ -16482,6 +16497,7 @@ export class EncountersService {
     }
     if (this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyInitialNoteConsent(formData);
+      this.assertEmergencyInitialNotePrognosisAndState(formData);
     }
   }
 
@@ -16507,6 +16523,32 @@ export class EncountersService {
     ) {
       throw new BadRequestException(
         'Selecciona un tipo de consentimiento válido',
+      );
+    }
+  }
+
+  private assertEmergencyInitialNotePrognosisAndState(
+    formData: Record<string, unknown>,
+  ) {
+    const prognosis = this.readStringValue(formData.pronosticoNota);
+    const mentalStatus = this.readStringValue(formData.estadoMentalNota);
+
+    if (
+      !emergencyInitialNotePrognosisAllowedValues.some(
+        (allowedValue) => allowedValue === prognosis,
+      )
+    ) {
+      throw new BadRequestException('Selecciona un pronóstico válido');
+    }
+
+    if (
+      mentalStatus &&
+      !emergencyInitialNoteMentalStatusAllowedValues.some(
+        (allowedValue) => allowedValue === mentalStatus,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un estado mental del paciente válido',
       );
     }
   }

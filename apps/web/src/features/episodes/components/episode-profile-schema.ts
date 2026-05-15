@@ -237,6 +237,14 @@ const emergencyInitialNoteConsentTypeOptions: EpisodeFieldOption[] = [
   { value: 'TRANSFUSION', label: 'Transfusión' },
 ];
 
+const emergencyInitialNotePrognosisOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'BUENO', label: 'Bueno' },
+  { value: 'RESERVADO', label: 'Reservado' },
+  { value: 'MALO', label: 'Malo' },
+  { value: 'MUY_GRAVE', label: 'Muy grave' },
+];
+
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'MEDICO', label: 'Médico' },
@@ -1884,9 +1892,9 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'nota_inicial_pronostico',
           title: 'Pronóstico',
           fields: [
-            { key: 'pronosticoNota', label: 'Pronóstico', type: 'textarea' },
-            { key: 'estadoMentalNota', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
-            { key: 'resumenPronostico', label: 'Resumen', type: 'textarea' },
+            { key: 'pronosticoNota', label: 'Pronóstico', type: 'select', options: emergencyInitialNotePrognosisOptions, required: true },
+            { key: 'estadoMentalNota', label: 'Estado mental del paciente', type: 'select', options: triageInitialMentalStatusOptions },
+            { key: 'resumenPronostico', label: 'Resumen del interrogatorio', type: 'textarea', required: true },
           ],
         },
         {
