@@ -231,6 +231,7 @@ model Tenant {
   encounterProfiles          EncounterProfile[]
   encounterSectionRecords    EncounterSectionRecord[]
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
   emergencyOrderSets         EmergencyOrderSet[]
@@ -807,6 +808,7 @@ model Patient {
   billingProfile       PatientBillingProfile?
   encounterSectionRecords EncounterSectionRecord[]
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions EmergencyEvolution[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
@@ -1252,6 +1254,7 @@ model Encounter {
   profile              EncounterProfile?
   sectionRecords       EncounterSectionRecord[]
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions  EmergencyEvolution[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
@@ -1395,6 +1398,8 @@ model EncounterSectionRecord {
   hospitalDocument HospitalDocument?
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjective EmergencyInitialNoteObjective?
+  sourcedEmergencyInitialNoteObjectives EmergencyInitialNoteObjective[] @relation("EmergencyInitialNoteObjectiveSourceTriage")
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1434,6 +1439,47 @@ model EmergencyInitialNoteCorrection {
   @@index([encounterId])
   @@index([sectionRecordId])
   @@index([correctedAt])
+}
+
+/// Proyección estructurada del bloque Objetivo de la Nota inicial de Urgencias.
+model EmergencyInitialNoteObjective {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  sourceTriageRecordId String?
+
+  habitusExterior String?
+  cardiovascular String?
+  respiratory String?
+  neurologic String?
+  abdomen String?
+  extremities String?
+
+  systolicBloodPressure Decimal? @db.Decimal(8, 2)
+  diastolicBloodPressure Decimal? @db.Decimal(8, 2)
+  heartRate Decimal? @db.Decimal(8, 2)
+  respiratoryRate Decimal? @db.Decimal(8, 2)
+  oxygenSaturation Decimal? @db.Decimal(8, 2)
+  temperature Decimal? @db.Decimal(8, 2)
+  painEva Decimal? @db.Decimal(8, 2)
+  glucose Decimal? @db.Decimal(8, 2)
+  glasgow Decimal? @db.Decimal(8, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  sourceTriageRecord EncounterSectionRecord? @relation("EmergencyInitialNoteObjectiveSourceTriage", fields: [sourceTriageRecordId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sourceTriageRecordId])
 }
 
 /// Estudio previo estructurado dentro de una versión de Historia clínica de consulta.

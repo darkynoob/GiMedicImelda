@@ -1292,6 +1292,13 @@ export class EncountersService {
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
     });
+    await this.syncEmergencyInitialNoteObjective({
+      tenantId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
+    });
     await this.syncAmbulatoryPreprocedureAssessment({
       tenantId,
       userId,
@@ -1802,6 +1809,13 @@ export class EncountersService {
       status: normalizedRecordPayload.status,
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncEmergencyInitialNoteObjective({
+      tenantId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
     });
     await this.syncAmbulatoryPreprocedureAssessment({
       tenantId,
@@ -5797,6 +5811,7 @@ export class EncountersService {
       const formData = this.buildEmergencyInitialNoteFormData({
         incomingFormData: input.input.formData,
         triageFormDataJson: latestTriageRecord?.formDataJson ?? null,
+        triageRecordId: latestTriageRecord?.id ?? null,
         recordedAt: input.recordedAt,
         responsibleUser: input.responsibleUser,
       });
@@ -7985,6 +8000,7 @@ export class EncountersService {
           .filter(Boolean)
           .join(' · ') || 'Lugar no configurado',
     };
+    delete baseFormData.exploracionFisicaNota;
 
     const suggestions: Record<string, unknown> = {
       motivoIngresoEgresoHosp:
@@ -8577,6 +8593,7 @@ export class EncountersService {
   private buildEmergencyInitialNoteFormData(input: {
     incomingFormData: Record<string, unknown>;
     triageFormDataJson: Prisma.JsonValue | null;
+    triageRecordId: string | null;
     recordedAt: Date;
     responsibleUser: {
       id: string;
@@ -8607,6 +8624,7 @@ export class EncountersService {
     };
 
     const triageSnapshotFields: Record<string, unknown> = {
+      notaInicialTriageOrigenId: input.triageRecordId,
       modoLlegadaNota: triageFormData.modoLlegada,
       taSistolicaNota: triageFormData.taSistolica,
       taDiastolicaNota: triageFormData.taDiastolica,
@@ -11518,6 +11536,72 @@ export class EncountersService {
     }
 
     await this.syncAmbulatoryProcedureChildren(procedureDocument.id, input);
+  }
+
+  private async syncEmergencyInitialNoteObjective(input: {
+    tenantId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    formData: Record<string, unknown>;
+  }) {
+    if (!this.isEmergencyInitialNoteRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    await this.prisma.emergencyInitialNoteObjective.upsert({
+      where: { sectionRecordId: input.sectionRecordId },
+      create: {
+        tenantId: input.tenantId,
+        encounterId: input.encounter.id,
+        patientId: input.encounter.patientId,
+        sectionRecordId: input.sectionRecordId,
+        sourceTriageRecordId:
+          this.readStringValue(input.formData.notaInicialTriageOrigenId) || null,
+        habitusExterior: this.readStringValue(input.formData.habitusExteriorNota) || null,
+        cardiovascular:
+          this.readStringValue(input.formData.exploracionCardiovascularNota) || null,
+        respiratory:
+          this.readStringValue(input.formData.exploracionRespiratoriaNota) || null,
+        neurologic:
+          this.readStringValue(input.formData.exploracionNeurologicaNota) || null,
+        abdomen: this.readStringValue(input.formData.exploracionAbdomenNota) || null,
+        extremities:
+          this.readStringValue(input.formData.exploracionExtremidadesNota) || null,
+        systolicBloodPressure: this.readNumericValue(input.formData.taSistolicaNota),
+        diastolicBloodPressure: this.readNumericValue(input.formData.taDiastolicaNota),
+        heartRate: this.readNumericValue(input.formData.fcNota),
+        respiratoryRate: this.readNumericValue(input.formData.frNota),
+        oxygenSaturation: this.readNumericValue(input.formData.spo2Nota),
+        temperature: this.readNumericValue(input.formData.tempNota),
+        painEva: this.readNumericValue(input.formData.evaNota),
+        glucose: this.readNumericValue(input.formData.glucosaNota),
+        glasgow: this.readNumericValue(input.formData.glasgowNota),
+      },
+      update: {
+        sourceTriageRecordId:
+          this.readStringValue(input.formData.notaInicialTriageOrigenId) || null,
+        habitusExterior: this.readStringValue(input.formData.habitusExteriorNota) || null,
+        cardiovascular:
+          this.readStringValue(input.formData.exploracionCardiovascularNota) || null,
+        respiratory:
+          this.readStringValue(input.formData.exploracionRespiratoriaNota) || null,
+        neurologic:
+          this.readStringValue(input.formData.exploracionNeurologicaNota) || null,
+        abdomen: this.readStringValue(input.formData.exploracionAbdomenNota) || null,
+        extremities:
+          this.readStringValue(input.formData.exploracionExtremidadesNota) || null,
+        systolicBloodPressure: this.readNumericValue(input.formData.taSistolicaNota),
+        diastolicBloodPressure: this.readNumericValue(input.formData.taDiastolicaNota),
+        heartRate: this.readNumericValue(input.formData.fcNota),
+        respiratoryRate: this.readNumericValue(input.formData.frNota),
+        oxygenSaturation: this.readNumericValue(input.formData.spo2Nota),
+        temperature: this.readNumericValue(input.formData.tempNota),
+        painEva: this.readNumericValue(input.formData.evaNota),
+        glucose: this.readNumericValue(input.formData.glucosaNota),
+        glasgow: this.readNumericValue(input.formData.glasgowNota),
+      },
+    });
   }
 
   private async syncAmbulatoryRecoveryEvaluation(input: {
@@ -16002,6 +16086,10 @@ export class EncountersService {
       ? [
           'motivoAtencion',
           'horaInicioSintomas',
+          'habitusExteriorNota',
+          'exploracionCardiovascularNota',
+          'exploracionRespiratoriaNota',
+          'exploracionNeurologicaNota',
           'riesgoVitalNota',
           'estudiosAnalisis',
           'diagnosticoNota',

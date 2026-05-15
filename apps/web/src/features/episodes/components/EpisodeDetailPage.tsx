@@ -1336,6 +1336,7 @@ function buildEmergencyInitialNoteSnapshot(args: {
 
   return {
     tipoRegistro: 'Nota inicial',
+    notaInicialTriageOrigenId: args.triageRecord?.id ?? '',
     modoLlegadaNota: readCurrentOrTriage('modoLlegadaNota', 'modoLlegada'),
     taSistolicaNota: readCurrentOrTriage('taSistolicaNota', 'taSistolica'),
     taDiastolicaNota: readCurrentOrTriage('taDiastolicaNota', 'taDiastolica'),
