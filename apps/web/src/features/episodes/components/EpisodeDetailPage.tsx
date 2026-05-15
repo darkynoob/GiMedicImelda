@@ -515,6 +515,19 @@ function isAmbulatoryDischargePrescriptionTab(
   );
 }
 
+function getDisplayedRecordStatusConfig(
+  status: string,
+  isAmbulatoryClinicalSection: boolean,
+) {
+  if (isAmbulatoryClinicalSection && status === 'CLOSED') {
+    return { label: 'Completo', badgeVariant: 'success' as const };
+  }
+
+  return (
+    encounterRecordStatusConfig[status] ?? encounterRecordStatusConfig.DRAFT
+  );
+}
+
 function isAmbulatoryDischargeTab(encounterType: string, tabTitle: string) {
   return encounterType === 'SURGERY' && tabTitle === 'Egreso';
 }
@@ -4752,15 +4765,12 @@ export function EpisodeDetailPage() {
       return;
     }
 
-    const signedPreprocedureRecord =
+    const latestPreprocedureRecord =
       getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
     const synchronizedSystemFields = buildAmbulatoryProcedureSnapshot({
       detail,
       recordedAt: recordForm.recordedAt,
-      preprocedureRecord:
-        signedPreprocedureRecord?.status === 'SIGNED'
-          ? signedPreprocedureRecord
-          : null,
+      preprocedureRecord: latestPreprocedureRecord,
       currentFormData: recordForm.formData,
     });
     const nextTitle =
@@ -4802,15 +4812,14 @@ export function EpisodeDetailPage() {
       return;
     }
 
-    const signedProcedureRecord = getLatestRecordByTab(
+    const latestProcedureRecord = getLatestRecordByTab(
       detail.sectionRecords,
       'Procedimiento',
     );
     const synchronizedSystemFields = buildAmbulatoryRecoveryEvaluationSnapshot({
       detail,
       recordedAt: recordForm.recordedAt,
-      procedureRecord:
-        signedProcedureRecord?.status === 'SIGNED' ? signedProcedureRecord : null,
+      procedureRecord: latestProcedureRecord,
       currentFormData: recordForm.formData,
     });
     const nextTitle =
@@ -4924,10 +4933,9 @@ export function EpisodeDetailPage() {
       detail,
       recordedAt: recordForm.recordedAt,
       currentFormData: recordForm.formData,
-      procedureRecord: latestProcedure?.status === 'SIGNED' ? latestProcedure : null,
-      recoveryRecord: latestRecovery?.status === 'SIGNED' ? latestRecovery : null,
-      prescriptionRecord:
-        latestPrescription?.status === 'SIGNED' ? latestPrescription : null,
+      procedureRecord: latestProcedure,
+      recoveryRecord: latestRecovery,
+      prescriptionRecord: latestPrescription,
       versionNumber,
     });
     const nextTitle =
@@ -5135,6 +5143,12 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isAmbulatoryClinicalSection =
+    isAmbulatoryPreprocedureSection ||
+    isAmbulatoryProcedureSection ||
+    isAmbulatoryRecoveryEvaluationSection ||
+    isAmbulatoryDischargePrescriptionSection ||
+    isAmbulatoryDischargeSection;
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
@@ -5327,43 +5341,15 @@ export function EpisodeDetailPage() {
 
     const nextRecordedAt = new Date().toISOString().slice(0, 16);
 
-    if (
-      isAmbulatoryProcedureSection &&
-      !detail.sectionRecords.some(
-        (record) =>
-          record.tabKey === 'Valoración preprocedimiento' &&
-          record.status === 'SIGNED',
-      )
-    ) {
-      setFeedback(
-        'Firma la valoración preprocedimiento antes de avanzar a Procedimiento.',
-      );
-      return;
-    }
-
-    if (
-      isAmbulatoryRecoveryEvaluationSection &&
-      !detail.sectionRecords.some(
-        (record) =>
-          record.tabKey === 'Procedimiento' && record.status === 'SIGNED',
-      )
-    ) {
-      setFeedback(
-        'Firma el procedimiento antes de iniciar Recuperación / Evaluación.',
-      );
-      return;
-    }
-
     if (isAmbulatoryProcedureSection) {
       if (!activeTabDefinition) {
         return;
       }
 
-      const signedPreprocedureRecord =
-        getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
-          ?.status === 'SIGNED'
-          ? getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento')
-          : null;
+      const latestPreprocedureRecord = getLatestRecordByTab(
+        detail.sectionRecords,
+        'Valoración preprocedimiento',
+      );
       setFeedback(null);
       setActiveRecordId(null);
       setIsCreatingRecord(true);
@@ -5377,7 +5363,7 @@ export function EpisodeDetailPage() {
           rawFormData: buildAmbulatoryProcedureSnapshot({
             detail,
             recordedAt: nextRecordedAt,
-            preprocedureRecord: signedPreprocedureRecord,
+            preprocedureRecord: latestPreprocedureRecord,
             currentFormData: buildInitialStructuredSections(detail.encounterType)
               .Procedimiento as Record<string, RecordFieldValue>,
           }),
@@ -5391,11 +5377,10 @@ export function EpisodeDetailPage() {
         return;
       }
 
-      const signedProcedureRecord =
-        getLatestRecordByTab(detail.sectionRecords, 'Procedimiento')?.status ===
-        'SIGNED'
-          ? getLatestRecordByTab(detail.sectionRecords, 'Procedimiento')
-          : null;
+      const latestProcedureRecord = getLatestRecordByTab(
+        detail.sectionRecords,
+        'Procedimiento',
+      );
       setFeedback(null);
       setActiveRecordId(null);
       setIsCreatingRecord(true);
@@ -5411,7 +5396,7 @@ export function EpisodeDetailPage() {
           rawFormData: buildAmbulatoryRecoveryEvaluationSnapshot({
             detail,
             recordedAt: nextRecordedAt,
-            procedureRecord: signedProcedureRecord,
+            procedureRecord: latestProcedureRecord,
             currentFormData: buildInitialStructuredSections(detail.encounterType)[
               'Recuperación / Evaluación'
             ] as Record<string, RecordFieldValue>,
@@ -6648,7 +6633,7 @@ export function EpisodeDetailPage() {
     );
   };
 
-  const saveRecord = () => {
+  const saveRecord = (statusOverride?: string) => {
     if (!recordForm) {
       return;
     }
@@ -6833,7 +6818,7 @@ export function EpisodeDetailPage() {
       tabKey: activeRecordTabKey,
       noteType: recordForm.noteType.trim(),
       title: recordForm.title.trim() || undefined,
-      status: recordForm.status || undefined,
+      status: (statusOverride ?? recordForm.status) || undefined,
       recordedAt: recordForm.recordedAt
         ? new Date(recordForm.recordedAt).toISOString()
         : undefined,
@@ -7705,13 +7690,21 @@ export function EpisodeDetailPage() {
                       </div>
                     </div>
 
+                    {detail.encounterType === 'SURGERY' ? (
+                      <p className="text-sm text-slate-500">
+                        Los tabs pueden capturarse en borrador de forma independiente; la firma
+                        valida cada documento sin bloquear otras secciones.
+                      </p>
+                    ) : null}
+
                     {!isShowingRecordForm ? (
                       activeTabRecords.length > 0 ? (
                         <div className="space-y-3">
                           {activeTabRecords.map((record) => {
-                            const recordStatusConfig =
-                              encounterRecordStatusConfig[record.status] ??
-                              encounterRecordStatusConfig.DRAFT;
+                            const recordStatusConfig = getDisplayedRecordStatusConfig(
+                              record.status,
+                              isAmbulatoryClinicalSection,
+                            );
 
                             return (
                               <button
@@ -7797,15 +7790,35 @@ export function EpisodeDetailPage() {
                                 isRecordLocked ||
                                 isEpisodeClosed
                               }
-                              onClick={saveRecord}
+                              onClick={() => saveRecord('DRAFT')}
                               type="button"
                             >
                               <Save className="h-4 w-4" />
                               {createRecordMutation.isPending ||
                               updateRecordMutation.isPending
                                 ? 'Guardando...'
-                                : 'Guardar registro'}
+                                : isAmbulatoryClinicalSection
+                                  ? 'Guardar borrador'
+                                  : 'Guardar registro'}
                             </Button>
+                            {isAmbulatoryClinicalSection &&
+                            recordForm.status !== 'SIGNED' ? (
+                              <Button
+                                className="gap-2 shadow-sm"
+                                disabled={
+                                  createRecordMutation.isPending ||
+                                  updateRecordMutation.isPending ||
+                                  isRecordLocked ||
+                                  isEpisodeClosed
+                                }
+                                onClick={() => saveRecord('CLOSED')}
+                                type="button"
+                                variant="outline"
+                              >
+                                <FileCheck className="h-4 w-4" />
+                                Marcar completo
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
 
@@ -8667,10 +8680,10 @@ export function EpisodeDetailPage() {
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Estado</span>
                               <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
-                                {
-                                  (encounterRecordStatusConfig[recordForm.status] ??
-                                    encounterRecordStatusConfig.DRAFT).label
-                                }
+                                {getDisplayedRecordStatusConfig(
+                                  recordForm.status,
+                                  isAmbulatoryClinicalSection,
+                                ).label}
                               </div>
                             </div>
                           ) : (

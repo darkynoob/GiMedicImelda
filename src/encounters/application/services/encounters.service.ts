@@ -876,17 +876,6 @@ export class EncountersService {
     const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
     this.assertEncounterEditable(encounter);
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
-    if (this.isAmbulatoryProcedureRecord(encounter.encounterType, input.tabKey)) {
-      await this.assertAmbulatoryProcedureStageEnabled(encounter.id);
-    }
-    if (
-      this.isAmbulatoryRecoveryEvaluationRecord(
-        encounter.encounterType,
-        input.tabKey,
-      )
-    ) {
-      await this.assertAmbulatoryRecoveryEvaluationStageEnabled(encounter.id);
-    }
     const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
@@ -1076,6 +1065,13 @@ export class EncountersService {
       ambulatoryDischargeVersionContext,
       responsibleUser,
       triageResponsibleUser,
+    });
+    this.assertAmbulatoryRecordCanBeCompleted({
+      encounterType: encounter.encounterType,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
     });
 
     let createdRecord: EncounterSectionRecord;
@@ -1395,17 +1391,6 @@ export class EncountersService {
     }
 
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
-    if (this.isAmbulatoryProcedureRecord(encounter.encounterType, input.tabKey)) {
-      await this.assertAmbulatoryProcedureStageEnabled(encounter.id);
-    }
-    if (
-      this.isAmbulatoryRecoveryEvaluationRecord(
-        encounter.encounterType,
-        input.tabKey,
-      )
-    ) {
-      await this.assertAmbulatoryRecoveryEvaluationStageEnabled(encounter.id);
-    }
     const recordedAt = input.recordedAt
       ? new Date(input.recordedAt)
       : currentRecord.recordedAt;
@@ -1612,6 +1597,13 @@ export class EncountersService {
       ambulatoryDischargeVersionContext,
       responsibleUser,
       triageResponsibleUser,
+    });
+    this.assertAmbulatoryRecordCanBeCompleted({
+      encounterType: encounter.encounterType,
+      tabKey: normalizedRecordPayload.tabKey,
+      noteType: normalizedRecordPayload.noteType,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
     });
 
     await this.prisma.encounterSectionRecord.update({
@@ -4903,7 +4895,7 @@ export class EncountersService {
         tabKey: 'Egreso',
         noteType: 'Egreso',
         title: `Egreso V${versionNumber}`,
-        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        status: this.resolveAmbulatoryDraftStatus(input),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -4954,7 +4946,7 @@ export class EncountersService {
         tabKey: 'Receta e indicaciones de egreso',
         noteType: 'Receta e indicaciones de egreso',
         title: `Receta e indicaciones de egreso V${versionNumber}`,
-        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        status: this.resolveAmbulatoryDraftStatus(input),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -4998,7 +4990,7 @@ export class EncountersService {
         tabKey: 'Recuperación / Evaluación',
         noteType: 'Recuperación / Evaluación',
         title: `Recuperación / Evaluación V${versionNumber}`,
-        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        status: this.resolveAmbulatoryDraftStatus(input),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -5040,7 +5032,7 @@ export class EncountersService {
         tabKey: 'Procedimiento',
         noteType: 'Procedimiento',
         title: `Procedimiento V${versionNumber}`,
-        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        status: this.resolveAmbulatoryDraftStatus(input),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -5082,7 +5074,7 @@ export class EncountersService {
         tabKey: 'Valoración preprocedimiento',
         noteType: 'Valoración preprocedimiento',
         title: `Valoración preprocedimiento V${versionNumber}`,
-        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        status: this.resolveAmbulatoryDraftStatus(input),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -6264,6 +6256,19 @@ export class EncountersService {
     return '';
   }
 
+  private resolveAmbulatoryDraftStatus(input: {
+    currentRecord: { status: EncounterRecordStatus } | null;
+    input: { status?: EncounterRecordStatus };
+  }) {
+    if (input.currentRecord?.status === EncounterRecordStatus.SIGNED) {
+      return EncounterRecordStatus.SIGNED;
+    }
+
+    return input.input.status === EncounterRecordStatus.CLOSED
+      ? EncounterRecordStatus.CLOSED
+      : EncounterRecordStatus.DRAFT;
+  }
+
   private isEmergencyTriageRecord(encounterType: EncounterType, tabKey: string) {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Triage';
   }
@@ -6388,44 +6393,6 @@ export class EncountersService {
     tabKey: string,
   ) {
     return encounterType === EncounterType.SURGERY && tabKey === 'Egreso';
-  }
-
-  private async assertAmbulatoryProcedureStageEnabled(encounterId: string) {
-    const signedPreprocedure = await this.prisma.encounterSectionRecord.findFirst({
-      where: {
-        encounterId,
-        encounterType: EncounterType.SURGERY,
-        tabKey: 'Valoración preprocedimiento',
-        noteType: 'Valoración preprocedimiento',
-        status: EncounterRecordStatus.SIGNED,
-      },
-      select: { id: true },
-    });
-
-    if (!signedPreprocedure) {
-      throw new BadRequestException(
-        'Firma la valoración preprocedimiento antes de avanzar a Procedimiento',
-      );
-    }
-  }
-
-  private async assertAmbulatoryRecoveryEvaluationStageEnabled(encounterId: string) {
-    const signedProcedure = await this.prisma.encounterSectionRecord.findFirst({
-      where: {
-        encounterId,
-        encounterType: EncounterType.SURGERY,
-        tabKey: 'Procedimiento',
-        noteType: 'Procedimiento',
-        status: EncounterRecordStatus.SIGNED,
-      },
-      select: { id: true },
-    });
-
-    if (!signedProcedure) {
-      throw new BadRequestException(
-        'Firma el procedimiento antes de avanzar a Recuperación / Evaluación',
-      );
-    }
   }
 
   private isAllowedEmergencyDocumentType(noteType: string) {
@@ -16287,6 +16254,32 @@ export class EncountersService {
       this.normalizeAndAssertEmergencyTriageOrigin(formData);
       this.assertEmergencyTriageInitialState(formData);
     }
+  }
+
+  private assertAmbulatoryRecordCanBeCompleted(input: {
+    encounterType: EncounterType;
+    tabKey: string;
+    noteType: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+  }) {
+    if (
+      input.status !== EncounterRecordStatus.CLOSED ||
+      input.encounterType !== EncounterType.SURGERY ||
+      this.isAmbulatoryProcedureSupportingDocumentRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+    ) {
+      return;
+    }
+
+    this.assertRecordCanBeSigned({
+      encounterType: input.encounterType,
+      tabKey: input.tabKey,
+      noteType: input.noteType,
+      formDataJson: input.formData as Prisma.JsonObject,
+    });
   }
 
   private resolveAmbulatoryPreprocedureRequiredFields(
