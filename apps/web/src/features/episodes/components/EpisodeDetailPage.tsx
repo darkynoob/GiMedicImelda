@@ -1264,34 +1264,54 @@ function calculateNews2(formData: Record<string, RecordFieldValue>) {
   );
 }
 
-function buildTriageAutomaticAlerts(formData: Record<string, RecordFieldValue>) {
-  const alerts: string[] = [];
-  triageClinicalDiscriminatorFields.forEach(({ key, label }) => {
-    if (formData[key] === true) {
-      const otherDetail =
-        key === 'discOtro' &&
-        typeof formData[triageOtherClinicalDiscriminatorFieldKey] === 'string'
-          ? formData[triageOtherClinicalDiscriminatorFieldKey].trim()
-          : '';
-      alerts.push(otherDetail ? `${label}: ${otherDetail}` : label);
-    }
-  });
+type TriageClinicalAlert = {
+  code: string;
+  message: string;
+  severity: 'WARNING' | 'CRITICAL';
+};
 
+function buildTriageAutomaticAlerts(
+  formData: Record<string, RecordFieldValue>,
+): TriageClinicalAlert[] {
+  const alerts: TriageClinicalAlert[] = [];
   const spo2 = readNumericFormValue(formData.spo2);
   const taSistolica = readNumericFormValue(formData.taSistolica);
   const fc = readNumericFormValue(formData.fc);
+  const fr = readNumericFormValue(formData.fr);
   const temp = readNumericFormValue(formData.temp);
-  const glasgowTotal = readNumericFormValue(formData.glasgowTotal);
+  const eva = readNumericFormValue(formData.eva);
   const news2Total = readNumericFormValue(formData.news2Total);
 
-  if (spo2 !== null && spo2 < 92) alerts.push('SpO2 menor a 92%');
-  if (taSistolica !== null && taSistolica < 90) alerts.push('TA sistólica menor a 90 mmHg');
-  if (fc !== null && (fc < 40 || fc > 130)) alerts.push('Frecuencia cardiaca crítica');
-  if (temp !== null && temp >= 39) alerts.push('Fiebre alta');
-  if (glasgowTotal !== null && glasgowTotal < 13) alerts.push('Glasgow menor a 13');
-  if (news2Total !== null && news2Total >= 5) alerts.push('NEWS2 alto');
+  if (taSistolica !== null && taSistolica < 90) {
+    alerts.push({ code: 'LOW_SBP', message: 'Hipotensión — valorar choque', severity: 'CRITICAL' });
+  } else if (taSistolica !== null && taSistolica > 140) {
+    alerts.push({ code: 'HIGH_SBP', message: 'Evaluar emergencia hipertensiva', severity: 'WARNING' });
+  }
+  if (news2Total !== null && news2Total >= 6) {
+    alerts.push({ code: 'NEWS2_ESCALATION', message: 'Escalamiento clínico recomendado', severity: 'CRITICAL' });
+  } else if (news2Total !== null && news2Total >= 5) {
+    alerts.push({ code: 'NEWS2_ALERT', message: 'Alerta clínica', severity: 'WARNING' });
+  }
+  if (spo2 !== null && spo2 < 95) {
+    alerts.push({ code: 'LOW_SPO2', message: 'Monitorizar oxigenación', severity: 'WARNING' });
+  }
+  if (fc !== null && fc > 120) {
+    alerts.push({ code: 'TACHYCARDIA', message: 'Taquicardia — evaluar causa', severity: 'WARNING' });
+  }
+  if (fr !== null && fr > 22) {
+    alerts.push({ code: 'TACHYPNEA', message: 'Taquipnea — evaluar compromiso respiratorio', severity: 'WARNING' });
+  }
+  if (temp !== null && temp > 38.5) {
+    alerts.push({ code: 'FEVER', message: 'Fiebre — evaluar foco infeccioso', severity: 'WARNING' });
+  }
+  if (eva !== null && eva >= 7) {
+    alerts.push({ code: 'SEVERE_PAIN', message: 'Dolor severo — manejo analgésico prioritario', severity: 'WARNING' });
+  }
 
-  return [...new Set(alerts)].join('\n');
+  return alerts.sort((left, right) => {
+    if (left.severity === right.severity) return 0;
+    return left.severity === 'CRITICAL' ? -1 : 1;
+  });
 }
 
 function hasSelectedTriageClinicalDiscriminator(
@@ -3844,29 +3864,7 @@ function getNews2ParameterScoreCards(
 }
 
 function getPrioritizedTriageAlerts(formData: Record<string, RecordFieldValue>) {
-  const rawAlerts =
-    typeof formData.alertasAutomaticas === 'string' &&
-    formData.alertasAutomaticas.trim().length > 0
-      ? formData.alertasAutomaticas
-      : buildTriageAutomaticAlerts(formData);
-  const priorityByPattern = [
-    { pattern: /NEWS2 alto/i, priority: 0 },
-    { pattern: /TA sistólica/i, priority: 1 },
-    { pattern: /SpO2|SpO₂/i, priority: 2 },
-    { pattern: /Frecuencia cardiaca/i, priority: 3 },
-    { pattern: /Glasgow/i, priority: 4 },
-    { pattern: /Fiebre/i, priority: 5 },
-  ];
-
-  return [...new Set(rawAlerts.split('\n').map((alert) => alert.trim()).filter(Boolean))]
-    .sort((left, right) => {
-      const leftPriority =
-        priorityByPattern.find(({ pattern }) => pattern.test(left))?.priority ?? 10;
-      const rightPriority =
-        priorityByPattern.find(({ pattern }) => pattern.test(right))?.priority ?? 10;
-      return leftPriority - rightPriority;
-    })
-    .slice(0, 5);
+  return buildTriageAutomaticAlerts(formData).slice(0, 5);
 }
 
 function News2StructuredPanel({
@@ -3912,14 +3910,19 @@ function News2StructuredPanel({
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <p className="text-sm font-semibold text-slate-900">Alertas automáticas</p>
         {alerts.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 grid gap-2">
             {alerts.map((alert) => (
-              <span
-                className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
-                key={alert}
+              <div
+                className={`flex items-start gap-3 rounded-md border px-3 py-2 ${
+                  alert.severity === 'CRITICAL'
+                    ? 'border-red-200 bg-red-50 text-red-800'
+                    : 'border-amber-200 bg-amber-50 text-amber-800'
+                }`}
+                key={alert.code}
               >
-                {alert}
-              </span>
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="text-sm font-medium">{alert.message}</p>
+              </div>
             ))}
           </div>
         ) : (
@@ -4495,7 +4498,11 @@ export function EpisodeDetailPage() {
       glasgowTotal: calculateGlasgowTotal(recordForm.formData),
       news2Total: calculateNews2(recordForm.formData),
     };
-    nextFormData.alertasAutomaticas = buildTriageAutomaticAlerts(nextFormData);
+    const triageAlerts = buildTriageAutomaticAlerts(nextFormData);
+    nextFormData.alertasAutomaticas = triageAlerts
+      .map((alert) => alert.message)
+      .join('\n');
+    nextFormData.alertasAutomaticasSnapshot = triageAlerts;
     nextFormData.banderaRojaAutomatica = hasSelectedTriageClinicalDiscriminator(
       nextFormData,
     )

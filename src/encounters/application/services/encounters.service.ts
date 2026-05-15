@@ -175,6 +175,11 @@ const emergencyInitialNoteConsentTypeAllowedValues = [
   'ANESTESIA',
   'TRANSFUSION',
 ] as const;
+type TriageClinicalAlert = {
+  code: string;
+  message: string;
+  severity: 'WARNING' | 'CRITICAL';
+};
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -8354,7 +8359,8 @@ export class EncountersService {
       )
         ? 'Sí'
         : 'No',
-      alertasAutomaticas: alertasAutomaticas.join('\n'),
+      alertasAutomaticas: alertasAutomaticas.map((alert) => alert.message).join('\n'),
+      alertasAutomaticasSnapshot: alertasAutomaticas,
     };
   }
 
@@ -13062,44 +13068,43 @@ export class EncountersService {
     glasgowTotal: number | null;
     news2Total: number | null;
   }) {
-    const alerts: string[] = [];
-    for (const { key, label } of triageClinicalDiscriminatorFields) {
-      if (input.formData[key] === true) {
-        const otherDetail =
-          key === 'discOtro'
-            ? this.readStringValue(
-                input.formData[triageOtherClinicalDiscriminatorFieldKey],
-              ).trim()
-            : '';
-        alerts.push(otherDetail ? `${label}: ${otherDetail}` : label);
-      }
-    }
-
+    const alerts: TriageClinicalAlert[] = [];
     const oxygenSaturation = this.readNumericValue(input.formData.spo2);
     const systolicPressure = this.readNumericValue(input.formData.taSistolica);
     const heartRate = this.readNumericValue(input.formData.fc);
+    const respiratoryRate = this.readNumericValue(input.formData.fr);
     const temperature = this.readNumericValue(input.formData.temp);
-
-    if (oxygenSaturation !== null && oxygenSaturation < 92) {
-      alerts.push('SpO2 menor a 92%');
-    }
+    const painEva = this.readNumericValue(input.formData.eva);
     if (systolicPressure !== null && systolicPressure < 90) {
-      alerts.push('TA sistólica menor a 90 mmHg');
+      alerts.push({ code: 'LOW_SBP', message: 'Hipotensión — valorar choque', severity: 'CRITICAL' });
+    } else if (systolicPressure !== null && systolicPressure > 140) {
+      alerts.push({ code: 'HIGH_SBP', message: 'Evaluar emergencia hipertensiva', severity: 'WARNING' });
     }
-    if (heartRate !== null && (heartRate < 40 || heartRate > 130)) {
-      alerts.push('Frecuencia cardiaca crítica');
+    if (input.news2Total !== null && input.news2Total >= 6) {
+      alerts.push({ code: 'NEWS2_ESCALATION', message: 'Escalamiento clínico recomendado', severity: 'CRITICAL' });
+    } else if (input.news2Total !== null && input.news2Total >= 5) {
+      alerts.push({ code: 'NEWS2_ALERT', message: 'Alerta clínica', severity: 'WARNING' });
     }
-    if (temperature !== null && temperature >= 39) {
-      alerts.push('Fiebre alta');
+    if (oxygenSaturation !== null && oxygenSaturation < 95) {
+      alerts.push({ code: 'LOW_SPO2', message: 'Monitorizar oxigenación', severity: 'WARNING' });
     }
-    if (input.glasgowTotal !== null && input.glasgowTotal < 13) {
-      alerts.push('Glasgow menor a 13');
+    if (heartRate !== null && heartRate > 120) {
+      alerts.push({ code: 'TACHYCARDIA', message: 'Taquicardia — evaluar causa', severity: 'WARNING' });
     }
-    if (input.news2Total !== null && input.news2Total >= 5) {
-      alerts.push('NEWS2 alto');
+    if (respiratoryRate !== null && respiratoryRate > 22) {
+      alerts.push({ code: 'TACHYPNEA', message: 'Taquipnea — evaluar compromiso respiratorio', severity: 'WARNING' });
+    }
+    if (temperature !== null && temperature > 38.5) {
+      alerts.push({ code: 'FEVER', message: 'Fiebre — evaluar foco infeccioso', severity: 'WARNING' });
+    }
+    if (painEva !== null && painEva >= 7) {
+      alerts.push({ code: 'SEVERE_PAIN', message: 'Dolor severo — manejo analgésico prioritario', severity: 'WARNING' });
     }
 
-    return [...new Set(alerts)];
+    return alerts.sort((left, right) => {
+      if (left.severity === right.severity) return 0;
+      return left.severity === 'CRITICAL' ? -1 : 1;
+    });
   }
 
   private parseOptionalDate(value: unknown) {

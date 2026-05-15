@@ -1719,7 +1719,6 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           title: 'NEWS2 y alertas automáticas',
           fields: [
             { key: 'news2Total', label: 'NEWS2', type: 'readonly' },
-            { key: 'alertasAutomaticas', label: 'Alertas automáticas', type: 'readonly' },
           ],
         },
         {
