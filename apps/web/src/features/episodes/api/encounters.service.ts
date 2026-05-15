@@ -1,6 +1,7 @@
 import { apiRequest } from '../../../shared/http/api-client';
 import type {
   CreateEncounterRequest,
+  CorrectEmergencyInitialNoteRequest,
   EncounterSectionRecordMutationRequest,
   EncounterDetailResponse,
   EncounterMetaResponse,
@@ -112,6 +113,22 @@ export function signEncounterSectionRecord(
 ) {
   return apiRequest<EncounterDetailResponse>(
     `/encounters/${encounterNumber}/records/${recordId}/sign`,
+    {
+      method: 'POST',
+      token,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function correctEmergencyInitialNote(
+  token: string,
+  encounterNumber: string,
+  recordId: string,
+  input: CorrectEmergencyInitialNoteRequest,
+) {
+  return apiRequest<EncounterDetailResponse>(
+    `/encounters/${encounterNumber}/records/${recordId}/correct-initial-note`,
     {
       method: 'POST',
       token,

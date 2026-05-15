@@ -297,6 +297,10 @@ export interface SignEncounterSectionRecordRequest {
   password: string;
 }
 
+export interface CorrectEmergencyInitialNoteRequest {
+  reason?: string;
+}
+
 export interface EncounterSectionRecordPdfResponse {
   fileName: string;
   mimeType: string;

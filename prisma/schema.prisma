@@ -230,6 +230,7 @@ model Tenant {
   patientBillingProfiles     PatientBillingProfile[]
   encounterProfiles          EncounterProfile[]
   encounterSectionRecords    EncounterSectionRecord[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
   emergencyOrderSets         EmergencyOrderSet[]
@@ -502,6 +503,8 @@ model User {
   uploadedAttachments  Attachment[]
   auditLogs            AuditLog[]
   authoredEncounterSectionRecords EncounterSectionRecord[]
+  correctedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteCorrector")
+  resignedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteResigner")
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
@@ -803,6 +806,7 @@ model Patient {
   clinicalProfile      PatientClinicalProfile?
   billingProfile       PatientBillingProfile?
   encounterSectionRecords EncounterSectionRecord[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   emergencyEvolutions EmergencyEvolution[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
@@ -1247,6 +1251,7 @@ model Encounter {
   auditLogs            AuditLog[]
   profile              EncounterProfile?
   sectionRecords       EncounterSectionRecord[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   emergencyEvolutions  EmergencyEvolution[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
@@ -1389,6 +1394,7 @@ model EncounterSectionRecord {
   hospitalDischarge HospitalDischarge?
   hospitalDocument HospitalDocument?
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1398,6 +1404,36 @@ model EncounterSectionRecord {
   @@index([status])
   @@index([recordedAt])
   @@index([authoredByUserId])
+}
+
+/// Historial interno de correcciones de la Nota inicial de Urgencias.
+/// Conserva el snapshot firmado anterior antes de reabrir el documento para refirma.
+model EmergencyInitialNoteCorrection {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String
+  correctedByUserId String?
+  correctionReason String?
+  previousFormDataJson Json
+  previousMetadataJson Json?
+  previousSignedAt DateTime?
+  correctedAt DateTime @default(now())
+  resignedAt DateTime?
+  resignedByUserId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  correctedByUser User? @relation("EmergencyInitialNoteCorrector", fields: [correctedByUserId], references: [id], onDelete: SetNull)
+  resignedByUser User? @relation("EmergencyInitialNoteResigner", fields: [resignedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([sectionRecordId])
+  @@index([correctedAt])
 }
 
 /// Estudio previo estructurado dentro de una versión de Historia clínica de consulta.

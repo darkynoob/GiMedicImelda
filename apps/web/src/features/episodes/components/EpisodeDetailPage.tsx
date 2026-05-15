@@ -47,6 +47,7 @@ import type {
 import { useAuth } from '../../auth/hooks/auth-context';
 import {
   createEncounterSectionRecord,
+  correctEmergencyInitialNote,
   deleteEncounterAttachment,
   downloadEncounterSectionRecordPdf,
   fetchEncounterDetail,
@@ -1132,8 +1133,8 @@ function buildTriageTitle(versionNumber: number) {
   return `Triage V${versionNumber}`;
 }
 
-function buildEmergencyInitialNoteTitle(versionNumber: number) {
-  return `Nota inicial V${versionNumber}`;
+function buildEmergencyInitialNoteTitle() {
+  return 'Nota inicial';
 }
 
 function buildEmergencyEvolutionTitle(versionNumber: number) {
@@ -4271,6 +4272,23 @@ export function EpisodeDetailPage() {
     },
   });
 
+  const correctInitialNoteMutation = useMutation({
+    mutationFn: (payload: { recordId: string; reason?: string }) =>
+      correctEmergencyInitialNote(
+        session!.accessToken,
+        episodeNumber,
+        payload.recordId,
+        { reason: payload.reason },
+      ),
+    onSuccess: async () => {
+      setFeedback('Nota inicial habilitada para corrección. Se requerirá una nueva firma.');
+      await refreshEncounterData();
+    },
+    onError: (error: Error) => {
+      setFeedback(error.message);
+    },
+  });
+
   const previewPrescriptionPdfMutation = useMutation({
     mutationFn: (recordId: string) =>
       previewEncounterSectionRecordPdf(session!.accessToken, episodeNumber, recordId),
@@ -5262,8 +5280,6 @@ export function EpisodeDetailPage() {
     (latestDocumentRecord?.metadata.versionNumber ?? 0) + 1;
   const nextTriageVersionNumber =
     (latestTriageRecord?.metadata.versionNumber ?? 0) + 1;
-  const nextEmergencyInitialNoteVersionNumber =
-    (latestEmergencyInitialNoteRecord?.metadata.versionNumber ?? 0) + 1;
   const nextEmergencyEvolutionVersionNumber =
     (latestEmergencyEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
   const nextEmergencyOrdersVersionNumber =
@@ -5686,6 +5702,10 @@ export function EpisodeDetailPage() {
     }
 
     if (isEmergencyInitialNoteSection) {
+      if (latestEmergencyInitialNoteRecord) {
+        openExistingRecord(latestEmergencyInitialNoteRecord.id);
+        return;
+      }
       if (!activeTabDefinition) {
         return;
       }
@@ -5697,9 +5717,7 @@ export function EpisodeDetailPage() {
         buildRecordFormState({
           tabDefinition: activeTabDefinition,
           noteType: 'Nota inicial',
-          title: buildEmergencyInitialNoteTitle(
-            nextEmergencyInitialNoteVersionNumber,
-          ),
+          title: buildEmergencyInitialNoteTitle(),
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: {
@@ -7120,6 +7138,18 @@ export function EpisodeDetailPage() {
     });
   };
 
+  const correctInitialNote = () => {
+    if (!selectedRecord) {
+      return;
+    }
+
+    const reason = window.prompt('Motivo de corrección (opcional)') ?? undefined;
+    correctInitialNoteMutation.mutate({
+      recordId: selectedRecord.id,
+      reason,
+    });
+  };
+
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
   const currentHistoryType =
@@ -7659,7 +7689,10 @@ export function EpisodeDetailPage() {
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {(activeTabPanelConfig?.noteTypes?.length
+                        {isEmergencyInitialNoteSection &&
+                        latestEmergencyInitialNoteRecord
+                          ? null
+                          : (activeTabPanelConfig?.noteTypes?.length
                           ? activeTabPanelConfig.noteTypes
                           : [
                               activeTabPanelConfig?.defaultActionLabel.replace(
@@ -7817,6 +7850,21 @@ export function EpisodeDetailPage() {
                               >
                                 <FileCheck className="h-4 w-4" />
                                 Marcar completo
+                              </Button>
+                            ) : null}
+                            {isEmergencyInitialNoteSection &&
+                            selectedRecord?.status === 'SIGNED' ? (
+                              <Button
+                                className="gap-2 shadow-sm"
+                                disabled={correctInitialNoteMutation.isPending || isEpisodeClosed}
+                                onClick={correctInitialNote}
+                                type="button"
+                                variant="outline"
+                              >
+                                <PencilLine className="h-4 w-4" />
+                                {correctInitialNoteMutation.isPending
+                                  ? 'Preparando corrección...'
+                                  : 'Corregir nota'}
                               </Button>
                             ) : null}
                           </div>
@@ -8024,13 +8072,7 @@ export function EpisodeDetailPage() {
                                       <Stethoscope className="h-4 w-4 text-emerald-600" />
                                     </div>
                                     <p className="text-sm font-semibold text-slate-900">
-                                      {selectedRecord
-                                        ? buildEmergencyInitialNoteTitle(
-                                            selectedRecord.metadata.versionNumber ?? 1,
-                                          )
-                                        : buildEmergencyInitialNoteTitle(
-                                            nextEmergencyInitialNoteVersionNumber,
-                                          )}
+                                      {buildEmergencyInitialNoteTitle()}
                                     </p>
                                   </div>
                                   <p className="max-w-2xl text-sm leading-relaxed text-emerald-800">
@@ -8672,6 +8714,7 @@ export function EpisodeDetailPage() {
 
                           {isConsultationPrescriptionSection ||
                           isConsultationDocumentsSection ||
+                          isEmergencyInitialNoteSection ||
                           isAmbulatoryPreprocedureSection ||
                           isAmbulatoryProcedureSection ||
                           isAmbulatoryRecoveryEvaluationSection ||

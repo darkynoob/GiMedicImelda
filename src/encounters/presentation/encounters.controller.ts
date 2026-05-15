@@ -19,6 +19,7 @@ import { CreateEncounterDto } from '../create-encounter.dto';
 import { UpdateEncounterDto } from '../update-encounter.dto';
 import { EncountersQueryDto } from '../application/dto/encounters-query.dto';
 import { EncounterSectionRecordMutationDto } from '../application/dto/encounter-section-record.dto';
+import { CorrectEmergencyInitialNoteDto } from '../application/dto/correct-emergency-initial-note.dto';
 import { SignEncounterRecordDto } from '../application/dto/sign-encounter-record.dto';
 import { EncountersService } from '../application/services/encounters.service';
 
@@ -131,6 +132,22 @@ export class EncountersController {
       encounterNumber,
       recordId,
       input.password,
+    );
+  }
+
+  @Post(':encounterNumber/records/:recordId/correct-initial-note')
+  correctEmergencyInitialNote(
+    @Req() request: AuthenticatedRequest,
+    @Param('encounterNumber') encounterNumber: string,
+    @Param('recordId') recordId: string,
+    @Body() input: CorrectEmergencyInitialNoteDto,
+  ) {
+    return this.encountersService.correctEmergencyInitialNoteForTenant(
+      request.user.tenantId,
+      request.user.sub,
+      encounterNumber,
+      recordId,
+      input.reason,
     );
   }
 

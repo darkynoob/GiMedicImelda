@@ -923,6 +923,14 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    if (
+      this.isEmergencyInitialNoteRecord(encounter.encounterType, input.tabKey) &&
+      emergencyInitialNoteVersionContext?.latestRecord
+    ) {
+      throw new BadRequestException(
+        'Este episodio ya tiene una Nota inicial. Las notas posteriores deben capturarse en Evolución.',
+      );
+    }
     const emergencyEvolutionVersionContext =
       await this.resolveEmergencyEvolutionVersionContext({
         encounterId: encounter.id,
@@ -2181,6 +2189,13 @@ export class EncountersService {
             signedByUserId: currentUser.id,
             signedByUserName: currentUser.fullName,
             signedWithPasswordValidation: true,
+            ...(currentMetadata.correctionPending === true
+              ? {
+                  correctionPending: false,
+                  lastCorrectionResignedAt: signedAt.toISOString(),
+                  lastCorrectionResignedByUserId: currentUser.id,
+                }
+              : {}),
             ...(isHospitalConsultation && !isHospitalConsultationResponseSignature
               ? {
                   requestSignedAt: signedAt.toISOString(),
@@ -2196,6 +2211,24 @@ export class EncountersService {
           } as Prisma.InputJsonValue,
         },
       });
+      if (
+        currentMetadata.correctionPending === true &&
+        this.isEmergencyInitialNoteRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.emergencyInitialNoteCorrection.updateMany({
+          where: {
+            sectionRecordId: currentRecord.id,
+            resignedAt: null,
+          },
+          data: {
+            resignedAt: signedAt,
+            resignedByUserId: currentUser.id,
+          },
+        });
+      }
 
       if (this.isConsultationClosureDocument(currentRecord.encounterType, currentRecord.tabKey, currentRecord.noteType)) {
         await transaction.encounter.update({
@@ -3052,6 +3085,75 @@ export class EncountersService {
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return await this.toEncounterDetailResponse(
+      updatedEncounter,
+      updatedEncounter.attendingUserId
+        ? await this.userRepository.findById(updatedEncounter.attendingUserId)
+        : null,
+    );
+  }
+
+  async correctEmergencyInitialNoteForTenant(
+    tenantId: string,
+    userId: string,
+    encounterNumber: string,
+    recordId: string,
+    reason?: string,
+  ): Promise<EncounterDetailResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
+    const record = await this.prisma.encounterSectionRecord.findUnique({
+      where: { id: recordId },
+    });
+
+    if (
+      !record ||
+      record.tenantId !== tenantId ||
+      record.encounterId !== encounter.id ||
+      !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey)
+    ) {
+      throw new NotFoundException('Nota inicial no encontrada');
+    }
+    if (record.status !== EncounterRecordStatus.SIGNED) {
+      throw new BadRequestException(
+        'Solo una Nota inicial firmada puede pasar a corrección',
+      );
+    }
+
+    const correctedAt = new Date();
+    const metadata = this.normalizeRecordMetadata(record.metadataJson) ?? {};
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.emergencyInitialNoteCorrection.create({
+        data: {
+          tenantId,
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          sectionRecordId: record.id,
+          correctedByUserId: userId,
+          correctionReason: reason,
+          previousFormDataJson: record.formDataJson as Prisma.InputJsonValue,
+          previousMetadataJson: record.metadataJson as Prisma.InputJsonValue,
+          previousSignedAt: record.signedAt,
+          correctedAt,
+        },
+      });
+      await transaction.encounterSectionRecord.update({
+        where: { id: record.id },
+        data: {
+          status: EncounterRecordStatus.DRAFT,
+          signedAt: null,
+          metadataJson: {
+            ...metadata,
+            correctionPending: true,
+            lastCorrectedAt: correctedAt.toISOString(),
+            lastCorrectedByUserId: userId,
+            correctionReason: reason ?? null,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    });
+
+    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    return this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -5692,10 +5794,6 @@ export class EncountersService {
         input.encounter.sectionRecords,
         'Triage',
       );
-      const versionNumber =
-        currentRecordMetadata.versionNumber ??
-        input.emergencyInitialNoteVersionContext?.nextVersionNumber ??
-        1;
       const formData = this.buildEmergencyInitialNoteFormData({
         incomingFormData: input.input.formData,
         triageFormDataJson: latestTriageRecord?.formDataJson ?? null,
@@ -5706,15 +5804,12 @@ export class EncountersService {
       return {
         tabKey: 'Nota inicial',
         noteType: 'Nota inicial',
-        title: `Nota inicial V${versionNumber}`,
-        status:
-          input.input.status ??
-          input.currentRecord?.status ??
-          EncounterRecordStatus.DRAFT,
+        title: 'Nota inicial',
+        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
-          versionNumber,
+          versionNumber: 1,
           inheritedFromRecordId:
             currentRecordMetadata.inheritedFromRecordId ?? latestTriageRecord?.id ?? null,
         },
