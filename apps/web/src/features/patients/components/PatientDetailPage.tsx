@@ -32,23 +32,29 @@ export const SEX_LABELS: Record<string, string> = {
   MALE: 'Masculino',
 }
 
-  const calculateAge = (birthDate?: string | Date | null) => {
-    if (!birthDate) return null
+const calculateAge = (birthDate?: string | Date | null) => {
+  if (!birthDate) return null
 
-    const today = new Date()
-    const birth = new Date(birthDate)
-    let age = today.getFullYear() - birth.getFullYear()
-    const monthDiff = today.getMonth() - birth.getMonth()
+  const today = new Date()
+  const birth = new Date(birthDate)
+  let age = today.getFullYear() - birth.getFullYear()
+  const monthDiff = today.getMonth() - birth.getMonth()
 
-    if (
-      monthDiff < 0 ||
-      (monthDiff === 0 && today.getDate() < birth.getDate())
-    ) {
-      age--
-    }
-
-    return age
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birth.getDate())
+  ) {
+    age--
   }
+
+  return age
+}
+
+const statusLabels: Record<string, string> = {
+  OPEN: 'Abierto',
+  CLOSED: 'Cerrado',
+  PENDING: 'Pendiente',
+};
 
 export function PatientDetailPage() {
   const { patientId = '' } = useParams();
@@ -376,7 +382,7 @@ export function PatientDetailPage() {
                             encounter.status === 'OPEN' ? 'success' : 'secondary'
                           }
                         >
-                          {encounter.status}
+                          {statusLabels[encounter.status] ?? encounter.status}
                         </Badge>
 
                         <Button size="icon" variant="ghost">

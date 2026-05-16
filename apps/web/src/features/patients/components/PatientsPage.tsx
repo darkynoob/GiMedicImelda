@@ -40,6 +40,12 @@ const allergiesOptions = [
   { value: 'without_allergies', label: 'Sin alergias' },
 ] as const;
 
+const sexLabels: Record<string, string> = {
+  MALE: 'Masculino',
+  FEMALE: 'Femenino',
+  OTHER: 'Otro',
+};
+
 function SelectFilter({
   label,
   value,
@@ -271,7 +277,7 @@ export function PatientsPage() {
                       {patient.curp ?? 'Sin CURP'}
                     </td>
                     <td className="hidden p-3 lg:table-cell">
-                      {patient.sexAtBirth}
+                      {sexLabels[patient.sexAtBirth] ?? patient.sexAtBirth}
                     </td>
                     <td className="hidden p-3 lg:table-cell">
                       {patient.ageLabel ?? 'Sin dato'}

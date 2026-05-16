@@ -208,6 +208,11 @@ const emergencyTriageObsoleteInitialStateFields = [
   'estadoMental',
   'riesgoVital',
 ];
+const sexLabels: Record<string, string> = {
+  MALE: 'Masculino',
+  FEMALE: 'Femenino',
+  OTHER: 'Otro',
+};
 
 function getHistoryTypeLabel(historyType: string | null | undefined) {
   if (historyType === 'INICIAL') {
@@ -7238,7 +7243,7 @@ export function EpisodeDetailPage() {
                     {detail.encounterNumber}
                   </span>
                   <span className="text-xs text-muted-foreground/70">
-                    {detail.patient.sexAtBirth} ·{' '}
+                    {sexLabels[detail.patient.sexAtBirth] ?? detail.patient.sexAtBirth} ·{' '}
                     {detail.patient.ageLabel ?? 'Edad no disponible'}
                   </span>
                   <span className="text-xs text-muted-foreground/70">
@@ -9851,7 +9856,7 @@ export function EpisodeDetailPage() {
 
             <SectionCard
               description="Actividad reciente relacionada con la atención y evolución del episodio."
-              title="Timeline"
+              title="Línea del tiempo"
               icon={History}
             >
               <div className="space-y-5">
