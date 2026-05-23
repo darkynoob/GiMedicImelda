@@ -30,6 +30,24 @@ export async function seedAuth({ prisma, ctx }: SeedDeps) {
         description: 'Permite consultar expedientes y datos básicos de pacientes',
       },
       {
+        id: ids.permissions.patientsCreate,
+        code: 'patients.create',
+        name: 'Crear pacientes',
+        description: 'Permite registrar nuevos pacientes',
+      },
+      {
+        id: ids.permissions.patientsUpdate,
+        code: 'patients.update',
+        name: 'Actualizar pacientes',
+        description: 'Permite modificar datos de pacientes existentes',
+      },
+      {
+        id: ids.permissions.patientsAttachmentsManage,
+        code: 'patients.attachments.manage',
+        name: 'Gestionar adjuntos de pacientes',
+        description: 'Permite subir y eliminar archivos adjuntos de pacientes',
+      },
+      {
         id: ids.permissions.documentsSign,
         code: 'documents.sign',
         name: 'Firmar documentos',
@@ -93,6 +111,26 @@ export async function seedAuth({ prisma, ctx }: SeedDeps) {
       {
         id: ids.rolePermissions.adminPatientsRead,
         roleId: ids.roles.tenantAdmin,
+        permissionId: ids.permissions.patientsRead,
+      },
+      {
+        id: ids.rolePermissions.adminPatientsCreate,
+        roleId: ids.roles.tenantAdmin,
+        permissionId: ids.permissions.patientsCreate,
+      },
+      {
+        id: ids.rolePermissions.adminPatientsUpdate,
+        roleId: ids.roles.tenantAdmin,
+        permissionId: ids.permissions.patientsUpdate,
+      },
+      {
+        id: ids.rolePermissions.adminPatientsAttachmentsManage,
+        roleId: ids.roles.tenantAdmin,
+        permissionId: ids.permissions.patientsAttachmentsManage,
+      },
+      {
+        id: ids.rolePermissions.physicianPatientsRead,
+        roleId: ids.roles.physician,
         permissionId: ids.permissions.patientsRead,
       },
       {

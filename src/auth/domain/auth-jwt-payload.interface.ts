@@ -4,4 +4,5 @@ export interface AuthJwtPayload {
   tenantId: string;
   fullName: string;
   roleCodes: string[];
+  permissions: string[];
 }

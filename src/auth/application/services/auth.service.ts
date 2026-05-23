@@ -63,12 +63,21 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    const permissionCodes = [
+      ...new Set(
+        user.roles.flatMap((assignment) =>
+          assignment.role.permissions.map((rp) => rp.permission.code),
+        ),
+      ),
+    ];
+
     const payload: AuthJwtPayload = {
       sub: user.id,
       email: user.email,
       tenantId: user.tenantId,
       fullName: user.fullName,
       roleCodes: user.roles.map((assignment) => assignment.role.code),
+      permissions: permissionCodes,
     };
 
     return this.buildAuthResponse(payload, user);
@@ -93,12 +102,21 @@ export class AuthService {
       throw new UnauthorizedException('Usuario no disponible para refrescar sesión');
     }
 
+    const permissionCodes = [
+      ...new Set(
+        user.roles.flatMap((assignment) =>
+          assignment.role.permissions.map((rp) => rp.permission.code),
+        ),
+      ),
+    ];
+
     const nextPayload: AuthJwtPayload = {
       sub: user.id,
       email: user.email,
       tenantId: user.tenantId,
       fullName: user.fullName,
       roleCodes: user.roles.map((assignment) => assignment.role.code),
+      permissions: permissionCodes,
     };
 
     return this.buildAuthResponse(nextPayload, user);

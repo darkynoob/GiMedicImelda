@@ -17,8 +17,10 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+import {
+  CURP_REGEX,
+  PHONE_REGEX,
+} from '../shared/constants/validation-patterns';
 
 const trimValue = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
