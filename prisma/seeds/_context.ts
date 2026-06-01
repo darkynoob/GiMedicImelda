@@ -32,6 +32,9 @@ export function buildSeedContext() {
     },
     permissions: {
       patientsRead: randomUUID(),
+      patientsCreate: randomUUID(),
+      patientsUpdate: randomUUID(),
+      patientsAttachmentsManage: randomUUID(),
       documentsSign: randomUUID(),
     },
     users: {
@@ -44,6 +47,10 @@ export function buildSeedContext() {
     },
     rolePermissions: {
       adminPatientsRead: randomUUID(),
+      adminPatientsCreate: randomUUID(),
+      adminPatientsUpdate: randomUUID(),
+      adminPatientsAttachmentsManage: randomUUID(),
+      physicianPatientsRead: randomUUID(),
       physicianDocumentsSign: randomUUID(),
     },
     patients: {

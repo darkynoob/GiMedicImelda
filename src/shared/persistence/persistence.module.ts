@@ -70,6 +70,18 @@ import { ATTACHMENT_REPOSITORY } from './tokens/attachment.token';
 import { PrismaAttachmentRepository } from './repositories/attachment.repository';
 import { AUDITLOG_REPOSITORY } from './tokens/auditLog.token';
 import { PrismaAuditLogRepository } from './repositories/auditLog.repository';
+import { PATIENT_COVERAGE_REPOSITORY } from './tokens/patientCoverage.token';
+import { PrismaPatientCoverageRepository } from './repositories/patientCoverage.repository';
+import { PATIENT_DOCUMENT_REPOSITORY } from './tokens/patientDocument.token';
+import { PrismaPatientDocumentRepository } from './repositories/patientDocument.repository';
+import { PATIENT_RESPONSIBLE_CONTACT_REPOSITORY } from './tokens/patientResponsibleContact.token';
+import { PrismaPatientResponsibleContactRepository } from './repositories/patientResponsibleContact.repository';
+import { PATIENT_DEMOGRAPHIC_PROFILE_REPOSITORY } from './tokens/patientDemographicProfile.token';
+import { PrismaPatientDemographicProfileRepository } from './repositories/patientDemographicProfile.repository';
+import { PATIENT_CLINICAL_PROFILE_REPOSITORY } from './tokens/patientClinicalProfile.token';
+import { PrismaPatientClinicalProfileRepository } from './repositories/patientClinicalProfile.repository';
+import { PATIENT_BILLING_PROFILE_REPOSITORY } from './tokens/patientBillingProfile.token';
+import { PrismaPatientBillingProfileRepository } from './repositories/patientBillingProfile.repository';
 
 @Global()
 @Module({
@@ -196,6 +208,36 @@ import { PrismaAuditLogRepository } from './repositories/auditLog.repository';
     { provide: ATTACHMENT_REPOSITORY, useExisting: PrismaAttachmentRepository },
     PrismaAuditLogRepository,
     { provide: AUDITLOG_REPOSITORY, useExisting: PrismaAuditLogRepository },
+    PrismaPatientCoverageRepository,
+    {
+      provide: PATIENT_COVERAGE_REPOSITORY,
+      useExisting: PrismaPatientCoverageRepository,
+    },
+    PrismaPatientDocumentRepository,
+    {
+      provide: PATIENT_DOCUMENT_REPOSITORY,
+      useExisting: PrismaPatientDocumentRepository,
+    },
+    PrismaPatientResponsibleContactRepository,
+    {
+      provide: PATIENT_RESPONSIBLE_CONTACT_REPOSITORY,
+      useExisting: PrismaPatientResponsibleContactRepository,
+    },
+    PrismaPatientDemographicProfileRepository,
+    {
+      provide: PATIENT_DEMOGRAPHIC_PROFILE_REPOSITORY,
+      useExisting: PrismaPatientDemographicProfileRepository,
+    },
+    PrismaPatientClinicalProfileRepository,
+    {
+      provide: PATIENT_CLINICAL_PROFILE_REPOSITORY,
+      useExisting: PrismaPatientClinicalProfileRepository,
+    },
+    PrismaPatientBillingProfileRepository,
+    {
+      provide: PATIENT_BILLING_PROFILE_REPOSITORY,
+      useExisting: PrismaPatientBillingProfileRepository,
+    },
   ],
   exports: [
     PrismaService,
@@ -269,6 +311,18 @@ import { PrismaAuditLogRepository } from './repositories/auditLog.repository';
     ATTACHMENT_REPOSITORY,
     PrismaAuditLogRepository,
     AUDITLOG_REPOSITORY,
+    PrismaPatientCoverageRepository,
+    PATIENT_COVERAGE_REPOSITORY,
+    PrismaPatientDocumentRepository,
+    PATIENT_DOCUMENT_REPOSITORY,
+    PrismaPatientResponsibleContactRepository,
+    PATIENT_RESPONSIBLE_CONTACT_REPOSITORY,
+    PrismaPatientDemographicProfileRepository,
+    PATIENT_DEMOGRAPHIC_PROFILE_REPOSITORY,
+    PrismaPatientClinicalProfileRepository,
+    PATIENT_CLINICAL_PROFILE_REPOSITORY,
+    PrismaPatientBillingProfileRepository,
+    PATIENT_BILLING_PROFILE_REPOSITORY,
   ],
 })
 export class PersistenceModule {}

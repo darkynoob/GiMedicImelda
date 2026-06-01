@@ -49,8 +49,12 @@ const emergencyConfig: Record<string, EpisodeRecordPanelConfig> = {
     defaultActionLabel: 'Nuevo triage',
   },
   'Nota inicial': {
-    contextLabel: 'Notas iniciales',
-    defaultActionLabel: 'Nueva nota inicial',
+    contextLabel: 'Nota inicial',
+    defaultActionLabel: 'Crear nota inicial',
+  },
+  'Hoja de enfermería': {
+    contextLabel: 'Hojas de enfermería',
+    defaultActionLabel: 'Nueva hoja',
   },
   Evolución: {
     contextLabel: 'Notas de evolución',

@@ -162,6 +162,39 @@ const emergencyTriageObsoleteInitialStateFieldKeys = [
   'estadoMental',
   'riesgoVital',
 ] as const;
+const emergencyInitialNoteConsentAllowedValues = [
+  'PACIENTE',
+  'FAMILIAR',
+  'TUTOR_LEGAL',
+  'URGENCIA_VITAL',
+  'PRIVILEGIO_TERAPEUTICO',
+] as const;
+const emergencyInitialNoteConsentTypeAllowedValues = [
+  'GENERAL_ATENCION',
+  'PROCEDIMIENTO_ESPECIFICO',
+  'ANESTESIA',
+  'TRANSFUSION',
+] as const;
+const emergencyInitialNotePrognosisAllowedValues = [
+  'BUENO',
+  'RESERVADO',
+  'MALO',
+  'MUY_GRAVE',
+] as const;
+const emergencyInitialNoteMentalStatusAllowedValues = [
+  'ORIENTADO_COOPERADOR',
+  'CONFUSO',
+  'AGITADO',
+  'SOMNOLIENTO',
+  'ESTUPOROSO',
+  'COMATOSO',
+] as const;
+const emergencyNursingFallRiskAllowedValues = ['BAJO', 'MEDIO', 'ALTO'] as const;
+type TriageClinicalAlert = {
+  code: string;
+  message: string;
+  severity: 'WARNING' | 'CRITICAL';
+};
 
 type TenantEncounterRecord = Prisma.EncounterGetPayload<{
   include: {
@@ -327,6 +360,7 @@ const encounterTabsByType: Record<EncounterType, string[]> = {
     'Resumen',
     'Triage',
     'Nota inicial',
+    'Hoja de enfermería',
     'Evolución',
     'Órdenes / Indicaciones',
     'Interconsultas',
@@ -923,8 +957,22 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    if (
+      this.isEmergencyInitialNoteRecord(encounter.encounterType, input.tabKey) &&
+      emergencyInitialNoteVersionContext?.latestRecord
+    ) {
+      throw new BadRequestException(
+        'Este episodio ya tiene una Nota inicial. Las notas posteriores deben capturarse en Evolución.',
+      );
+    }
     const emergencyEvolutionVersionContext =
       await this.resolveEmergencyEvolutionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
+    const emergencyNursingSheetVersionContext =
+      await this.resolveEmergencyNursingSheetVersionContext({
         encounterId: encounter.id,
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
@@ -1048,6 +1096,7 @@ export class EncountersService {
       triageVersionContext,
       emergencyInitialNoteVersionContext,
       emergencyEvolutionVersionContext,
+      emergencyNursingSheetVersionContext,
       emergencyOrdersVersionContext,
       emergencyConsultationVersionContext,
       emergencyDischargeVersionContext,
@@ -1125,6 +1174,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncEmergencyEvolutionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncEmergencyNursingSheetRecord({
       tenantId,
       userId,
       encounter,
@@ -1283,6 +1344,13 @@ export class EncountersService {
       status: normalizedRecordPayload.status,
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncEmergencyInitialNoteObjective({
+      tenantId,
+      encounter,
+      sectionRecordId: createdRecord.id,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
     });
     await this.syncAmbulatoryPreprocedureAssessment({
       tenantId,
@@ -1447,6 +1515,13 @@ export class EncountersService {
         tabKey: input.tabKey,
         currentRecordId: currentRecord.id,
       });
+    const emergencyNursingSheetVersionContext =
+      await this.resolveEmergencyNursingSheetVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     const emergencyEvolutionVersionContext =
       await this.resolveEmergencyEvolutionVersionContext({
         encounterId: encounter.id,
@@ -1580,6 +1655,7 @@ export class EncountersService {
       triageVersionContext,
       emergencyInitialNoteVersionContext,
       emergencyEvolutionVersionContext,
+      emergencyNursingSheetVersionContext,
       emergencyOrdersVersionContext,
       emergencyConsultationVersionContext,
       emergencyDischargeVersionContext,
@@ -1636,6 +1712,18 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
     await this.syncEmergencyEvolutionRecord({
+      tenantId,
+      userId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      recordedAt,
+      title: normalizedRecordPayload.title,
+      status: normalizedRecordPayload.status,
+      formData: normalizedRecordPayload.formData,
+      metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncEmergencyNursingSheetRecord({
       tenantId,
       userId,
       encounter,
@@ -1794,6 +1882,13 @@ export class EncountersService {
       status: normalizedRecordPayload.status,
       formData: normalizedRecordPayload.formData,
       metadata: normalizedRecordPayload.metadata,
+    });
+    await this.syncEmergencyInitialNoteObjective({
+      tenantId,
+      encounter,
+      sectionRecordId: recordId,
+      tabKey: normalizedRecordPayload.tabKey,
+      formData: normalizedRecordPayload.formData,
     });
     await this.syncAmbulatoryPreprocedureAssessment({
       tenantId,
@@ -2181,6 +2276,13 @@ export class EncountersService {
             signedByUserId: currentUser.id,
             signedByUserName: currentUser.fullName,
             signedWithPasswordValidation: true,
+            ...(currentMetadata.correctionPending === true
+              ? {
+                  correctionPending: false,
+                  lastCorrectionResignedAt: signedAt.toISOString(),
+                  lastCorrectionResignedByUserId: currentUser.id,
+                }
+              : {}),
             ...(isHospitalConsultation && !isHospitalConsultationResponseSignature
               ? {
                   requestSignedAt: signedAt.toISOString(),
@@ -2196,6 +2298,24 @@ export class EncountersService {
           } as Prisma.InputJsonValue,
         },
       });
+      if (
+        currentMetadata.correctionPending === true &&
+        this.isEmergencyInitialNoteRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.emergencyInitialNoteCorrection.updateMany({
+          where: {
+            sectionRecordId: currentRecord.id,
+            resignedAt: null,
+          },
+          data: {
+            resignedAt: signedAt,
+            resignedByUserId: currentUser.id,
+          },
+        });
+      }
 
       if (this.isConsultationClosureDocument(currentRecord.encounterType, currentRecord.tabKey, currentRecord.noteType)) {
         await transaction.encounter.update({
@@ -2228,6 +2348,19 @@ export class EncountersService {
       ) {
         await transaction.$executeRaw`
           UPDATE "EmergencyEvolution"
+          SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
+          WHERE "sectionRecordId" = ${currentRecord.id}
+        `;
+      }
+
+      if (
+        this.isEmergencyNursingSheetRecord(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+        )
+      ) {
+        await transaction.$executeRaw`
+          UPDATE "EmergencyNursingSheet"
           SET "status" = ${EncounterRecordStatus.SIGNED}, "signedAt" = ${signedAt}, "signerUserId" = ${userId}, "updatedAt" = NOW()
           WHERE "sectionRecordId" = ${currentRecord.id}
         `;
@@ -3052,6 +3185,75 @@ export class EncountersService {
 
     const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
     return await this.toEncounterDetailResponse(
+      updatedEncounter,
+      updatedEncounter.attendingUserId
+        ? await this.userRepository.findById(updatedEncounter.attendingUserId)
+        : null,
+    );
+  }
+
+  async correctEmergencyInitialNoteForTenant(
+    tenantId: string,
+    userId: string,
+    encounterNumber: string,
+    recordId: string,
+    reason?: string,
+  ): Promise<EncounterDetailResponse> {
+    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    this.assertEncounterEditable(encounter);
+    const record = await this.prisma.encounterSectionRecord.findUnique({
+      where: { id: recordId },
+    });
+
+    if (
+      !record ||
+      record.tenantId !== tenantId ||
+      record.encounterId !== encounter.id ||
+      !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey)
+    ) {
+      throw new NotFoundException('Nota inicial no encontrada');
+    }
+    if (record.status !== EncounterRecordStatus.SIGNED) {
+      throw new BadRequestException(
+        'Solo una Nota inicial firmada puede pasar a corrección',
+      );
+    }
+
+    const correctedAt = new Date();
+    const metadata = this.normalizeRecordMetadata(record.metadataJson) ?? {};
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.emergencyInitialNoteCorrection.create({
+        data: {
+          tenantId,
+          encounterId: encounter.id,
+          patientId: encounter.patientId,
+          sectionRecordId: record.id,
+          correctedByUserId: userId,
+          correctionReason: reason,
+          previousFormDataJson: record.formDataJson as Prisma.InputJsonValue,
+          previousMetadataJson: record.metadataJson as Prisma.InputJsonValue,
+          previousSignedAt: record.signedAt,
+          correctedAt,
+        },
+      });
+      await transaction.encounterSectionRecord.update({
+        where: { id: record.id },
+        data: {
+          status: EncounterRecordStatus.DRAFT,
+          signedAt: null,
+          metadataJson: {
+            ...metadata,
+            correctionPending: true,
+            lastCorrectedAt: correctedAt.toISOString(),
+            lastCorrectedByUserId: userId,
+            correctionReason: reason ?? null,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    });
+
+    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    return this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
         ? await this.userRepository.findById(updatedEncounter.attendingUserId)
@@ -4294,6 +4496,37 @@ export class EncountersService {
     };
   }
 
+  private async resolveEmergencyNursingSheetVersionContext(input: {
+    encounterId: string;
+    encounterType: EncounterType;
+    tabKey: string;
+    currentRecordId?: string;
+  }): Promise<RecordVersionContext | null> {
+    if (!this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)) {
+      return null;
+    }
+
+    const records = await this.prisma.encounterSectionRecord.findMany({
+      where: {
+        encounterId: input.encounterId,
+        tabKey: 'Hoja de enfermería',
+        noteType: 'Hoja de enfermería',
+        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+      },
+      orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const latestRecord = records[0] ?? null;
+    const latestVersionNumber = latestRecord
+      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      : 0;
+
+    return {
+      latestRecord,
+      latestVersionNumber,
+      nextVersionNumber: latestVersionNumber + 1,
+    };
+  }
+
   private async resolveEmergencyOrdersVersionContext(input: {
     encounterId: string;
     encounterType: EncounterType;
@@ -4809,6 +5042,9 @@ export class EncountersService {
     >;
     emergencyEvolutionVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyEvolutionVersionContext']>
+    >;
+    emergencyNursingSheetVersionContext: Awaited<
+      ReturnType<EncountersService['resolveEmergencyNursingSheetVersionContext']>
     >;
     emergencyOrdersVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyOrdersVersionContext']>
@@ -5631,6 +5867,43 @@ export class EncountersService {
     }
 
     if (
+      this.isEmergencyNursingSheetRecord(
+        input.encounter.encounterType,
+        input.input.tabKey,
+      )
+    ) {
+      const currentRecordMetadata = this.extractRecordVersionMetadata(
+        input.currentRecord?.metadataJson,
+      );
+      const versionNumber =
+        currentRecordMetadata.versionNumber ??
+        input.emergencyNursingSheetVersionContext?.nextVersionNumber ??
+        1;
+      const formData = this.buildEmergencyNursingSheetFormData({
+        incomingFormData: input.input.formData,
+        responsibleUser: input.responsibleUser,
+      });
+
+      return {
+        tabKey: 'Hoja de enfermería',
+        noteType: 'Hoja de enfermería',
+        title: `Hoja de enfermería V${versionNumber}`,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
+        formData,
+        metadata: {
+          ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+          versionNumber,
+          recordType: 'Hoja de enfermería',
+          pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
+          pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
+        },
+      };
+    }
+
+    if (
       this.isEmergencyEvolutionRecord(
         input.encounter.encounterType,
         input.input.tabKey,
@@ -5692,13 +5965,10 @@ export class EncountersService {
         input.encounter.sectionRecords,
         'Triage',
       );
-      const versionNumber =
-        currentRecordMetadata.versionNumber ??
-        input.emergencyInitialNoteVersionContext?.nextVersionNumber ??
-        1;
       const formData = this.buildEmergencyInitialNoteFormData({
         incomingFormData: input.input.formData,
         triageFormDataJson: latestTriageRecord?.formDataJson ?? null,
+        triageRecordId: latestTriageRecord?.id ?? null,
         recordedAt: input.recordedAt,
         responsibleUser: input.responsibleUser,
       });
@@ -5706,15 +5976,12 @@ export class EncountersService {
       return {
         tabKey: 'Nota inicial',
         noteType: 'Nota inicial',
-        title: `Nota inicial V${versionNumber}`,
-        status:
-          input.input.status ??
-          input.currentRecord?.status ??
-          EncounterRecordStatus.DRAFT,
+        title: 'Nota inicial',
+        status: input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
-          versionNumber,
+          versionNumber: 1,
           inheritedFromRecordId:
             currentRecordMetadata.inheritedFromRecordId ?? latestTriageRecord?.id ?? null,
         },
@@ -6282,6 +6549,13 @@ export class EncountersService {
 
   private isEmergencyEvolutionRecord(encounterType: EncounterType, tabKey: string) {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Evolución';
+  }
+
+  private isEmergencyNursingSheetRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return encounterType === EncounterType.EMERGENCY && tabKey === 'Hoja de enfermería';
   }
 
   private isEmergencyOrdersRecord(encounterType: EncounterType, tabKey: string) {
@@ -7820,6 +8094,36 @@ export class EncountersService {
     };
   }
 
+  private buildEmergencyNursingSheetFormData(input: {
+    incomingFormData: Record<string, unknown>;
+    responsibleUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
+  }) {
+    const nurseName =
+      input.responsibleUser?.fullName ?? 'Sin profesional responsable';
+
+    return {
+      ...input.incomingFormData,
+      medicacionAdministradaEnfUrg: this
+        .readObjectArray(input.incomingFormData.medicacionAdministradaEnfUrg)
+        .map((medication) => ({
+          ...medication,
+          responsable: nurseName,
+        })),
+      procedimientosEnfermeriaEnfUrg: this
+        .readObjectArray(input.incomingFormData.procedimientosEnfermeriaEnfUrg)
+        .map((procedure) => ({
+          ...procedure,
+          responsable: nurseName,
+        })),
+      elaboroEnfUrg: nurseName,
+      cedulaEnfUrg: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+    };
+  }
+
   private buildHospitalDischargeFormData(input: {
     encounter: TenantEncounterRecord;
     incomingFormData: Record<string, unknown>;
@@ -7890,6 +8194,8 @@ export class EncountersService {
           .filter(Boolean)
           .join(' · ') || 'Lugar no configurado',
     };
+    delete baseFormData.exploracionFisicaNota;
+    delete baseFormData.consentimientoInicial;
 
     const suggestions: Record<string, unknown> = {
       motivoIngresoEgresoHosp:
@@ -8229,7 +8535,8 @@ export class EncountersService {
       )
         ? 'Sí'
         : 'No',
-      alertasAutomaticas: alertasAutomaticas.join('\n'),
+      alertasAutomaticas: alertasAutomaticas.map((alert) => alert.message).join('\n'),
+      alertasAutomaticasSnapshot: alertasAutomaticas,
     };
   }
 
@@ -8482,6 +8789,7 @@ export class EncountersService {
   private buildEmergencyInitialNoteFormData(input: {
     incomingFormData: Record<string, unknown>;
     triageFormDataJson: Prisma.JsonValue | null;
+    triageRecordId: string | null;
     recordedAt: Date;
     responsibleUser: {
       id: string;
@@ -8512,6 +8820,7 @@ export class EncountersService {
     };
 
     const triageSnapshotFields: Record<string, unknown> = {
+      notaInicialTriageOrigenId: input.triageRecordId,
       modoLlegadaNota: triageFormData.modoLlegada,
       taSistolicaNota: triageFormData.taSistolica,
       taDiastolicaNota: triageFormData.taDiastolica,
@@ -8568,7 +8877,7 @@ export class EncountersService {
         this.calculateEmergencyEvolutionDay(input.encounter.openedAt, input.recordedAt),
       ),
       resultadosEstudiosIntegrados: this.buildEmergencyExternalResultsSummary(input.encounter),
-      ...this.buildEmergencyNursingSnapshot(),
+      ...this.buildEmergencyNursingSnapshot(input.encounter),
       ...this.buildEmergencyAuxiliaryServicesSnapshot(input.encounter),
       evolucionUrgLegalNombre:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
@@ -8620,12 +8929,22 @@ export class EncountersService {
         latestInitialNoteFormData.resumenPronostico,
       consentimientoVigenteUrg:
         latestEvolutionFormData.consentimientoVigenteUrg ??
-        (this.hasCapturedValue(latestInitialNoteFormData.consentimientoInicial)
+        (this.hasCapturedValue(
+          latestInitialNoteFormData.consentimientoUrgenciasNota,
+        )
           ? 'VIGENTE'
           : ''),
       informacionBrindadaUrg:
         latestEvolutionFormData.informacionBrindadaUrg ??
-        latestInitialNoteFormData.consentimientoInicial,
+        [
+          this.readStringValue(latestInitialNoteFormData.consentimientoUrgenciasNota),
+          this.readStringValue(latestInitialNoteFormData.tipoConsentimientoNota),
+          this.readStringValue(
+            latestInitialNoteFormData.observacionesConsentimientoNota,
+          ),
+        ]
+          .filter((value) => value.length > 0)
+          .join(' · '),
     };
 
     for (const [fieldKey, value] of Object.entries(vitalSnapshotMap)) {
@@ -9178,6 +9497,98 @@ export class EncountersService {
           ${study.resultado}, ${study.interpretacionHallazgo || null},
           ${study.sourceModule || null}, ${study.sourceReferenceId || null},
           ${input.userId}, NOW(), NOW()
+        )
+      `;
+    }
+  }
+
+  private async syncEmergencyNursingSheetRecord(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    recordedAt: Date;
+    title: string;
+    status: EncounterRecordStatus;
+    formData: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }) {
+    if (!this.isEmergencyNursingSheetRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const signedAt =
+      input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "EmergencyNursingSheet" (
+        "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
+        "versionNumber", "title", "status", "recordedAt", "habitusExterior",
+        "painEva", "fallRiskLevel", "observations", "professionalName",
+        "professionalLicense", "signerUserId", "signedAt", "contentJson",
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
+        ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.habitusExteriorEnfUrg)},
+        ${this.readRoundedNumericValue(input.formData.dolorEvaEnfUrg)}, ${this.readStringValue(input.formData.riesgoCaidasEnfUrg)}, ${this.readStringValue(input.formData.observacionesEnfermeriaEnfUrg)}, ${this.readStringValue(input.formData.elaboroEnfUrg)},
+        ${this.readStringValue(input.formData.cedulaEnfUrg)}, ${signedAt ? input.userId : null}, ${signedAt}, ${this.jsonbParameter(input.formData)},
+        NOW(), NOW()
+      )
+      ON CONFLICT ("sectionRecordId") DO UPDATE SET
+        "versionNumber" = EXCLUDED."versionNumber",
+        "title" = EXCLUDED."title",
+        "status" = EXCLUDED."status",
+        "recordedAt" = EXCLUDED."recordedAt",
+        "habitusExterior" = EXCLUDED."habitusExterior",
+        "painEva" = EXCLUDED."painEva",
+        "fallRiskLevel" = EXCLUDED."fallRiskLevel",
+        "observations" = EXCLUDED."observations",
+        "professionalName" = EXCLUDED."professionalName",
+        "professionalLicense" = EXCLUDED."professionalLicense",
+        "signerUserId" = EXCLUDED."signerUserId",
+        "signedAt" = EXCLUDED."signedAt",
+        "contentJson" = EXCLUDED."contentJson",
+        "updatedAt" = NOW()
+    `;
+
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "EmergencyNursingSheet" WHERE "sectionRecordId" = ${input.sectionRecordId} LIMIT 1
+    `;
+    const nursingSheetId = rows[0]?.id;
+    if (!nursingSheetId) return;
+
+    await this.prisma.$executeRaw`DELETE FROM "EmergencyNursingMedicationAdministration" WHERE "nursingSheetId" = ${nursingSheetId}`;
+    await this.prisma.$executeRaw`DELETE FROM "EmergencyNursingProcedure" WHERE "nursingSheetId" = ${nursingSheetId}`;
+
+    for (const [sortOrder, medication] of this.readObjectArray(input.formData.medicacionAdministradaEnfUrg).entries()) {
+      const medicationName = this.readStringValue(medication.medicamento);
+      if (!medicationName) continue;
+      await this.prisma.$executeRaw`
+        INSERT INTO "EmergencyNursingMedicationAdministration" (
+          "id", "nursingSheetId", "medicationName", "administeredTime",
+          "status", "observations", "responsibleName", "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${nursingSheetId}, ${medicationName}, ${this.readStringValue(medication.horaAdministrada)},
+          ${this.readStringValue(medication.estado)}, ${this.readStringValue(medication.observaciones)}, ${this.readStringValue(medication.responsable)}, ${sortOrder}, NOW(), NOW()
+        )
+      `;
+    }
+
+    for (const [sortOrder, procedure] of this.readObjectArray(input.formData.procedimientosEnfermeriaEnfUrg).entries()) {
+      const procedureName = this.readStringValue(procedure.procedimiento);
+      if (!procedureName) continue;
+      await this.prisma.$executeRaw`
+        INSERT INTO "EmergencyNursingProcedure" (
+          "id", "nursingSheetId", "procedureName", "performedTime",
+          "observations", "responsibleName", "sortOrder", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${randomUUID()}, ${nursingSheetId}, ${procedureName}, ${this.readStringValue(procedure.hora)},
+          ${this.readStringValue(procedure.observaciones)}, ${this.readStringValue(procedure.responsable)}, ${sortOrder}, NOW(), NOW()
         )
       `;
     }
@@ -11425,6 +11836,84 @@ export class EncountersService {
     await this.syncAmbulatoryProcedureChildren(procedureDocument.id, input);
   }
 
+  private async syncEmergencyInitialNoteObjective(input: {
+    tenantId: string;
+    encounter: TenantEncounterRecord;
+    sectionRecordId: string;
+    tabKey: string;
+    formData: Record<string, unknown>;
+  }) {
+    if (!this.isEmergencyInitialNoteRecord(input.encounter.encounterType, input.tabKey)) {
+      return;
+    }
+
+    await this.prisma.emergencyInitialNoteObjective.upsert({
+      where: { sectionRecordId: input.sectionRecordId },
+      create: {
+        tenantId: input.tenantId,
+        encounterId: input.encounter.id,
+        patientId: input.encounter.patientId,
+        sectionRecordId: input.sectionRecordId,
+        sourceTriageRecordId:
+          this.readStringValue(input.formData.notaInicialTriageOrigenId) || null,
+        habitusExterior: this.readStringValue(input.formData.habitusExteriorNota) || null,
+        cardiovascular:
+          this.readStringValue(input.formData.exploracionCardiovascularNota) || null,
+        respiratory:
+          this.readStringValue(input.formData.exploracionRespiratoriaNota) || null,
+        neurologic:
+          this.readStringValue(input.formData.exploracionNeurologicaNota) || null,
+        abdomen: this.readStringValue(input.formData.exploracionAbdomenNota) || null,
+        extremities:
+          this.readStringValue(input.formData.exploracionExtremidadesNota) || null,
+        systolicBloodPressure: this.readNumericValue(input.formData.taSistolicaNota),
+        diastolicBloodPressure: this.readNumericValue(input.formData.taDiastolicaNota),
+        heartRate: this.readNumericValue(input.formData.fcNota),
+        respiratoryRate: this.readNumericValue(input.formData.frNota),
+        oxygenSaturation: this.readNumericValue(input.formData.spo2Nota),
+        temperature: this.readNumericValue(input.formData.tempNota),
+        painEva: this.readNumericValue(input.formData.evaNota),
+        glucose: this.readNumericValue(input.formData.glucosaNota),
+        glasgow: this.readNumericValue(input.formData.glasgowNota),
+        emergencyConsent:
+          this.readStringValue(input.formData.consentimientoUrgenciasNota) || null,
+        consentType:
+          this.readStringValue(input.formData.tipoConsentimientoNota) || null,
+        consentObservations:
+          this.readStringValue(input.formData.observacionesConsentimientoNota) || null,
+      },
+      update: {
+        sourceTriageRecordId:
+          this.readStringValue(input.formData.notaInicialTriageOrigenId) || null,
+        habitusExterior: this.readStringValue(input.formData.habitusExteriorNota) || null,
+        cardiovascular:
+          this.readStringValue(input.formData.exploracionCardiovascularNota) || null,
+        respiratory:
+          this.readStringValue(input.formData.exploracionRespiratoriaNota) || null,
+        neurologic:
+          this.readStringValue(input.formData.exploracionNeurologicaNota) || null,
+        abdomen: this.readStringValue(input.formData.exploracionAbdomenNota) || null,
+        extremities:
+          this.readStringValue(input.formData.exploracionExtremidadesNota) || null,
+        systolicBloodPressure: this.readNumericValue(input.formData.taSistolicaNota),
+        diastolicBloodPressure: this.readNumericValue(input.formData.taDiastolicaNota),
+        heartRate: this.readNumericValue(input.formData.fcNota),
+        respiratoryRate: this.readNumericValue(input.formData.frNota),
+        oxygenSaturation: this.readNumericValue(input.formData.spo2Nota),
+        temperature: this.readNumericValue(input.formData.tempNota),
+        painEva: this.readNumericValue(input.formData.evaNota),
+        glucose: this.readNumericValue(input.formData.glucosaNota),
+        glasgow: this.readNumericValue(input.formData.glasgowNota),
+        emergencyConsent:
+          this.readStringValue(input.formData.consentimientoUrgenciasNota) || null,
+        consentType:
+          this.readStringValue(input.formData.tipoConsentimientoNota) || null,
+        consentObservations:
+          this.readStringValue(input.formData.observacionesConsentimientoNota) || null,
+      },
+    });
+  }
+
   private async syncAmbulatoryRecoveryEvaluation(input: {
     tenantId: string;
     userId: string;
@@ -12694,7 +13183,48 @@ export class EncountersService {
     return sections.join('\n') || 'Sin resultados externos vinculados al episodio.';
   }
 
-  private buildEmergencyNursingSnapshot() {
+  private buildEmergencyNursingSnapshot(encounter: TenantEncounterRecord) {
+    const latestNursingSheet = this.findLatestSectionRecord(
+      encounter.sectionRecords,
+      'Hoja de enfermería',
+    );
+    const formData = this.normalizeJsonObject(
+      latestNursingSheet?.formDataJson ?? null,
+    );
+    if (latestNursingSheet) {
+      const medications = this.readObjectArray(formData.medicacionAdministradaEnfUrg)
+        .map((medication) =>
+          [
+            this.readStringValue(medication.medicamento),
+            this.readStringValue(medication.horaAdministrada),
+            this.readStringValue(medication.estado),
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        )
+        .filter(Boolean)
+        .join('\n');
+      const procedures = this.readObjectArray(formData.procedimientosEnfermeriaEnfUrg)
+        .map((procedure) => this.readStringValue(procedure.procedimiento))
+        .filter(Boolean)
+        .join('\n');
+
+      return {
+        enfermeriaHabitusUrg: this.readStringValue(formData.habitusExteriorEnfUrg),
+        enfermeriaDolorUrg: this.readStringValue(formData.dolorEvaEnfUrg),
+        enfermeriaRiesgoCaidasUrg: this.readStringValue(formData.riesgoCaidasEnfUrg),
+        enfermeriaMedicacionUrg: medications || 'Sin medicación registrada',
+        enfermeriaProcedimientosUrg: procedures || 'Sin procedimientos registrados',
+        enfermeriaObservacionesUrg: this.readStringValue(formData.observacionesEnfermeriaEnfUrg),
+        enfermeriaResponsableUrg: [
+          this.readStringValue(formData.elaboroEnfUrg),
+          this.readStringValue(formData.cedulaEnfUrg),
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      };
+    }
+
     return {
       enfermeriaHabitusUrg: 'Sin hoja de enfermería vinculada',
       enfermeriaDolorUrg: 'Sin hoja de enfermería vinculada',
@@ -12847,44 +13377,43 @@ export class EncountersService {
     glasgowTotal: number | null;
     news2Total: number | null;
   }) {
-    const alerts: string[] = [];
-    for (const { key, label } of triageClinicalDiscriminatorFields) {
-      if (input.formData[key] === true) {
-        const otherDetail =
-          key === 'discOtro'
-            ? this.readStringValue(
-                input.formData[triageOtherClinicalDiscriminatorFieldKey],
-              ).trim()
-            : '';
-        alerts.push(otherDetail ? `${label}: ${otherDetail}` : label);
-      }
-    }
-
+    const alerts: TriageClinicalAlert[] = [];
     const oxygenSaturation = this.readNumericValue(input.formData.spo2);
     const systolicPressure = this.readNumericValue(input.formData.taSistolica);
     const heartRate = this.readNumericValue(input.formData.fc);
+    const respiratoryRate = this.readNumericValue(input.formData.fr);
     const temperature = this.readNumericValue(input.formData.temp);
-
-    if (oxygenSaturation !== null && oxygenSaturation < 92) {
-      alerts.push('SpO2 menor a 92%');
-    }
+    const painEva = this.readNumericValue(input.formData.eva);
     if (systolicPressure !== null && systolicPressure < 90) {
-      alerts.push('TA sistólica menor a 90 mmHg');
+      alerts.push({ code: 'LOW_SBP', message: 'Hipotensión — valorar choque', severity: 'CRITICAL' });
+    } else if (systolicPressure !== null && systolicPressure > 140) {
+      alerts.push({ code: 'HIGH_SBP', message: 'Evaluar emergencia hipertensiva', severity: 'WARNING' });
     }
-    if (heartRate !== null && (heartRate < 40 || heartRate > 130)) {
-      alerts.push('Frecuencia cardiaca crítica');
+    if (input.news2Total !== null && input.news2Total >= 6) {
+      alerts.push({ code: 'NEWS2_ESCALATION', message: 'Escalamiento clínico recomendado', severity: 'CRITICAL' });
+    } else if (input.news2Total !== null && input.news2Total >= 5) {
+      alerts.push({ code: 'NEWS2_ALERT', message: 'Alerta clínica', severity: 'WARNING' });
     }
-    if (temperature !== null && temperature >= 39) {
-      alerts.push('Fiebre alta');
+    if (oxygenSaturation !== null && oxygenSaturation < 95) {
+      alerts.push({ code: 'LOW_SPO2', message: 'Monitorizar oxigenación', severity: 'WARNING' });
     }
-    if (input.glasgowTotal !== null && input.glasgowTotal < 13) {
-      alerts.push('Glasgow menor a 13');
+    if (heartRate !== null && heartRate > 120) {
+      alerts.push({ code: 'TACHYCARDIA', message: 'Taquicardia — evaluar causa', severity: 'WARNING' });
     }
-    if (input.news2Total !== null && input.news2Total >= 5) {
-      alerts.push('NEWS2 alto');
+    if (respiratoryRate !== null && respiratoryRate > 22) {
+      alerts.push({ code: 'TACHYPNEA', message: 'Taquipnea — evaluar compromiso respiratorio', severity: 'WARNING' });
+    }
+    if (temperature !== null && temperature > 38.5) {
+      alerts.push({ code: 'FEVER', message: 'Fiebre — evaluar foco infeccioso', severity: 'WARNING' });
+    }
+    if (painEva !== null && painEva >= 7) {
+      alerts.push({ code: 'SEVERE_PAIN', message: 'Dolor severo — manejo analgésico prioritario', severity: 'WARNING' });
     }
 
-    return [...new Set(alerts)];
+    return alerts.sort((left, right) => {
+      if (left.severity === right.severity) return 0;
+      return left.severity === 'CRITICAL' ? -1 : 1;
+    });
   }
 
   private parseOptionalDate(value: unknown) {
@@ -15907,6 +16436,12 @@ export class EncountersService {
       ? [
           'motivoAtencion',
           'horaInicioSintomas',
+          'habitusExteriorNota',
+          'exploracionCardiovascularNota',
+          'exploracionRespiratoriaNota',
+          'exploracionNeurologicaNota',
+          'consentimientoUrgenciasNota',
+          'tipoConsentimientoNota',
           'riesgoVitalNota',
           'estudiosAnalisis',
           'diagnosticoNota',
@@ -15915,6 +16450,7 @@ export class EncountersService {
           'medicamentosPlan',
           'destinoPlan',
           'pronosticoNota',
+          'resumenPronostico',
         ]
       : [];
     const emergencyEvolutionRequiredFields = this.isEmergencyEvolutionRecord(
@@ -15936,6 +16472,16 @@ export class EncountersService {
           'justificacionClinicaNom004',
         ]
       : [];
+    const emergencyNursingSheetRequiredFields =
+      this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)
+        ? [
+            'habitusExteriorEnfUrg',
+            'dolorEvaEnfUrg',
+            'riesgoCaidasEnfUrg',
+            'elaboroEnfUrg',
+            'cedulaEnfUrg',
+          ]
+        : [];
     const emergencyOrdersRequiredFields = this.isEmergencyOrdersRecord(
       input.encounterType,
       input.tabKey,
@@ -16116,6 +16662,7 @@ export class EncountersService {
       ...triageRequiredFields,
       ...emergencyInitialNoteRequiredFields,
       ...emergencyEvolutionRequiredFields,
+      ...emergencyNursingSheetRequiredFields,
       ...emergencyOrdersRequiredFields,
       ...emergencyConsultationRequiredFields,
       ...emergencyDischargeRequiredFields,
@@ -16144,7 +16691,9 @@ export class EncountersService {
           ? 'Completa los campos obligatorios del triage antes de firmarlo'
           : this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)
             ? 'Completa los campos obligatorios de la nota inicial antes de firmarla'
-            : this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)
+            : this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)
+              ? 'Completa los campos obligatorios de la hoja de enfermería antes de firmarla'
+              : this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)
               ? 'Completa los campos obligatorios de la evolución antes de firmarla'
               : this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)
                 ? 'Completa medicamentos y estudios solicitados antes de firmar las órdenes'
@@ -16253,6 +16802,89 @@ export class EncountersService {
       this.normalizeAndAssertEmergencyTriageDestination(formData);
       this.normalizeAndAssertEmergencyTriageOrigin(formData);
       this.assertEmergencyTriageInitialState(formData);
+    }
+    if (this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)) {
+      this.assertEmergencyInitialNoteConsent(formData);
+      this.assertEmergencyInitialNotePrognosisAndState(formData);
+    }
+    if (this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)) {
+      this.assertEmergencyNursingSheetReadyForSignature(formData);
+    }
+  }
+
+  private assertEmergencyInitialNoteConsent(formData: Record<string, unknown>) {
+    const emergencyConsent = this.readStringValue(
+      formData.consentimientoUrgenciasNota,
+    );
+    const consentType = this.readStringValue(formData.tipoConsentimientoNota);
+
+    if (
+      !emergencyInitialNoteConsentAllowedValues.some(
+        (allowedValue) => allowedValue === emergencyConsent,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un consentimiento de urgencias válido',
+      );
+    }
+    if (
+      !emergencyInitialNoteConsentTypeAllowedValues.some(
+        (allowedValue) => allowedValue === consentType,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un tipo de consentimiento válido',
+      );
+    }
+  }
+
+  private assertEmergencyInitialNotePrognosisAndState(
+    formData: Record<string, unknown>,
+  ) {
+    const prognosis = this.readStringValue(formData.pronosticoNota);
+    const mentalStatus = this.readStringValue(formData.estadoMentalNota);
+
+    if (
+      !emergencyInitialNotePrognosisAllowedValues.some(
+        (allowedValue) => allowedValue === prognosis,
+      )
+    ) {
+      throw new BadRequestException('Selecciona un pronóstico válido');
+    }
+
+    if (
+      mentalStatus &&
+      !emergencyInitialNoteMentalStatusAllowedValues.some(
+        (allowedValue) => allowedValue === mentalStatus,
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un estado mental del paciente válido',
+      );
+    }
+  }
+
+  private assertEmergencyNursingSheetReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const painEva = this.readNumericValue(formData.dolorEvaEnfUrg);
+    const fallRisk = this.readStringValue(formData.riesgoCaidasEnfUrg);
+    const professionalLicense = this.readStringValue(formData.cedulaEnfUrg);
+
+    if (painEva === null || painEva < 0 || painEva > 10) {
+      throw new BadRequestException('Captura una valoración EVA válida de 0 a 10');
+    }
+    if (
+      !emergencyNursingFallRiskAllowedValues.some(
+        (allowedValue) => allowedValue === fallRisk,
+      )
+    ) {
+      throw new BadRequestException('Selecciona un riesgo de caídas válido');
+    }
+    if (!professionalLicense || professionalLicense === 'Sin cédula') {
+      throw new BadRequestException(
+        'Configura la cédula profesional antes de firmar la hoja de enfermería',
+      );
     }
   }
 

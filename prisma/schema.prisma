@@ -230,6 +230,8 @@ model Tenant {
   patientBillingProfiles     PatientBillingProfile[]
   encounterProfiles          EncounterProfile[]
   encounterSectionRecords    EncounterSectionRecord[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
   emergencyOrderSets         EmergencyOrderSet[]
@@ -502,6 +504,8 @@ model User {
   uploadedAttachments  Attachment[]
   auditLogs            AuditLog[]
   authoredEncounterSectionRecords EncounterSectionRecord[]
+  correctedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteCorrector")
+  resignedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteResigner")
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
@@ -803,6 +807,8 @@ model Patient {
   clinicalProfile      PatientClinicalProfile?
   billingProfile       PatientBillingProfile?
   encounterSectionRecords EncounterSectionRecord[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions EmergencyEvolution[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
@@ -1247,6 +1253,8 @@ model Encounter {
   auditLogs            AuditLog[]
   profile              EncounterProfile?
   sectionRecords       EncounterSectionRecord[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions  EmergencyEvolution[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
@@ -1389,6 +1397,9 @@ model EncounterSectionRecord {
   hospitalDischarge HospitalDischarge?
   hospitalDocument HospitalDocument?
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
+  emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
+  emergencyInitialNoteObjective EmergencyInitialNoteObjective?
+  sourcedEmergencyInitialNoteObjectives EmergencyInitialNoteObjective[] @relation("EmergencyInitialNoteObjectiveSourceTriage")
 
   @@index([tenantId])
   @@index([encounterId])
@@ -1398,6 +1409,80 @@ model EncounterSectionRecord {
   @@index([status])
   @@index([recordedAt])
   @@index([authoredByUserId])
+}
+
+/// Historial interno de correcciones de la Nota inicial de Urgencias.
+/// Conserva el snapshot firmado anterior antes de reabrir el documento para refirma.
+model EmergencyInitialNoteCorrection {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String
+  correctedByUserId String?
+  correctionReason String?
+  previousFormDataJson Json
+  previousMetadataJson Json?
+  previousSignedAt DateTime?
+  correctedAt DateTime @default(now())
+  resignedAt DateTime?
+  resignedByUserId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  correctedByUser User? @relation("EmergencyInitialNoteCorrector", fields: [correctedByUserId], references: [id], onDelete: SetNull)
+  resignedByUser User? @relation("EmergencyInitialNoteResigner", fields: [resignedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([sectionRecordId])
+  @@index([correctedAt])
+}
+
+/// Proyección estructurada del bloque Objetivo de la Nota inicial de Urgencias.
+model EmergencyInitialNoteObjective {
+  id String @id @default(uuid())
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+  sourceTriageRecordId String?
+
+  habitusExterior String?
+  cardiovascular String?
+  respiratory String?
+  neurologic String?
+  abdomen String?
+  extremities String?
+
+  systolicBloodPressure Decimal? @db.Decimal(8, 2)
+  diastolicBloodPressure Decimal? @db.Decimal(8, 2)
+  heartRate Decimal? @db.Decimal(8, 2)
+  respiratoryRate Decimal? @db.Decimal(8, 2)
+  oxygenSaturation Decimal? @db.Decimal(8, 2)
+  temperature Decimal? @db.Decimal(8, 2)
+  painEva Decimal? @db.Decimal(8, 2)
+  glucose Decimal? @db.Decimal(8, 2)
+  glasgow Decimal? @db.Decimal(8, 2)
+  emergencyConsent String?
+  consentType String?
+  consentObservations String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  sourceTriageRecord EncounterSectionRecord? @relation("EmergencyInitialNoteObjectiveSourceTriage", fields: [sourceTriageRecordId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([sourceTriageRecordId])
 }
 
 /// Estudio previo estructurado dentro de una versión de Historia clínica de consulta.
@@ -4865,6 +4950,75 @@ model NursingNote {
   @@index([encounterId])
   @@index([patientId])
   @@index([authoredByUserId])
+}
+
+/// Hoja de enfermería independiente para episodios de Urgencias.
+/// El documento legal vive en EncounterSectionRecord; esta proyección normaliza
+/// los campos consultables y conserva trazabilidad de firma.
+model EmergencyNursingSheet {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  sectionRecordId String @unique
+
+  versionNumber Int
+  title String
+  status EncounterRecordStatus @default(DRAFT)
+  recordedAt DateTime
+  habitusExterior String?
+  painEva Int?
+  fallRiskLevel String?
+  observations String?
+  professionalName String?
+  professionalLicense String?
+  signerUserId String?
+  signedAt DateTime?
+  contentJson Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  medicationAdministrations EmergencyNursingMedicationAdministration[]
+  procedures EmergencyNursingProcedure[]
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([signerUserId])
+}
+
+model EmergencyNursingMedicationAdministration {
+  id String @id @default(uuid())
+  nursingSheetId String
+  medicationName String
+  administeredTime String?
+  status String?
+  observations String?
+  responsibleName String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nursingSheet EmergencyNursingSheet @relation(fields: [nursingSheetId], references: [id], onDelete: Cascade)
+
+  @@index([nursingSheetId])
+}
+
+model EmergencyNursingProcedure {
+  id String @id @default(uuid())
+  nursingSheetId String
+  procedureName String
+  performedTime String?
+  observations String?
+  responsibleName String?
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nursingSheet EmergencyNursingSheet @relation(fields: [nursingSheetId], references: [id], onDelete: Cascade)
+
+  @@index([nursingSheetId])
 }
 
 //////////////////////////////////////////////////////

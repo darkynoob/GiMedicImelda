@@ -17,16 +17,30 @@ import {
   type Patient,
   type PatientIdentifier,
 } from '@prisma/client';
+import { ATTACHMENT_REPOSITORY } from '../../../shared/persistence/tokens/attachment.token';
 import { ENCOUNTER_REPOSITORY } from '../../../shared/persistence/tokens/encounter.token';
 import { FACILITY_REPOSITORY } from '../../../shared/persistence/tokens/facility.token';
 import { MEDICALRECORD_REPOSITORY } from '../../../shared/persistence/tokens/medicalRecord.token';
+import { PATIENT_COVERAGE_REPOSITORY } from '../../../shared/persistence/tokens/patientCoverage.token';
+import { PATIENT_DOCUMENT_REPOSITORY } from '../../../shared/persistence/tokens/patientDocument.token';
+import { PATIENT_RESPONSIBLE_CONTACT_REPOSITORY } from '../../../shared/persistence/tokens/patientResponsibleContact.token';
+import { PATIENT_DEMOGRAPHIC_PROFILE_REPOSITORY } from '../../../shared/persistence/tokens/patientDemographicProfile.token';
+import { PATIENT_CLINICAL_PROFILE_REPOSITORY } from '../../../shared/persistence/tokens/patientClinicalProfile.token';
+import { PATIENT_BILLING_PROFILE_REPOSITORY } from '../../../shared/persistence/tokens/patientBillingProfile.token';
 import { PATIENTIDENTIFIER_REPOSITORY } from '../../../shared/persistence/tokens/patientIdentifier.token';
 import { PATIENT_REPOSITORY } from '../../../shared/persistence/tokens/patient.token';
 import { USER_REPOSITORY } from '../../../shared/persistence/tokens/user.token';
 import { PrismaService } from '../../../shared/persistence/prisma/prisma.service';
+import type { AttachmentRepository } from '../../../shared/persistence/repositories/attachment.repository';
 import type { EncounterRepository } from '../../../shared/persistence/repositories/encounter.repository';
 import type { FacilityRepository } from '../../../shared/persistence/repositories/facility.repository';
 import type { MedicalRecordRepository } from '../../../shared/persistence/repositories/medicalRecord.repository';
+import type { PatientCoverageRepository } from '../../../shared/persistence/repositories/patientCoverage.repository';
+import type { PatientDocumentRepository } from '../../../shared/persistence/repositories/patientDocument.repository';
+import type { PatientResponsibleContactRepository } from '../../../shared/persistence/repositories/patientResponsibleContact.repository';
+import type { PatientDemographicProfileRepository } from '../../../shared/persistence/repositories/patientDemographicProfile.repository';
+import type { PatientClinicalProfileRepository } from '../../../shared/persistence/repositories/patientClinicalProfile.repository';
+import type { PatientBillingProfileRepository } from '../../../shared/persistence/repositories/patientBillingProfile.repository';
 import type { PatientIdentifierRepository } from '../../../shared/persistence/repositories/patientIdentifier.repository';
 import type { PatientRepository } from '../../../shared/persistence/repositories/patient.repository';
 import type { UserRepository } from '../../../shared/persistence/repositories/user.repository';
@@ -39,9 +53,11 @@ import type {
 } from '../dto/patient.response';
 import { PatientsQueryDto } from '../dto/patients-query.dto';
 
-const CURP_REGEX = /^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/;
-const RFC_REGEX = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
-const PHONE_REGEX = /^[\d\s\-+()]{7,20}$/;
+import {
+  CURP_REGEX,
+  RFC_REGEX,
+  PHONE_REGEX,
+} from '../../../shared/constants/validation-patterns';
 
 type UploadedAttachmentFile = {
   originalname: string;
@@ -65,6 +81,20 @@ export class PatientsService {
     private readonly facilityRepository: FacilityRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
+    @Inject(ATTACHMENT_REPOSITORY)
+    private readonly attachmentRepository: AttachmentRepository,
+    @Inject(PATIENT_COVERAGE_REPOSITORY)
+    private readonly patientCoverageRepository: PatientCoverageRepository,
+    @Inject(PATIENT_DOCUMENT_REPOSITORY)
+    private readonly patientDocumentRepository: PatientDocumentRepository,
+    @Inject(PATIENT_RESPONSIBLE_CONTACT_REPOSITORY)
+    private readonly patientResponsibleContactRepository: PatientResponsibleContactRepository,
+    @Inject(PATIENT_DEMOGRAPHIC_PROFILE_REPOSITORY)
+    private readonly patientDemographicProfileRepository: PatientDemographicProfileRepository,
+    @Inject(PATIENT_CLINICAL_PROFILE_REPOSITORY)
+    private readonly patientClinicalProfileRepository: PatientClinicalProfileRepository,
+    @Inject(PATIENT_BILLING_PROFILE_REPOSITORY)
+    private readonly patientBillingProfileRepository: PatientBillingProfileRepository,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -323,47 +353,16 @@ export class PatientsService {
         orderBy: { openedAt: 'desc' },
         take: 5,
       } satisfies Prisma.EncounterFindManyArgs),
-      this.prisma.patientResponsibleContact.findUnique({
-        where: {
-          patientId,
-        },
-      }),
-      this.prisma.patientCoverage.findMany({
-        where: {
-          tenantId,
-          patientId,
-        },
-        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }],
-      }),
-      this.prisma.patientDocument.findMany({
-        where: {
-          tenantId,
-          patientId,
-        },
-        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }],
-      }),
-      this.prisma.attachment.findMany({
-        where: {
-          tenantId,
-          patientId,
-        },
+      this.patientResponsibleContactRepository.findByPatient(patientId),
+      this.patientCoverageRepository.findManyByPatient(tenantId, patientId),
+      this.patientDocumentRepository.findManyByPatient(tenantId, patientId),
+      this.attachmentRepository.findMany({
+        where: { tenantId, patientId },
         orderBy: { uploadedAt: 'desc' },
-      }),
-      this.prisma.patientDemographicProfile.findUnique({
-        where: {
-          patientId,
-        },
-      }),
-      this.prisma.patientClinicalProfile.findUnique({
-        where: {
-          patientId,
-        },
-      }),
-      this.prisma.patientBillingProfile.findUnique({
-        where: {
-          patientId,
-        },
-      }),
+      } satisfies Prisma.AttachmentFindManyArgs),
+      this.patientDemographicProfileRepository.findByPatient(patientId),
+      this.patientClinicalProfileRepository.findByPatient(patientId),
+      this.patientBillingProfileRepository.findByPatient(patientId),
       this.prisma.allergy.findMany({
         where: {
           tenantId,

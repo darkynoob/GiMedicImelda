@@ -220,6 +220,38 @@ const triageRequiredIsolationOptions: EpisodeFieldOption[] = [
   { value: 'AEROSOLES', label: 'Aerosoles' },
 ];
 
+const emergencyInitialNoteConsentOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PACIENTE', label: 'Otorgado por paciente' },
+  { value: 'FAMILIAR', label: 'Otorgado por familiar' },
+  { value: 'TUTOR_LEGAL', label: 'Otorgado por tutor legal' },
+  { value: 'URGENCIA_VITAL', label: 'Urgencia vital (sin consentimiento)' },
+  { value: 'PRIVILEGIO_TERAPEUTICO', label: 'Privilegio terapéutico' },
+];
+
+const emergencyInitialNoteConsentTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'GENERAL_ATENCION', label: 'General de atención' },
+  { value: 'PROCEDIMIENTO_ESPECIFICO', label: 'Procedimiento específico' },
+  { value: 'ANESTESIA', label: 'Anestesia' },
+  { value: 'TRANSFUSION', label: 'Transfusión' },
+];
+
+const emergencyInitialNotePrognosisOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'BUENO', label: 'Bueno' },
+  { value: 'RESERVADO', label: 'Reservado' },
+  { value: 'MALO', label: 'Malo' },
+  { value: 'MUY_GRAVE', label: 'Muy grave' },
+];
+
+const nursingFallRiskOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'BAJO', label: 'Bajo' },
+  { value: 'MEDIO', label: 'Medio' },
+  { value: 'ALTO', label: 'Alto' },
+];
+
 const emergencyEventTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'MEDICO', label: 'Médico' },
@@ -1702,7 +1734,6 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           title: 'NEWS2 y alertas automáticas',
           fields: [
             { key: 'news2Total', label: 'NEWS2', type: 'readonly' },
-            { key: 'alertasAutomaticas', label: 'Alertas automáticas', type: 'readonly' },
           ],
         },
         {
@@ -1789,21 +1820,22 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'nota_inicial_objetivo',
-          title: 'O - Objetivo',
+          title: 'O - Objetivo / Exploración física',
           fields: [
-            {
-              key: 'exploracionFisicaNota',
-              label: 'Exploración física',
-              type: 'textarea',
-            },
-            { key: 'taSistolicaNota', label: 'TA sistólica', type: 'number' },
-            { key: 'taDiastolicaNota', label: 'TA diastólica', type: 'number' },
-            { key: 'fcNota', label: 'FC', type: 'number' },
-            { key: 'frNota', label: 'FR', type: 'number' },
-            { key: 'tempNota', label: 'Temp', type: 'number' },
-            { key: 'spo2Nota', label: 'SpO2', type: 'number' },
-            { key: 'evaNota', label: 'EVA', type: 'number' },
-            { key: 'glucosaNota', label: 'Glucosa', type: 'number' },
+            { key: 'habitusExteriorNota', label: 'Habitus exterior', type: 'textarea', required: true },
+            { key: 'exploracionCardiovascularNota', label: 'Cardiovascular', type: 'textarea', required: true },
+            { key: 'exploracionRespiratoriaNota', label: 'Respiratorio', type: 'textarea', required: true },
+            { key: 'exploracionNeurologicaNota', label: 'Neurológico', type: 'textarea', required: true },
+            { key: 'exploracionAbdomenNota', label: 'Abdomen', type: 'textarea' },
+            { key: 'exploracionExtremidadesNota', label: 'Extremidades', type: 'textarea' },
+            { key: 'taSistolicaNota', label: 'TA sistólica (mmHg)', type: 'number' },
+            { key: 'taDiastolicaNota', label: 'TA diastólica (mmHg)', type: 'number' },
+            { key: 'fcNota', label: 'FC (lpm)', type: 'number' },
+            { key: 'frNota', label: 'FR (rpm)', type: 'number' },
+            { key: 'spo2Nota', label: 'SpO₂ (%)', type: 'number' },
+            { key: 'tempNota', label: 'Temperatura (°C)', type: 'number' },
+            { key: 'evaNota', label: 'EVA dolor (0-10)', type: 'number' },
+            { key: 'glucosaNota', label: 'Glucosa (mg/dL)', type: 'number' },
             { key: 'glasgowNota', label: 'Glasgow', type: 'number' },
           ],
         },
@@ -1839,9 +1871,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'nota_inicial_consentimiento',
-          title: 'Consentimiento',
+          title: 'Consentimiento informado',
           fields: [
-            { key: 'consentimientoInicial', label: 'Consentimiento informado', type: 'textarea' },
+            { key: 'consentimientoUrgenciasNota', label: 'Consentimiento de urgencias', type: 'select', options: emergencyInitialNoteConsentOptions, required: true },
+            { key: 'tipoConsentimientoNota', label: 'Tipo de consentimiento', type: 'select', options: emergencyInitialNoteConsentTypeOptions, required: true },
+            { key: 'observacionesConsentimientoNota', label: 'Observaciones de consentimiento', type: 'textarea' },
           ],
         },
         {
@@ -1865,9 +1899,9 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'nota_inicial_pronostico',
           title: 'Pronóstico',
           fields: [
-            { key: 'pronosticoNota', label: 'Pronóstico', type: 'textarea' },
-            { key: 'estadoMentalNota', label: 'Estado mental', type: 'select', options: normalAlteredOptions },
-            { key: 'resumenPronostico', label: 'Resumen', type: 'textarea' },
+            { key: 'pronosticoNota', label: 'Pronóstico', type: 'select', options: emergencyInitialNotePrognosisOptions, required: true },
+            { key: 'estadoMentalNota', label: 'Estado mental del paciente', type: 'select', options: triageInitialMentalStatusOptions },
+            { key: 'resumenPronostico', label: 'Resumen del interrogatorio', type: 'textarea', required: true },
           ],
         },
         {
@@ -1904,6 +1938,69 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             { key: 'notaInicialLegalMedico', label: 'Médico', type: 'readonly', inheritanceMode: 'system' },
             { key: 'notaInicialLegalCedula', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
             { key: 'firmarNotaInicial', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
+          ],
+        },
+      ],
+    },
+    {
+      key: 'Hoja de enfermería',
+      title: 'Hoja de enfermería',
+      description: 'Registro independiente de enfermería en urgencias.',
+      icon: HeartPulse,
+      sections: [
+        {
+          key: 'enfermeria_urg_valoracion',
+          title: 'Valoración de enfermería',
+          fields: [
+            { key: 'habitusExteriorEnfUrg', label: 'Habitus exterior', type: 'textarea', required: true },
+            { key: 'dolorEvaEnfUrg', label: 'Valoración del dolor (EVA 0-10)', type: 'number', required: true },
+            { key: 'riesgoCaidasEnfUrg', label: 'Riesgo de caídas', type: 'select', options: nursingFallRiskOptions, required: true },
+          ],
+        },
+        {
+          key: 'enfermeria_urg_intervenciones',
+          title: 'Intervenciones',
+          fields: [
+            {
+              key: 'medicacionAdministradaEnfUrg',
+              label: 'Medicación administrada',
+              type: 'object-array',
+              itemAddLabel: 'Agregar medicamento',
+              itemFields: [
+                { key: 'medicamento', label: 'Medicamento', type: 'text' },
+                { key: 'horaAdministrada', label: 'Hora administrada', type: 'time' },
+                { key: 'estado', label: 'Estado', type: 'select', options: [
+                  { value: '', label: 'Selecciona una opción' },
+                  { value: 'ADMINISTRADO', label: 'Administrado' },
+                  { value: 'NO_ADMINISTRADO', label: 'No administrado' },
+                  { value: 'DIFERIDO', label: 'Diferido' },
+                ] },
+                { key: 'observaciones', label: 'Observaciones', type: 'textarea' },
+                { key: 'responsable', label: 'Responsable', type: 'readonly', inheritanceMode: 'system' },
+              ],
+            },
+            {
+              key: 'procedimientosEnfermeriaEnfUrg',
+              label: 'Procedimientos de enfermería realizados',
+              type: 'object-array',
+              itemAddLabel: 'Agregar procedimiento',
+              itemFields: [
+                { key: 'procedimiento', label: 'Procedimiento', type: 'text' },
+                { key: 'hora', label: 'Hora', type: 'time' },
+                { key: 'observaciones', label: 'Observaciones', type: 'textarea' },
+                { key: 'responsable', label: 'Responsable', type: 'readonly', inheritanceMode: 'system' },
+              ],
+            },
+            { key: 'observacionesEnfermeriaEnfUrg', label: 'Observaciones de enfermería', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'enfermeria_urg_firma',
+          title: 'Firma',
+          fields: [
+            { key: 'elaboroEnfUrg', label: 'Elaboró', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'cedulaEnfUrg', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'firmarEnfermeriaUrg', label: 'Firma', type: 'action', actionLabel: 'Firmar electrónicamente', inheritanceMode: 'system' },
           ],
         },
       ],
