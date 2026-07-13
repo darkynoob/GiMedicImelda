@@ -2807,7 +2807,10 @@ model EmergencyOrderSet {
   recordedAt DateTime
 
   recordType String @default("Órdenes e indicaciones")
+  documentType String @default("ORDEN_MEDICA")
   monitoringInstructions String?
+  specialCareInstructions String?
+  generalIndications String?
   oxygenType String?
   oxygenFlow String?
   oxygenTarget String?
@@ -2845,6 +2848,7 @@ model EmergencyOrderSet {
   @@index([encounterId])
   @@index([patientId])
   @@index([status])
+  @@index([documentType])
   @@index([recordedAt])
   @@index([signerUserId])
 }
@@ -2953,10 +2957,17 @@ model EmergencyOrderTransfusion {
   tenantId String
   orderSetId String
   bloodProductType String?
+  otherBloodProductType String?
+  units Int?
   volume Decimal? @db.Decimal(10, 2)
   startedAt DateTime?
   endedAt DateTime?
+  adverseReactionOccurred Boolean?
   adverseReactions String?
+  indicatedByName String?
+  applyingStaffName String?
+  applyingServiceName String?
+  observations String?
   responsibleName String?
   sortOrder Int @default(0)
 

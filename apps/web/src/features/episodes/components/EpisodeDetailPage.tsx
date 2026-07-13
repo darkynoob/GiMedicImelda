@@ -650,6 +650,35 @@ function isEmergencyOrdersTab(encounterType: string, tabTitle: string) {
   );
 }
 
+type EmergencyOrdersDocumentType = 'Orden médica' | 'Hoja de indicaciones';
+
+function resolveEmergencyOrdersDocumentType(
+  noteType: unknown,
+  formData?: Record<string, unknown>,
+): EmergencyOrdersDocumentType {
+  const visibleType =
+    typeof formData?.tipoRegistro === 'string' ? formData.tipoRegistro : '';
+
+  if (noteType === 'Hoja de indicaciones' || visibleType === 'Hoja de indicaciones') {
+    return 'Hoja de indicaciones';
+  }
+
+  return 'Orden médica';
+}
+
+function buildEmergencyOrdersTitle(
+  versionNumber: number,
+  documentType: EmergencyOrdersDocumentType = 'Orden médica',
+) {
+  return `${documentType} V${versionNumber}`;
+}
+
+function buildEmergencyOrdersCreateLabel(noteType: string) {
+  return noteType === 'Hoja de indicaciones'
+    ? 'Nueva hoja de indicaciones'
+    : 'Nueva orden médica';
+}
+
 function isEmergencyConsultationTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Interconsultas';
 }
@@ -1385,10 +1414,6 @@ function buildEmergencyEvolutionTitle(versionNumber: number) {
   return `Evolución en urgencias V${versionNumber}`;
 }
 
-function buildEmergencyOrdersTitle(versionNumber: number) {
-  return `Órdenes e indicaciones V${versionNumber}`;
-}
-
 function buildEmergencyConsultationTitle(versionNumber: number) {
   return `Interconsultas V${versionNumber}`;
 }
@@ -1917,10 +1942,104 @@ function buildEmergencyOrdersTraceability(args: {
   return rows.join('\n') || 'Sin órdenes operativas capturadas.';
 }
 
+type EmergencyOrderTraceCard = {
+  id: string;
+  title: string;
+  status: string;
+  responsible: string;
+  service: string;
+  relevantTime: string;
+};
+
+const emergencyOrderTraceStatusLabels: Record<string, string> = {
+  PROGRAMADA: 'Programada',
+  EJECUTADA: 'Ejecutada',
+  PENDIENTE_RESULTADO: 'Pendiente de resultado',
+  CANCELADA: 'Cancelada',
+  PENDIENTE: 'Programada',
+  EN_PROCESO: 'Programada',
+  RESULTADO: 'Pendiente de resultado',
+};
+
+function normalizeEmergencyOrderTraceStatus(value: unknown) {
+  const rawValue = typeof value === 'string' ? value : 'PROGRAMADA';
+  return emergencyOrderTraceStatusLabels[rawValue] ?? 'Programada';
+}
+
+function buildEmergencyOrdersTraceCards(
+  formData: Record<string, RecordFieldValue>,
+): EmergencyOrderTraceCard[] {
+  const responsible =
+    typeof formData.ordenesLegalMedico === 'string' && formData.ordenesLegalMedico.trim()
+      ? formData.ordenesLegalMedico
+      : 'Sin profesional responsable';
+  const cards: EmergencyOrderTraceCard[] = [];
+
+  normalizeObjectArrayField(formData.medicamentosOrdenesUrg).forEach((item, index) => {
+    cards.push({
+      id: `medication-${index}`,
+      title: readTextRecordValue(item, 'medicamento') || `Medicamento ${index + 1}`,
+      status: 'Programada',
+      responsible,
+      service: 'Enfermería',
+      relevantTime: 'Sin horario de ejecución',
+    });
+  });
+
+  normalizeObjectArrayField(formData.solucionesIntravenosasOrdenes).forEach((item, index) => {
+    cards.push({
+      id: `solution-${index}`,
+      title: readTextRecordValue(item, 'tipoSolucion') || `Solución ${index + 1}`,
+      status: 'Programada',
+      responsible,
+      service: 'Enfermería',
+      relevantTime: readTextRecordValue(item, 'duracion') || 'Sin horario de ejecución',
+    });
+  });
+
+  normalizeObjectArrayField(formData.estudiosSolicitadosOrdenes).forEach((item, index) => {
+    const studyType = readTextRecordValue(item, 'tipo');
+    cards.push({
+      id: `study-${index}`,
+      title: readTextRecordValue(item, 'estudio') || `Estudio ${index + 1}`,
+      status: normalizeEmergencyOrderTraceStatus(item.estado),
+      responsible,
+      service: studyType === 'LABORATORIO' ? 'Laboratorio' : 'Gabinete',
+      relevantTime: readTextRecordValue(item, 'frecuencia') || 'Sin horario de ejecución',
+    });
+  });
+
+  if (formData.transfusionAplica === true) {
+    cards.push({
+      id: 'transfusion',
+      title:
+        formData.transfusionTipoHemoderivado === 'OTRO' &&
+        typeof formData.transfusionOtroHemoderivado === 'string' &&
+        formData.transfusionOtroHemoderivado.trim()
+          ? formData.transfusionOtroHemoderivado
+          : 'Transfusión',
+      status: 'Programada',
+      responsible,
+      service:
+        typeof formData.transfusionServicioAplica === 'string' &&
+        formData.transfusionServicioAplica.trim()
+          ? formData.transfusionServicioAplica
+          : 'Enfermería',
+      relevantTime:
+        typeof formData.transfusionHoraInicio === 'string' && formData.transfusionHoraInicio
+          ? formatDateTime(formData.transfusionHoraInicio)
+          : 'Sin hora de inicio',
+    });
+  }
+
+  return cards;
+}
+
 function buildEmergencyOrdersSnapshot(args: {
   detail: EncounterDetailResponse;
   initialNoteRecord: EncounterDetailResponse['sectionRecords'][number] | null;
   evolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  documentType: EmergencyOrdersDocumentType;
   currentFormData?: Record<string, RecordFieldValue>;
 }) {
   const initialFormData = args.initialNoteRecord?.formData ?? {};
@@ -1974,11 +2093,13 @@ function buildEmergencyOrdersSnapshot(args: {
   });
 
   return {
-    tipoRegistro: 'Órdenes e indicaciones',
+    tipoRegistro: args.documentType,
     medicamentosOrdenesUrg: medications,
     estudiosSolicitadosOrdenes: studies,
     monitoreoOrdenes:
       readString(currentFormData.monitoreoOrdenes) || interventionSuggestion,
+    transfusionMedicoIndica:
+      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
     ...safetyAlerts,
     estadoOrdenesTrazabilidad: buildEmergencyOrdersTraceability({
       medications,
@@ -4968,12 +5089,17 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    const documentType = resolveEmergencyOrdersDocumentType(
+      recordForm.noteType,
+      recordForm.formData,
+    );
     const nextFormData: Record<string, RecordFieldValue> = {
       ...recordForm.formData,
       ...buildEmergencyOrdersSnapshot({
         detail,
         initialNoteRecord: getLatestRecordByTab(detail.sectionRecords, 'Nota inicial'),
         evolutionRecord: getLatestRecordByTab(detail.sectionRecords, 'Evolución'),
+        documentType,
         currentFormData: recordForm.formData,
       }),
     };
@@ -4981,7 +5107,7 @@ export function EpisodeDetailPage() {
       ([fieldKey, value]) => recordForm.formData[fieldKey] !== value,
     );
 
-    if (!hasChanges && recordForm.noteType === 'Órdenes e indicaciones') {
+    if (!hasChanges && recordForm.noteType === documentType) {
       return;
     }
 
@@ -4989,7 +5115,7 @@ export function EpisodeDetailPage() {
       currentValue
         ? {
             ...currentValue,
-            noteType: 'Órdenes e indicaciones',
+            noteType: documentType,
             formData: nextFormData,
       }
         : currentValue,
@@ -5591,6 +5717,29 @@ export function EpisodeDetailPage() {
     recordForm?.noteType ??
     activeTabPanelConfig?.noteTypes?.[0] ??
     getEpisodeDocumentTypes(detail.encounterType)[0];
+  const currentEmergencyOrdersDocumentType = recordForm
+    ? resolveEmergencyOrdersDocumentType(recordForm.noteType, recordForm.formData)
+    : resolveEmergencyOrdersDocumentType(selectedRecord?.noteType, selectedRecord?.formData);
+  const latestEmergencyOrdersRecordForCurrentType = isEmergencyOrdersSection
+    ? [...activeTabRecords]
+        .filter(
+          (record) =>
+            resolveEmergencyOrdersDocumentType(record.noteType, record.formData) ===
+            currentEmergencyOrdersDocumentType,
+        )
+        .sort((left, right) => {
+          const leftVersion = left.metadata.versionNumber ?? 0;
+          const rightVersion = right.metadata.versionNumber ?? 0;
+
+          if (leftVersion !== rightVersion) {
+            return rightVersion - leftVersion;
+          }
+
+          return right.recordedAt.localeCompare(left.recordedAt);
+        })[0] ?? null
+    : null;
+  const nextEmergencyOrdersVersionNumberForCurrentType =
+    (latestEmergencyOrdersRecordForCurrentType?.metadata.versionNumber ?? 0) + 1;
   const documentWorkspaceDefinition = isConsultationDocumentsSection
     ? detail.encounterType === 'SURGERY'
       ? getAmbulatoryProcedureDocumentTabDefinition(selectedDocumentNoteType)
@@ -6151,6 +6300,25 @@ export function EpisodeDetailPage() {
       if (!activeTabDefinition) {
         return;
       }
+      const documentType = resolveEmergencyOrdersDocumentType(noteType);
+      const latestDocumentRecord = [...activeTabRecords]
+        .filter(
+          (record) =>
+            resolveEmergencyOrdersDocumentType(record.noteType, record.formData) ===
+            documentType,
+        )
+        .sort((left, right) => {
+          const leftVersion = left.metadata.versionNumber ?? 0;
+          const rightVersion = right.metadata.versionNumber ?? 0;
+
+          if (leftVersion !== rightVersion) {
+            return rightVersion - leftVersion;
+          }
+
+          return right.recordedAt.localeCompare(left.recordedAt);
+        })[0] ?? null;
+      const nextDocumentVersionNumber =
+        (latestDocumentRecord?.metadata.versionNumber ?? 0) + 1;
 
       setFeedback(null);
       setActiveRecordId(null);
@@ -6158,8 +6326,8 @@ export function EpisodeDetailPage() {
       setRecordForm(
         buildRecordFormState({
           tabDefinition: activeTabDefinition,
-          noteType: 'Órdenes e indicaciones',
-          title: buildEmergencyOrdersTitle(nextEmergencyOrdersVersionNumber),
+          noteType: documentType,
+          title: buildEmergencyOrdersTitle(nextDocumentVersionNumber, documentType),
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: {
@@ -6170,6 +6338,7 @@ export function EpisodeDetailPage() {
               detail,
               initialNoteRecord: latestEmergencyInitialNoteRecord,
               evolutionRecord: latestEmergencyEvolutionRecord,
+              documentType,
             }),
           },
         }),
@@ -6595,6 +6764,10 @@ export function EpisodeDetailPage() {
                                 detail,
                                 initialNoteRecord: latestEmergencyInitialNoteRecord,
                                 evolutionRecord: latestEmergencyEvolutionRecord,
+                                documentType: resolveEmergencyOrdersDocumentType(
+                                  record.noteType,
+                                  record.formData,
+                                ),
                                 currentFormData:
                                   record.formData as Record<string, RecordFieldValue>,
                               }),
@@ -7316,10 +7489,20 @@ export function EpisodeDetailPage() {
       }
     }
 
+    const emergencyOrdersPayloadDocumentType = isEmergencyOrdersSection
+      ? resolveEmergencyOrdersDocumentType(recordForm.noteType, recordForm.formData)
+      : null;
     const payload = {
       tabKey: activeRecordTabKey,
-      noteType: recordForm.noteType.trim(),
-      title: recordForm.title.trim() || undefined,
+      noteType: emergencyOrdersPayloadDocumentType ?? recordForm.noteType.trim(),
+      title:
+        emergencyOrdersPayloadDocumentType
+          ? buildEmergencyOrdersTitle(
+              selectedRecord?.metadata.versionNumber ??
+                nextEmergencyOrdersVersionNumberForCurrentType,
+              emergencyOrdersPayloadDocumentType,
+            )
+          : recordForm.title.trim() || undefined,
       status: (statusOverride ?? recordForm.status) || undefined,
       recordedAt: recordForm.recordedAt
         ? new Date(recordForm.recordedAt).toISOString()
@@ -7390,6 +7573,10 @@ export function EpisodeDetailPage() {
                               detail,
                               initialNoteRecord: latestEmergencyInitialNoteRecord,
                               evolutionRecord: latestEmergencyEvolutionRecord,
+                              documentType: resolveEmergencyOrdersDocumentType(
+                                recordForm.noteType,
+                                recordForm.formData,
+                              ),
                               currentFormData: recordForm.formData,
                             }),
                           }
@@ -8227,7 +8414,9 @@ export function EpisodeDetailPage() {
                           >
                             <Plus className="h-4 w-4" />
                             {activeTabPanelConfig?.noteTypes?.length
-                              ? noteType
+                              ? isEmergencyOrdersSection
+                                ? buildEmergencyOrdersCreateLabel(noteType)
+                                : noteType
                               : activeTabPanelConfig?.defaultActionLabel ??
                                 'Nuevo registro'}
                           </Button>
@@ -8703,9 +8892,11 @@ export function EpisodeDetailPage() {
                                       {selectedRecord
                                         ? buildEmergencyOrdersTitle(
                                             selectedRecord.metadata.versionNumber ?? 1,
+                                            currentEmergencyOrdersDocumentType,
                                           )
                                         : buildEmergencyOrdersTitle(
-                                            nextEmergencyOrdersVersionNumber,
+                                            nextEmergencyOrdersVersionNumberForCurrentType,
+                                            currentEmergencyOrdersDocumentType,
                                           )}
                                     </p>
                                   </div>
@@ -8716,7 +8907,7 @@ export function EpisodeDetailPage() {
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Badge variant="secondary">
-                                    Órdenes e indicaciones
+                                    {currentEmergencyOrdersDocumentType}
                                   </Badge>
                                   <Badge
                                     variant={
@@ -9687,6 +9878,37 @@ export function EpisodeDetailPage() {
                               }
                             }
 
+                            if (isEmergencyOrdersSection) {
+                              const indicationSheetOnlySections = [
+                                'ordenes_urg_cuidados',
+                                'ordenes_urg_monitoreo',
+                                'ordenes_urg_oxigeno',
+                                'ordenes_urg_dieta',
+                                'ordenes_urg_reposo',
+                                'ordenes_urg_balance',
+                                'ordenes_urg_indicaciones_generales',
+                              ];
+                              const medicalOrderOnlySections = [
+                                'ordenes_urg_trazabilidad',
+                                'ordenes_urg_transfusion',
+                              ];
+
+                              if (
+                                currentEmergencyOrdersDocumentType ===
+                                  'Hoja de indicaciones' &&
+                                medicalOrderOnlySections.includes(section.key)
+                              ) {
+                                return false;
+                              }
+
+                              if (
+                                currentEmergencyOrdersDocumentType === 'Orden médica' &&
+                                indicationSheetOnlySections.includes(section.key)
+                              ) {
+                                return false;
+                              }
+                            }
+
                             if (isHospitalSurgicalSection) {
                               const surgicalType = recordForm.noteType;
 
@@ -9901,9 +10123,73 @@ export function EpisodeDetailPage() {
                             {isEmergencyTriageSection &&
                             section.key === 'triage_news_alertas' ? (
                               <News2StructuredPanel formData={recordForm.formData} />
+                            ) : isEmergencyOrdersSection &&
+                            section.key === 'ordenes_urg_trazabilidad' ? (
+                              <div className="grid gap-3 md:grid-cols-2">
+                                {buildEmergencyOrdersTraceCards(recordForm.formData).length > 0 ? (
+                                  buildEmergencyOrdersTraceCards(recordForm.formData).map(
+                                    (traceCard) => (
+                                      <div
+                                        className="rounded-2xl border border-slate-200 bg-white p-4"
+                                        key={traceCard.id}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div>
+                                            <p className="text-sm font-semibold text-slate-900">
+                                              {traceCard.title}
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                              {traceCard.service}
+                                            </p>
+                                          </div>
+                                          <Badge variant="secondary">
+                                            {traceCard.status}
+                                          </Badge>
+                                        </div>
+                                        <div className="mt-3 grid gap-2 text-xs text-slate-600">
+                                          <span>
+                                            Responsable: {traceCard.responsible}
+                                          </span>
+                                          <span>
+                                            Hora relevante: {traceCard.relevantTime}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ),
+                                  )
+                                ) : (
+                                  <p className="text-xs text-muted-foreground md:col-span-2">
+                                    Sin órdenes operativas capturadas.
+                                  </p>
+                                )}
+                              </div>
                             ) : (
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
+                                if (
+                                  isEmergencyOrdersSection &&
+                                  section.key === 'ordenes_urg_transfusion' &&
+                                  field.key !== 'transfusionAplica'
+                                ) {
+                                  if (recordForm.formData.transfusionAplica !== true) {
+                                    return null;
+                                  }
+
+                                  if (
+                                    field.key === 'transfusionOtroHemoderivado' &&
+                                    recordForm.formData.transfusionTipoHemoderivado !== 'OTRO'
+                                  ) {
+                                    return null;
+                                  }
+
+                                  if (
+                                    field.key === 'transfusionReacciones' &&
+                                    recordForm.formData.transfusionReaccionAdversa !== 'SI'
+                                  ) {
+                                    return null;
+                                  }
+                                }
+
                                 if (field.inheritanceMode === 'system') {
                                   if (
                                     field.type !== 'readonly' &&
@@ -10160,12 +10446,67 @@ export function EpisodeDetailPage() {
                                         checked={Boolean(fieldValue)}
                                         className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
                                         disabled={isRecordLocked}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
+                                          if (
+                                            isEmergencyOrdersSection &&
+                                            field.key === 'transfusionAplica' &&
+                                            !event.target.checked
+                                          ) {
+                                            const hasTransfusionCapture = [
+                                              'transfusionTipoHemoderivado',
+                                              'transfusionOtroHemoderivado',
+                                              'transfusionUnidades',
+                                              'transfusionVolumen',
+                                              'transfusionHoraInicio',
+                                              'transfusionHoraFin',
+                                              'transfusionReaccionAdversa',
+                                              'transfusionReacciones',
+                                              'transfusionPersonalAplica',
+                                              'transfusionServicioAplica',
+                                              'transfusionObservaciones',
+                                            ].some((fieldKey) =>
+                                              Boolean(recordForm.formData[fieldKey]),
+                                            );
+
+                                            if (
+                                              hasTransfusionCapture &&
+                                              !window.confirm(
+                                                'Desactivar transfusión descartará los datos capturados de este bloque. ¿Deseas continuar?',
+                                              )
+                                            ) {
+                                              return;
+                                            }
+
+                                            setRecordForm((currentValue) =>
+                                              currentValue
+                                                ? {
+                                                    ...currentValue,
+                                                    formData: {
+                                                      ...currentValue.formData,
+                                                      transfusionAplica: false,
+                                                      transfusionTipoHemoderivado: '',
+                                                      transfusionOtroHemoderivado: '',
+                                                      transfusionUnidades: '',
+                                                      transfusionVolumen: '',
+                                                      transfusionHoraInicio: '',
+                                                      transfusionHoraFin: '',
+                                                      transfusionReaccionAdversa: 'NO',
+                                                      transfusionReacciones: '',
+                                                      transfusionPersonalAplica: '',
+                                                      transfusionServicioAplica: '',
+                                                      transfusionObservaciones: '',
+                                                    },
+                                                  }
+                                                : currentValue,
+                                            );
+                                            return;
+                                          }
+
                                           updateRecordFormDataField(
                                             field.key,
                                             event.target.checked,
-                                          )
-                                        }
+                                          );
+                                        }}
                                         type="checkbox"
                                       />
                                       <span className="font-medium text-slate-900">

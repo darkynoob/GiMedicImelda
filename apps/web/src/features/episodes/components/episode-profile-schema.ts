@@ -380,9 +380,10 @@ const studyTypeOptions: EpisodeFieldOption[] = [
 ];
 
 const orderStatusOptions: EpisodeFieldOption[] = [
-  { value: 'PENDIENTE', label: 'Pendiente' },
-  { value: 'EN_PROCESO', label: 'En proceso' },
-  { value: 'RESULTADO', label: 'Resultado' },
+  { value: 'PROGRAMADA', label: 'Programada' },
+  { value: 'EJECUTADA', label: 'Ejecutada' },
+  { value: 'PENDIENTE_RESULTADO', label: 'Pendiente de resultado' },
+  { value: 'CANCELADA', label: 'Cancelada' },
 ];
 
 const oxygenTypeOptions: EpisodeFieldOption[] = [
@@ -420,10 +421,17 @@ const fluidControlOptions: EpisodeFieldOption[] = [
 
 const transfusionProductOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
-  { value: 'CE', label: 'Concentrado eritrocitario' },
-  { value: 'PFC', label: 'Plasma fresco congelado' },
+  { value: 'CONCENTRADO_ERITROCITARIO', label: 'Concentrado eritrocitario' },
+  { value: 'PLASMA_FRESCO_CONGELADO', label: 'Plasma fresco congelado' },
   { value: 'PLAQUETAS', label: 'Plaquetas' },
   { value: 'CRIOPRECIPITADO', label: 'Crioprecipitado' },
+  { value: 'SANGRE_TOTAL', label: 'Sangre total' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const adverseReactionOptions: EpisodeFieldOption[] = [
+  { value: 'NO', label: 'No' },
+  { value: 'SI', label: 'Sí' },
 ];
 
 const notificationMediumOptions: EpisodeFieldOption[] = [
@@ -2287,13 +2295,51 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'ordenes_urg_cuidados',
           title: 'Cuidados especiales',
           fields: [
+            { key: 'cuidadosEspecialesOrdenes', label: 'Cuidados especiales', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_monitoreo',
+          title: 'Monitoreo',
+          fields: [
             { key: 'monitoreoOrdenes', label: 'Monitoreo', type: 'textarea' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_oxigeno',
+          title: 'Oxígeno',
+          fields: [
             { key: 'oxigenoTipoOrdenes', label: 'Oxígeno - tipo', type: 'select', options: oxygenTypeOptions },
             { key: 'oxigenoFlujoOrdenes', label: 'Oxígeno - flujo', type: 'text' },
             { key: 'oxigenoMetaOrdenes', label: 'Oxígeno - meta', type: 'text' },
+          ],
+        },
+        {
+          key: 'ordenes_urg_dieta',
+          title: 'Dieta',
+          fields: [
             { key: 'dietaOrdenes', label: 'Dieta', type: 'select', options: dietOptions },
+          ],
+        },
+        {
+          key: 'ordenes_urg_reposo',
+          title: 'Reposo',
+          fields: [
             { key: 'reposoOrdenes', label: 'Reposo', type: 'select', options: restOptions },
+          ],
+        },
+        {
+          key: 'ordenes_urg_balance',
+          title: 'Balance hídrico',
+          fields: [
             { key: 'controlLiquidosOrdenes', label: 'Control de líquidos', type: 'select', options: fluidControlOptions },
+          ],
+        },
+        {
+          key: 'ordenes_urg_indicaciones_generales',
+          title: 'Indicaciones generales',
+          fields: [
+            { key: 'indicacionesGeneralesOrdenes', label: 'Indicaciones generales', type: 'textarea' },
           ],
         },
         {
@@ -2309,11 +2355,17 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           fields: [
             { key: 'transfusionAplica', label: 'Aplica transfusión', type: 'checkbox' },
             { key: 'transfusionTipoHemoderivado', label: 'Tipo de hemoderivado', type: 'select', options: transfusionProductOptions },
-            { key: 'transfusionVolumen', label: 'Volumen', type: 'number' },
-            { key: 'transfusionHoraInicio', label: 'Hora inicio', type: 'datetime-local' },
-            { key: 'transfusionHoraFin', label: 'Hora fin', type: 'datetime-local' },
-            { key: 'transfusionReacciones', label: 'Reacciones adversas', type: 'textarea' },
-            { key: 'transfusionResponsable', label: 'Responsable', type: 'text' },
+            { key: 'transfusionOtroHemoderivado', label: 'Otro hemoderivado', type: 'text' },
+            { key: 'transfusionUnidades', label: 'Unidades', type: 'number' },
+            { key: 'transfusionVolumen', label: 'Volumen (mL)', type: 'number' },
+            { key: 'transfusionHoraInicio', label: 'Fecha y hora de inicio', type: 'datetime-local' },
+            { key: 'transfusionHoraFin', label: 'Fecha y hora de término', type: 'datetime-local' },
+            { key: 'transfusionReaccionAdversa', label: 'Reacción adversa', type: 'select', options: adverseReactionOptions },
+            { key: 'transfusionReacciones', label: 'Descripción de reacción adversa', type: 'textarea' },
+            { key: 'transfusionMedicoIndica', label: 'Médico que indica', type: 'readonly', inheritanceMode: 'system' },
+            { key: 'transfusionPersonalAplica', label: 'Personal que aplica', type: 'text' },
+            { key: 'transfusionServicioAplica', label: 'Servicio que aplica', type: 'text' },
+            { key: 'transfusionObservaciones', label: 'Observaciones', type: 'textarea' },
           ],
         },
         {
