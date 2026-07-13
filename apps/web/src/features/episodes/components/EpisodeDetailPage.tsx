@@ -392,6 +392,58 @@ function isEmergencyInitialNoteTab(encounterType: string, tabTitle: string) {
   return encounterType === 'EMERGENCY' && tabTitle === 'Nota inicial';
 }
 
+function isEmergencyNursingSheetTab(encounterType: string, tabTitle: string) {
+  return encounterType === 'EMERGENCY' && tabTitle === 'Hoja de enfermería';
+}
+
+function buildEmergencyNursingSheetTitle(versionNumber: number) {
+  return `Hoja de enfermería V${versionNumber}`;
+}
+
+function buildEmergencyNursingSheetSnapshot(input: {
+  currentFormData?: Record<string, RecordFieldValue>;
+  sessionUser: CurrentUserResponse | null | undefined;
+  detail: EncounterDetailResponse;
+}) {
+  const nurseName =
+    input.sessionUser?.fullName ??
+    input.detail.attendingClinician?.fullName ??
+    'Sin profesional responsable';
+  const professionalLicense =
+    input.sessionUser?.professionalLicense ??
+    input.detail.attendingClinician?.professionalLicense ??
+    'Sin cédula';
+  const currentFormData = input.currentFormData ?? {};
+  const medications = Array.isArray(currentFormData.medicacionAdministradaEnfUrg)
+    ? currentFormData.medicacionAdministradaEnfUrg
+    : [];
+  const procedures = Array.isArray(currentFormData.procedimientosEnfermeriaEnfUrg)
+    ? currentFormData.procedimientosEnfermeriaEnfUrg
+    : [];
+
+  return {
+    ...currentFormData,
+    medicacionAdministradaEnfUrg: medications.map((medication) =>
+      medication && typeof medication === 'object' && !Array.isArray(medication)
+        ? {
+            ...medication,
+            responsable: nurseName,
+          }
+        : medication,
+    ),
+    procedimientosEnfermeriaEnfUrg: procedures.map((procedure) =>
+      procedure && typeof procedure === 'object' && !Array.isArray(procedure)
+        ? {
+            ...procedure,
+            responsable: nurseName,
+          }
+        : procedure,
+    ),
+    elaboroEnfUrg: nurseName,
+    cedulaEnfUrg: professionalLicense,
+  };
+}
+
 function isEmergencyEvolutionTab(encounterType: string, tabTitle: string) {
   return (
     encounterType === 'EMERGENCY' &&
@@ -5109,6 +5161,10 @@ export function EpisodeDetailPage() {
     detail.encounterType,
     activeTab,
   );
+  const isEmergencyNursingSheetSection = isEmergencyNursingSheetTab(
+    detail.encounterType,
+    activeTab,
+  );
   const isEmergencyEvolutionSection = isEmergencyEvolutionTab(
     detail.encounterType,
     activeTab,
@@ -5220,6 +5276,9 @@ export function EpisodeDetailPage() {
   const latestEmergencyInitialNoteRecord = isEmergencyInitialNoteSection
     ? getLatestRecordByTab(activeTabRecords, 'Nota inicial')
     : getLatestRecordByTab(detail.sectionRecords, 'Nota inicial');
+  const latestEmergencyNursingSheetRecord = isEmergencyNursingSheetSection
+    ? getLatestRecordByTab(activeTabRecords, 'Hoja de enfermería')
+    : getLatestRecordByTab(detail.sectionRecords, 'Hoja de enfermería');
   const latestEmergencyEvolutionRecord = isEmergencyEvolutionSection
     ? getLatestRecordByTab(activeTabRecords, 'Evolución')
     : getLatestRecordByTab(detail.sectionRecords, 'Evolución');
@@ -5288,6 +5347,8 @@ export function EpisodeDetailPage() {
     (latestDocumentRecord?.metadata.versionNumber ?? 0) + 1;
   const nextTriageVersionNumber =
     (latestTriageRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextEmergencyNursingSheetVersionNumber =
+    (latestEmergencyNursingSheetRecord?.metadata.versionNumber ?? 0) + 1;
   const nextEmergencyEvolutionVersionNumber =
     (latestEmergencyEvolutionRecord?.metadata.versionNumber ?? 0) + 1;
   const nextEmergencyOrdersVersionNumber =
@@ -5736,6 +5797,35 @@ export function EpisodeDetailPage() {
               recordedAt: nextRecordedAt,
             }),
           },
+        }),
+      );
+      return;
+    }
+
+    if (isEmergencyNursingSheetSection) {
+      if (!activeTabDefinition) {
+        return;
+      }
+
+      setFeedback(null);
+      setActiveRecordId(null);
+      setIsCreatingRecord(true);
+      setRecordForm(
+        buildRecordFormState({
+          tabDefinition: activeTabDefinition,
+          noteType: 'Hoja de enfermería',
+          title: buildEmergencyNursingSheetTitle(
+            nextEmergencyNursingSheetVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt: nextRecordedAt,
+          rawFormData: buildEmergencyNursingSheetSnapshot({
+            detail,
+            sessionUser: session?.user ?? null,
+            currentFormData: buildInitialStructuredSections(detail.encounterType)[
+              'Hoja de enfermería'
+            ] as Record<string, RecordFieldValue>,
+          }),
         }),
       );
       return;
@@ -6211,6 +6301,13 @@ export function EpisodeDetailPage() {
                                 record.formData as Record<string, RecordFieldValue>,
                             }),
                           }
+                        : isEmergencyNursingSheetSection
+                          ? buildEmergencyNursingSheetSnapshot({
+                              detail,
+                              sessionUser: session?.user ?? null,
+                              currentFormData:
+                                record.formData as Record<string, RecordFieldValue>,
+                            })
                         : isEmergencyOrdersSection
                           ? {
                               ...(record.formData as Record<string, RecordFieldValue>),
@@ -6890,6 +6987,12 @@ export function EpisodeDetailPage() {
                           currentFormData: recordForm.formData,
                         }),
                       }
+                    : isEmergencyNursingSheetSection
+                      ? buildEmergencyNursingSheetSnapshot({
+                          detail,
+                          sessionUser: session?.user ?? null,
+                          currentFormData: recordForm.formData,
+                        })
                     : isEmergencyEvolutionSection
                       ? {
                           ...recordForm.formData,
@@ -8104,6 +8207,47 @@ export function EpisodeDetailPage() {
                                 </div>
                               </div>
                             </div>
+                          ) : isEmergencyNursingSheetSection ? (
+                            <div className="rounded-2xl border border-sky-200/80 bg-sky-50/70 p-5 md:col-span-2">
+                              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="rounded-xl bg-sky-100 p-2">
+                                      <HeartPulse className="h-4 w-4 text-sky-700" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {selectedRecord
+                                        ? buildEmergencyNursingSheetTitle(
+                                            selectedRecord.metadata.versionNumber ?? 1,
+                                          )
+                                        : buildEmergencyNursingSheetTitle(
+                                            nextEmergencyNursingSheetVersionNumber,
+                                          )}
+                                    </p>
+                                  </div>
+                                  <p className="max-w-2xl text-sm leading-relaxed text-sky-800">
+                                    Registro independiente de enfermería para valoración, medicación,
+                                    procedimientos, observaciones y firma propia del personal responsable.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Hoja de enfermería
+                                  </Badge>
+                                  <Badge
+                                    variant={
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).badgeVariant
+                                    }
+                                  >
+                                    {
+                                      (encounterRecordStatusConfig[recordForm.status] ??
+                                        encounterRecordStatusConfig.DRAFT).label
+                                    }
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
                           ) : isEmergencyEvolutionSection ? (
                             <div className="rounded-2xl border border-orange-200/80 bg-orange-50/70 p-5 md:col-span-2">
                               <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -8723,6 +8867,7 @@ export function EpisodeDetailPage() {
                           {isConsultationPrescriptionSection ||
                           isConsultationDocumentsSection ||
                           isEmergencyInitialNoteSection ||
+                          isEmergencyNursingSheetSection ||
                           isAmbulatoryPreprocedureSection ||
                           isAmbulatoryProcedureSection ||
                           isAmbulatoryRecoveryEvaluationSection ||
@@ -8766,6 +8911,7 @@ export function EpisodeDetailPage() {
                           isConsultationDocumentsSection ||
                           isEmergencyTriageSection ||
                           isEmergencyInitialNoteSection ||
+                          isEmergencyNursingSheetSection ||
                           isEmergencyEvolutionSection ||
                           isEmergencyOrdersSection ||
                           isEmergencyConsultationSection ||
@@ -8944,6 +9090,7 @@ export function EpisodeDetailPage() {
                         isConsultationDocumentsSection ||
                         isEmergencyTriageSection ||
                         isEmergencyInitialNoteSection ||
+                        isEmergencyNursingSheetSection ||
                         isEmergencyEvolutionSection ||
                         isEmergencyOrdersSection ||
                         isEmergencyConsultationSection ||
@@ -8965,6 +9112,8 @@ export function EpisodeDetailPage() {
                                       ? 'Documento de Triage'
                                       : isEmergencyInitialNoteSection
                                         ? 'Documento de Nota inicial'
+                                        : isEmergencyNursingSheetSection
+                                          ? 'Documento de Hoja de enfermería'
                                         : isEmergencyEvolutionSection
                                           ? 'Documento de Evolución'
                                           : isEmergencyOrdersSection
@@ -8996,6 +9145,8 @@ export function EpisodeDetailPage() {
                                       ? 'La vista previa y el PDF usan la información del registro y respetan su estado firmado o borrador.'
                                       : isEmergencyInitialNoteSection
                                         ? 'La vista previa y el PDF usan el snapshot clínico guardado de la nota inicial.'
+                                        : isEmergencyNursingSheetSection
+                                          ? 'La vista previa y el PDF pertenecen solo a esta hoja de enfermería.'
                                         : isEmergencyEvolutionSection
                                           ? 'La vista previa y el PDF usan la medición y el seguimiento guardados en esta evolución.'
                                           : isEmergencyOrdersSection
@@ -9046,6 +9197,7 @@ export function EpisodeDetailPage() {
                                     (selectedRecord.status !== 'SIGNED' &&
                                       !isEmergencyTriageSection &&
                                       !isEmergencyInitialNoteSection &&
+                                      !isEmergencyNursingSheetSection &&
                                       !isEmergencyEvolutionSection &&
                                       !isEmergencyOrdersSection &&
                                       !isEmergencyConsultationSection &&
