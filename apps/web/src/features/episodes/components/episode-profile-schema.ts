@@ -63,6 +63,43 @@ export type EpisodeTabDefinition = {
   sections: EpisodeSectionDefinition[];
 };
 
+type ClinicalMeasurementPresentation = {
+  label: string;
+  unit?: string;
+};
+
+const buildClinicalMeasurementLabel = (
+  presentation: ClinicalMeasurementPresentation,
+) =>
+  presentation.unit
+    ? `${presentation.label} (${presentation.unit})`
+    : presentation.label;
+
+const emergencyEvolutionObjectiveVitalSignPresentation = {
+  taSistolicaEvolUrg: { label: 'TA sistólica', unit: 'mmHg' },
+  taDiastolicaEvolUrg: { label: 'TA diastólica', unit: 'mmHg' },
+  fcEvolUrg: { label: 'FC', unit: 'lpm' },
+  frEvolUrg: { label: 'FR', unit: 'rpm' },
+  spo2EvolUrg: { label: 'SpO₂', unit: '%' },
+  tempEvolUrg: { label: 'Temperatura', unit: '°C' },
+  evaEvolUrg: { label: 'EVA dolor', unit: '0–10' },
+  glucosaEvolUrg: { label: 'Glucosa', unit: 'mg/dL' },
+  glasgowEvolUrg: { label: 'Glasgow' },
+} satisfies Record<string, ClinicalMeasurementPresentation>;
+
+type EmergencyEvolutionObjectiveVitalSignKey =
+  keyof typeof emergencyEvolutionObjectiveVitalSignPresentation;
+
+const buildEmergencyEvolutionObjectiveVitalSignField = (
+  key: EmergencyEvolutionObjectiveVitalSignKey,
+): EpisodeFieldDefinition => ({
+  key,
+  label: buildClinicalMeasurementLabel(
+    emergencyEvolutionObjectiveVitalSignPresentation[key],
+  ),
+  type: 'number',
+});
+
 export function getConsultationHistoryNoteTypeLabel(
   versionNumber: number | null | undefined,
 ) {
@@ -2039,16 +2076,16 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'evolucion_urg_objetivo',
           title: 'O - Objetivo',
           fields: [
-            { key: 'taSistolicaEvolUrg', label: 'TA sistólica', type: 'number' },
-            { key: 'taDiastolicaEvolUrg', label: 'TA diastólica', type: 'number' },
-            { key: 'fcEvolUrg', label: 'FC', type: 'number' },
-            { key: 'frEvolUrg', label: 'FR', type: 'number' },
-            { key: 'tempEvolUrg', label: 'Temp', type: 'number' },
-            { key: 'spo2EvolUrg', label: 'SpO2', type: 'number' },
-            { key: 'evaEvolUrg', label: 'EVA', type: 'number' },
-            { key: 'glucosaEvolUrg', label: 'Glucosa', type: 'number' },
-            { key: 'glasgowEvolUrg', label: 'Glasgow', type: 'number' },
-            { key: 'exploracionDirigidaUrg', label: 'Exploración dirigida', type: 'textarea' },
+            buildEmergencyEvolutionObjectiveVitalSignField('taSistolicaEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('taDiastolicaEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('fcEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('frEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('tempEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('spo2EvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('evaEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('glucosaEvolUrg'),
+            buildEmergencyEvolutionObjectiveVitalSignField('glasgowEvolUrg'),
+            { key: 'exploracionDirigidaUrg', label: 'Exploración física dirigida', type: 'textarea' },
           ],
         },
         {
