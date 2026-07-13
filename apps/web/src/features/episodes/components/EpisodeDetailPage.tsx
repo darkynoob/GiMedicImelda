@@ -1666,13 +1666,6 @@ function buildEmergencyEvolutionSnapshot(args: {
       args.detail.metrics.labs || args.detail.metrics.imaging
         ? `Laboratorio: ${args.detail.metrics.labs} · Imagenología: ${args.detail.metrics.imaging}`
         : 'Sin resultados externos vinculados al episodio.',
-    enfermeriaHabitusUrg: 'Sin hoja de enfermería vinculada',
-    enfermeriaDolorUrg: 'Sin hoja de enfermería vinculada',
-    enfermeriaRiesgoCaidasUrg: 'Sin hoja de enfermería vinculada',
-    enfermeriaMedicacionUrg: 'Sin hoja de enfermería vinculada',
-    enfermeriaProcedimientosUrg: 'Sin hoja de enfermería vinculada',
-    enfermeriaObservacionesUrg: 'Sin hoja de enfermería vinculada',
-    enfermeriaResponsableUrg: 'Sin hoja de enfermería vinculada',
     auxEcgUrg: 'Sin ECG vinculado al episodio',
     auxLaboratoriosUrg:
       args.detail.metrics.labs > 0
@@ -3866,11 +3859,68 @@ function ReadOnlyField({
   return (
     <div className="space-y-2 text-sm">
       <span className="font-medium text-slate-900">{label}</span>
-      <div className="flex min-h-10 items-center rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+      <div className="flex min-h-10 items-center whitespace-pre-line rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
         {value || 'Sin dato disponible'}
       </div>
     </div>
   );
+}
+
+type EncounterSectionRecordItem = EncounterDetailResponse['sectionRecords'][number];
+
+function readRecordTextValue(
+  formData: Record<string, unknown>,
+  fieldKey: string,
+) {
+  const value = formData[fieldKey];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function formatEmergencyNursingMedicationSummary(formData: Record<string, unknown>) {
+  const medications = Array.isArray(formData.medicacionAdministradaEnfUrg)
+    ? formData.medicacionAdministradaEnfUrg
+    : [];
+
+  const summary = medications
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    )
+    .map((medication) =>
+      [
+        readRecordTextValue(medication, 'medicamento'),
+        readRecordTextValue(medication, 'horaAdministrada'),
+        readRecordTextValue(medication, 'estado'),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    )
+    .filter(Boolean);
+
+  return summary.length > 0 ? summary.join('\n') : 'Sin registro';
+}
+
+function formatEmergencyNursingProcedureSummary(formData: Record<string, unknown>) {
+  const procedures = Array.isArray(formData.procedimientosEnfermeriaEnfUrg)
+    ? formData.procedimientosEnfermeriaEnfUrg
+    : [];
+
+  const summary = procedures
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    )
+    .map((procedure) =>
+      [
+        readRecordTextValue(procedure, 'procedimiento'),
+        readRecordTextValue(procedure, 'hora'),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    )
+    .filter(Boolean);
+
+  return summary.length > 0 ? summary.join('\n') : 'Sin registro';
 }
 
 type News2ParameterScoreCard = {
@@ -4225,6 +4275,8 @@ export function EpisodeDetailPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSigningRecord, setIsSigningRecord] = useState(false);
   const [signaturePassword, setSignaturePassword] = useState('');
+  const [isOpeningEmergencyNursingSheet, setIsOpeningEmergencyNursingSheet] =
+    useState(false);
   const pendingDiagnosisFocusIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -6389,12 +6441,7 @@ export function EpisodeDetailPage() {
                             }),
                           }
                         : isEmergencyNursingSheetSection
-                          ? buildEmergencyNursingSheetSnapshot({
-                              detail,
-                              sessionUser: session?.user ?? null,
-                              currentFormData:
-                                record.formData as Record<string, RecordFieldValue>,
-                            })
+                          ? (record.formData as Record<string, RecordFieldValue>)
                         : isEmergencyOrdersSection
                           ? {
                               ...(record.formData as Record<string, RecordFieldValue>),
@@ -6693,6 +6740,105 @@ export function EpisodeDetailPage() {
     setIsCreatingRecord(false);
     setActiveRecordId(null);
     setRecordForm(null);
+  };
+
+  const openEmergencyNursingSheetRecord = (
+    record: EncounterSectionRecordItem,
+  ) => {
+    const nursingSheetTabDefinition = getEpisodeTabDefinition(
+      detail.encounterType,
+      'Hoja de enfermería',
+    );
+
+    if (!nursingSheetTabDefinition) {
+      setFeedback('No se encontró la configuración de Hoja de enfermería.');
+      return;
+    }
+
+    setFeedback(null);
+    setActiveTab('Hoja de enfermería');
+    setIsCreatingRecord(false);
+    setActiveRecordId(record.id);
+    setRecordForm(
+      buildRecordFormState({
+        tabDefinition: nursingSheetTabDefinition,
+        noteType: record.noteType,
+        title: record.title,
+        status: record.status,
+        recordedAt: record.recordedAt.slice(0, 16),
+        rawFormData: record.formData as Record<string, RecordFieldValue>,
+      }),
+    );
+  };
+
+  const openOrCreateEmergencyNursingSheet = async () => {
+    if (latestEmergencyNursingSheetRecord) {
+      openEmergencyNursingSheetRecord(latestEmergencyNursingSheetRecord);
+      return;
+    }
+
+    const nursingSheetTabDefinition = getEpisodeTabDefinition(
+      detail.encounterType,
+      'Hoja de enfermería',
+    );
+
+    if (!nursingSheetTabDefinition || !session) {
+      setFeedback('No se pudo abrir la Hoja de enfermería.');
+      return;
+    }
+
+    const recordedAt = new Date().toISOString();
+    const initialFormData = buildEmergencyNursingSheetSnapshot({
+      detail,
+      sessionUser: session.user ?? null,
+      currentFormData: buildInitialStructuredSections(detail.encounterType)[
+        'Hoja de enfermería'
+      ] as Record<string, RecordFieldValue>,
+    });
+
+    setFeedback(null);
+    setIsOpeningEmergencyNursingSheet(true);
+
+    try {
+      const updatedDetail = await createEncounterSectionRecord(
+        session.accessToken,
+        episodeNumber,
+        {
+          tabKey: 'Hoja de enfermería',
+          noteType: 'Hoja de enfermería',
+          title: buildEmergencyNursingSheetTitle(
+            nextEmergencyNursingSheetVersionNumber,
+          ),
+          status: 'DRAFT',
+          recordedAt,
+          formData: initialFormData,
+        },
+      );
+      const nursingSheetRecord = getLatestRecordByTab(
+        updatedDetail.sectionRecords,
+        'Hoja de enfermería',
+      );
+
+      queryClient.setQueryData(
+        ['encounter-detail', episodeNumber],
+        updatedDetail,
+      );
+      await refreshEncounterData();
+
+      if (nursingSheetRecord) {
+        openEmergencyNursingSheetRecord(nursingSheetRecord);
+      } else {
+        setFeedback('No se pudo cargar la Hoja de enfermería creada.');
+      }
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo crear la Hoja de enfermería.',
+      );
+    } finally {
+      setIsOpeningEmergencyNursingSheet(false);
+    }
   };
 
   const updateRecordFormField = <K extends keyof RecordFormState>(
@@ -7895,8 +8041,10 @@ export function EpisodeDetailPage() {
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {isEmergencyInitialNoteSection &&
-                        latestEmergencyInitialNoteRecord
+                        {(isEmergencyInitialNoteSection &&
+                        latestEmergencyInitialNoteRecord) ||
+                        (isEmergencyNursingSheetSection &&
+                          latestEmergencyNursingSheetRecord)
                           ? null
                           : (activeTabPanelConfig?.noteTypes?.length
                           ? activeTabPanelConfig.noteTypes
@@ -9408,7 +9556,176 @@ export function EpisodeDetailPage() {
 
                             return true;
                           })
-                          .map((section) => (
+                          .map((section) => {
+                            if (
+                              isEmergencyEvolutionSection &&
+                              section.key === 'evolucion_urg_enfermeria'
+                            ) {
+                              const nursingSheetRecord =
+                                latestEmergencyNursingSheetRecord;
+                              const nursingSheetFormData =
+                                (nursingSheetRecord?.formData ?? {}) as Record<
+                                  string,
+                                  unknown
+                                >;
+                              const nursingSheetStatusConfig =
+                                nursingSheetRecord
+                                  ? getDisplayedRecordStatusConfig(
+                                      nursingSheetRecord.status,
+                                      false,
+                                    )
+                                  : null;
+
+                              return (
+                                <div
+                                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                                  key={section.key}
+                                >
+                                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900">
+                                        {section.title}
+                                      </p>
+                                      {nursingSheetRecord ? (
+                                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                                          <Badge
+                                            variant={
+                                              nursingSheetStatusConfig?.badgeVariant ??
+                                              'secondary'
+                                            }
+                                          >
+                                            {nursingSheetStatusConfig?.label ??
+                                              nursingSheetRecord.status}
+                                          </Badge>
+                                          <span className="text-xs text-muted-foreground">
+                                            Actualizado{' '}
+                                            {formatDateTime(nursingSheetRecord.updatedAt)}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <p className="mt-1 text-sm text-muted-foreground">
+                                          Sin hoja de enfermería vinculada
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {nursingSheetRecord ? (
+                                        <Button
+                                          className="gap-2"
+                                          onClick={() =>
+                                            openEmergencyNursingSheetRecord(
+                                              nursingSheetRecord,
+                                            )
+                                          }
+                                          type="button"
+                                          variant="outline"
+                                        >
+                                          <Eye className="h-4 w-4" />
+                                          Ver hoja completa
+                                        </Button>
+                                      ) : (
+                                        <Button
+                                          className="gap-2"
+                                          disabled={
+                                            isEpisodeClosed ||
+                                            isOpeningEmergencyNursingSheet
+                                          }
+                                          onClick={openOrCreateEmergencyNursingSheet}
+                                          type="button"
+                                        >
+                                          {isOpeningEmergencyNursingSheet ? (
+                                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                                          ) : (
+                                            <Plus className="h-4 w-4" />
+                                          )}
+                                          Crear hoja de enfermería
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {nursingSheetRecord ? (
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                      <ReadOnlyField
+                                        label="Habitus exterior"
+                                        value={readRecordTextValue(
+                                          nursingSheetFormData,
+                                          'habitusExteriorEnfUrg',
+                                        )}
+                                      />
+                                      <ReadOnlyField
+                                        label="Valoración del dolor"
+                                        value={readRecordTextValue(
+                                          nursingSheetFormData,
+                                          'dolorEvaEnfUrg',
+                                        )}
+                                      />
+                                      <ReadOnlyField
+                                        label="Riesgo de caídas"
+                                        value={readRecordTextValue(
+                                          nursingSheetFormData,
+                                          'riesgoCaidasEnfUrg',
+                                        )}
+                                      />
+                                      <ReadOnlyField
+                                        label="Elaboró"
+                                        value={readRecordTextValue(
+                                          nursingSheetFormData,
+                                          'elaboroEnfUrg',
+                                        )}
+                                      />
+                                      <ReadOnlyField
+                                        label="Cédula"
+                                        value={readRecordTextValue(
+                                          nursingSheetFormData,
+                                          'cedulaEnfUrg',
+                                        )}
+                                      />
+                                      <ReadOnlyField
+                                        label="Estado de la hoja"
+                                        value={
+                                          nursingSheetStatusConfig?.label ??
+                                          nursingSheetRecord.status
+                                        }
+                                      />
+                                      <ReadOnlyField
+                                        label="Fecha y hora de última actualización"
+                                        value={formatDateTime(
+                                          nursingSheetRecord.updatedAt,
+                                        )}
+                                      />
+                                      <div className="md:col-span-2">
+                                        <ReadOnlyField
+                                          label="Medicación administrada"
+                                          value={formatEmergencyNursingMedicationSummary(
+                                            nursingSheetFormData,
+                                          )}
+                                        />
+                                      </div>
+                                      <div className="md:col-span-2">
+                                        <ReadOnlyField
+                                          label="Procedimientos de enfermería realizados"
+                                          value={formatEmergencyNursingProcedureSummary(
+                                            nursingSheetFormData,
+                                          )}
+                                        />
+                                      </div>
+                                      <div className="md:col-span-2">
+                                        <ReadOnlyField
+                                          label="Observaciones de enfermería"
+                                          value={readRecordTextValue(
+                                            nursingSheetFormData,
+                                            'observacionesEnfermeriaEnfUrg',
+                                          )}
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            }
+
+                            return (
                           <div
                             className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                             key={section.key}
@@ -10017,7 +10334,8 @@ export function EpisodeDetailPage() {
                             </div>
                             )}
                           </div>
-                        ))}
+                            );
+                          })}
                       </div>
                     ) : null}
 

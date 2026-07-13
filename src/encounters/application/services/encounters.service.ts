@@ -914,6 +914,7 @@ export class EncountersService {
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
+    const currentUser = await this.userRepository.findById(userId);
     const triageResponsibleUser = this.isEmergencyTriageRecord(
       encounter.encounterType,
       input.tabKey,
@@ -977,6 +978,17 @@ export class EncountersService {
         encounterType: encounter.encounterType,
         tabKey: input.tabKey,
       });
+    if (
+      this.isEmergencyNursingSheetRecord(encounter.encounterType, input.tabKey) &&
+      emergencyNursingSheetVersionContext?.latestRecord
+    ) {
+      return await this.toEncounterDetailResponse(
+        encounter,
+        encounter.attendingUserId
+          ? await this.userRepository.findById(encounter.attendingUserId)
+          : null,
+      );
+    }
     const emergencyOrdersVersionContext =
       await this.resolveEmergencyOrdersVersionContext({
         encounterId: encounter.id,
@@ -1113,6 +1125,7 @@ export class EncountersService {
       ambulatoryDischargePrescriptionVersionContext,
       ambulatoryDischargeVersionContext,
       responsibleUser,
+      currentUser,
       triageResponsibleUser,
     });
     this.assertAmbulatoryRecordCanBeCompleted({
@@ -1465,6 +1478,7 @@ export class EncountersService {
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
+    const currentUser = await this.userRepository.findById(userId);
     const triageResponsibleUser = this.isEmergencyTriageRecord(
       encounter.encounterType,
       input.tabKey,
@@ -1672,6 +1686,7 @@ export class EncountersService {
       ambulatoryDischargePrescriptionVersionContext,
       ambulatoryDischargeVersionContext,
       responsibleUser,
+      currentUser,
       triageResponsibleUser,
     });
     this.assertAmbulatoryRecordCanBeCompleted({
@@ -5100,6 +5115,11 @@ export class EncountersService {
       fullName: string;
       professionalLicense: string | null;
     } | null;
+    currentUser: {
+      id: string;
+      fullName: string;
+      professionalLicense: string | null;
+    } | null;
     triageResponsibleUser: TriageResponsibleUser | null;
     input: EncounterSectionRecordMutationDto;
     recordedAt: Date;
@@ -5881,7 +5901,10 @@ export class EncountersService {
         1;
       const formData = this.buildEmergencyNursingSheetFormData({
         incomingFormData: input.input.formData,
-        responsibleUser: input.responsibleUser,
+        existingFormData: this.normalizeJsonObject(
+          input.currentRecord?.formDataJson ?? null,
+        ),
+        responsibleUser: input.currentUser,
       });
 
       return {
@@ -8096,6 +8119,7 @@ export class EncountersService {
 
   private buildEmergencyNursingSheetFormData(input: {
     incomingFormData: Record<string, unknown>;
+    existingFormData: Record<string, unknown>;
     responsibleUser: {
       id: string;
       fullName: string;
@@ -8104,6 +8128,12 @@ export class EncountersService {
   }) {
     const nurseName =
       input.responsibleUser?.fullName ?? 'Sin profesional responsable';
+    const professionalName =
+      this.readStringValue(input.existingFormData.elaboroEnfUrg) || nurseName;
+    const professionalLicense =
+      this.readStringValue(input.existingFormData.cedulaEnfUrg) ||
+      input.responsibleUser?.professionalLicense ||
+      'Sin cédula';
 
     return {
       ...input.incomingFormData,
@@ -8119,8 +8149,8 @@ export class EncountersService {
           ...procedure,
           responsable: nurseName,
         })),
-      elaboroEnfUrg: nurseName,
-      cedulaEnfUrg: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      elaboroEnfUrg: professionalName,
+      cedulaEnfUrg: professionalLicense,
     };
   }
 
@@ -8877,7 +8907,6 @@ export class EncountersService {
         this.calculateEmergencyEvolutionDay(input.encounter.openedAt, input.recordedAt),
       ),
       resultadosEstudiosIntegrados: this.buildEmergencyExternalResultsSummary(input.encounter),
-      ...this.buildEmergencyNursingSnapshot(input.encounter),
       ...this.buildEmergencyAuxiliaryServicesSnapshot(input.encounter),
       evolucionUrgLegalNombre:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
@@ -9533,14 +9562,14 @@ export class EncountersService {
         "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
         "versionNumber", "title", "status", "recordedAt", "habitusExterior",
         "painEva", "fallRiskLevel", "observations", "professionalName",
-        "professionalLicense", "signerUserId", "signedAt", "contentJson",
+        "professionalLicense", "lastEditedByUserId", "signerUserId", "signedAt", "contentJson",
         "createdAt", "updatedAt"
       )
       VALUES (
         ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
         ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.habitusExteriorEnfUrg)},
         ${this.readRoundedNumericValue(input.formData.dolorEvaEnfUrg)}, ${this.readStringValue(input.formData.riesgoCaidasEnfUrg)}, ${this.readStringValue(input.formData.observacionesEnfermeriaEnfUrg)}, ${this.readStringValue(input.formData.elaboroEnfUrg)},
-        ${this.readStringValue(input.formData.cedulaEnfUrg)}, ${signedAt ? input.userId : null}, ${signedAt}, ${this.jsonbParameter(input.formData)},
+        ${this.readStringValue(input.formData.cedulaEnfUrg)}, ${input.userId}, ${signedAt ? input.userId : null}, ${signedAt}, ${this.jsonbParameter(input.formData)},
         NOW(), NOW()
       )
       ON CONFLICT ("sectionRecordId") DO UPDATE SET
@@ -9554,6 +9583,7 @@ export class EncountersService {
         "observations" = EXCLUDED."observations",
         "professionalName" = EXCLUDED."professionalName",
         "professionalLicense" = EXCLUDED."professionalLicense",
+        "lastEditedByUserId" = EXCLUDED."lastEditedByUserId",
         "signerUserId" = EXCLUDED."signerUserId",
         "signedAt" = EXCLUDED."signedAt",
         "contentJson" = EXCLUDED."contentJson",
@@ -9619,15 +9649,7 @@ export class EncountersService {
     }
 
     const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
-    const nursingSnapshot = {
-      habitus: this.readStringValue(input.formData.enfermeriaHabitusUrg),
-      dolor: this.readStringValue(input.formData.enfermeriaDolorUrg),
-      riesgoCaidas: this.readStringValue(input.formData.enfermeriaRiesgoCaidasUrg),
-      medicacionAdministrada: this.readStringValue(input.formData.enfermeriaMedicacionUrg),
-      procedimientos: this.readStringValue(input.formData.enfermeriaProcedimientosUrg),
-      observaciones: this.readStringValue(input.formData.enfermeriaObservacionesUrg),
-      responsableCedula: this.readStringValue(input.formData.enfermeriaResponsableUrg),
-    };
+    const nursingSnapshot = {};
     const auxiliarySnapshot = {
       ecg: this.readStringValue(input.formData.auxEcgUrg),
       laboratorios: this.readStringValue(input.formData.auxLaboratoriosUrg),
@@ -13258,59 +13280,6 @@ export class EncountersService {
     }
 
     return sections.join('\n') || 'Sin resultados externos vinculados al episodio.';
-  }
-
-  private buildEmergencyNursingSnapshot(encounter: TenantEncounterRecord) {
-    const latestNursingSheet = this.findLatestSectionRecord(
-      encounter.sectionRecords,
-      'Hoja de enfermería',
-    );
-    const formData = this.normalizeJsonObject(
-      latestNursingSheet?.formDataJson ?? null,
-    );
-    if (latestNursingSheet) {
-      const medications = this.readObjectArray(formData.medicacionAdministradaEnfUrg)
-        .map((medication) =>
-          [
-            this.readStringValue(medication.medicamento),
-            this.readStringValue(medication.horaAdministrada),
-            this.readStringValue(medication.estado),
-          ]
-            .filter(Boolean)
-            .join(' · '),
-        )
-        .filter(Boolean)
-        .join('\n');
-      const procedures = this.readObjectArray(formData.procedimientosEnfermeriaEnfUrg)
-        .map((procedure) => this.readStringValue(procedure.procedimiento))
-        .filter(Boolean)
-        .join('\n');
-
-      return {
-        enfermeriaHabitusUrg: this.readStringValue(formData.habitusExteriorEnfUrg),
-        enfermeriaDolorUrg: this.readStringValue(formData.dolorEvaEnfUrg),
-        enfermeriaRiesgoCaidasUrg: this.readStringValue(formData.riesgoCaidasEnfUrg),
-        enfermeriaMedicacionUrg: medications || 'Sin medicación registrada',
-        enfermeriaProcedimientosUrg: procedures || 'Sin procedimientos registrados',
-        enfermeriaObservacionesUrg: this.readStringValue(formData.observacionesEnfermeriaEnfUrg),
-        enfermeriaResponsableUrg: [
-          this.readStringValue(formData.elaboroEnfUrg),
-          this.readStringValue(formData.cedulaEnfUrg),
-        ]
-          .filter(Boolean)
-          .join(' · '),
-      };
-    }
-
-    return {
-      enfermeriaHabitusUrg: 'Sin hoja de enfermería vinculada',
-      enfermeriaDolorUrg: 'Sin hoja de enfermería vinculada',
-      enfermeriaRiesgoCaidasUrg: 'Sin hoja de enfermería vinculada',
-      enfermeriaMedicacionUrg: 'Sin hoja de enfermería vinculada',
-      enfermeriaProcedimientosUrg: 'Sin hoja de enfermería vinculada',
-      enfermeriaObservacionesUrg: 'Sin hoja de enfermería vinculada',
-      enfermeriaResponsableUrg: 'Sin hoja de enfermería vinculada',
-    };
   }
 
   private buildEmergencyAuxiliaryServicesSnapshot(encounter: TenantEncounterRecord) {

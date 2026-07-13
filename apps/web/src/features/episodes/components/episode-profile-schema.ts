@@ -2157,15 +2157,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         {
           key: 'evolucion_urg_enfermeria',
           title: 'Hoja de enfermería',
-          fields: [
-            { key: 'enfermeriaHabitusUrg', label: 'Hábitus', type: 'readonly' },
-            { key: 'enfermeriaDolorUrg', label: 'Dolor', type: 'readonly' },
-            { key: 'enfermeriaRiesgoCaidasUrg', label: 'Riesgo de caídas', type: 'readonly' },
-            { key: 'enfermeriaMedicacionUrg', label: 'Medicación administrada', type: 'readonly' },
-            { key: 'enfermeriaProcedimientosUrg', label: 'Procedimientos', type: 'readonly' },
-            { key: 'enfermeriaObservacionesUrg', label: 'Observaciones', type: 'readonly' },
-            { key: 'enfermeriaResponsableUrg', label: 'Responsable + cédula', type: 'readonly' },
-          ],
+          fields: [],
         },
         {
           key: 'evolucion_urg_auxiliares',

@@ -5012,6 +5012,7 @@ model EmergencyNursingSheet {
   observations String?
   professionalName String?
   professionalLicense String?
+  lastEditedByUserId String?
   signerUserId String?
   signedAt DateTime?
   contentJson Json?
@@ -5024,6 +5025,7 @@ model EmergencyNursingSheet {
   @@index([tenantId])
   @@index([encounterId])
   @@index([patientId])
+  @@index([lastEditedByUserId])
   @@index([signerUserId])
 }
 
