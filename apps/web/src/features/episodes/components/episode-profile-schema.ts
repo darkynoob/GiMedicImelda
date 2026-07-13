@@ -115,6 +115,12 @@ const yesNoUnknownOptions: EpisodeFieldOption[] = [
   { value: 'PARCIAL', label: 'Parcial' },
 ];
 
+const yesNoOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'SI', label: 'Sí' },
+  { value: 'NO', label: 'No' },
+];
+
 const priorityOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Sin especificar' },
   { value: 'ALTA', label: 'Alta' },
@@ -500,6 +506,41 @@ const emergencyDischargeConditionOptions: EpisodeFieldOption[] = [
   { value: 'GRAVE', label: 'Grave' },
   { value: 'CRITICO', label: 'Crítico' },
   { value: 'FALLECIDO', label: 'Fallecido' },
+];
+
+const emergencyDischargeTransferMediumOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'AMBULANCIA_BASICA', label: 'Ambulancia básica' },
+  { value: 'AMBULANCIA_AVANZADA', label: 'Ambulancia avanzada' },
+  { value: 'VEHICULO_PARTICULAR', label: 'Vehículo particular' },
+  { value: 'AEREO', label: 'Aéreo' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const emergencyDischargeConsentRelationshipOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PACIENTE', label: 'Paciente' },
+  { value: 'ESPOSO_A', label: 'Esposo(a)' },
+  { value: 'HIJO_A', label: 'Hijo(a)' },
+  { value: 'MADRE_PADRE', label: 'Madre/Padre' },
+  { value: 'TUTOR_LEGAL', label: 'Tutor legal' },
+  { value: 'FAMILIAR_RESPONSABLE', label: 'Familiar responsable' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const emergencyDischargePublicMinistryNoticeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'LESIONES', label: 'Reporte de lesiones' },
+  { value: 'VIOLENCIA', label: 'Reporte de violencia' },
+  { value: 'MUERTE_INVESTIGACION', label: 'Muerte sujeta a investigación' },
+  { value: 'VIGILANCIA_EPIDEMIOLOGICA', label: 'Vigilancia epidemiológica' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const emergencyDischargeDeathCertificateTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'CERTIFICADO_DEFUNCION', label: 'Certificado de defunción' },
+  { value: 'MUERTE_FETAL', label: 'Muerte fetal' },
 ];
 
 const incapacityTypeOptions: EpisodeFieldOption[] = [
@@ -2557,35 +2598,71 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'egreso_urg_traslado',
-          title: 'Referencia / Traslado',
+          title: 'Referencia y traslado',
           fields: [
-            { key: 'unidadOrigenTrasladoUrg', label: 'Unidad origen', type: 'text' },
-            { key: 'unidadDestinoTrasladoUrg', label: 'Unidad destino', type: 'text' },
-            { key: 'signosVitalesTrasladoUrg', label: 'Signos vitales', type: 'textarea' },
-            { key: 'resumenTrasladoUrg', label: 'Resumen clínico', type: 'textarea' },
-            { key: 'diagnosticoTrasladoUrg', label: 'Diagnóstico', type: 'text' },
-            { key: 'tratamientoPrevioTrasladoUrg', label: 'Tratamiento previo', type: 'textarea' },
+            { key: 'fechaHoraReferenciaTrasladoUrg', label: 'Fecha y hora de referencia', type: 'datetime-local' },
+            { key: 'unidadOrigenTrasladoUrg', label: 'Establecimiento que envía', type: 'text' },
+            { key: 'unidadDestinoTrasladoUrg', label: 'Establecimiento receptor', type: 'text' },
+            { key: 'taTrasladoUrg', label: 'TA (mmHg)', type: 'text' },
+            { key: 'fcTrasladoUrg', label: 'FC (lpm)', type: 'number' },
+            { key: 'frTrasladoUrg', label: 'FR (rpm)', type: 'number' },
+            { key: 'temperaturaTrasladoUrg', label: 'Temperatura (°C)', type: 'number' },
+            { key: 'spo2TrasladoUrg', label: 'SpO₂ (%)', type: 'number' },
+            { key: 'diagnosticoTrasladoUrg', label: 'Diagnóstico(s) o problemas clínicos', type: 'textarea' },
+            { key: 'resultadosRelevantesTrasladoUrg', label: 'Resultados relevantes de estudios', type: 'textarea' },
+            { key: 'tratamientoPrevioTrasladoUrg', label: 'Plan y tratamiento previo', type: 'textarea' },
+            { key: 'pronosticoTrasladoUrg', label: 'Pronóstico', type: 'textarea' },
+            { key: 'motivoTrasladoUrg', label: 'Motivo del traslado/referencia', type: 'textarea' },
+            { key: 'resumenTrasladoUrg', label: 'Resumen clínico para referencia', type: 'textarea' },
+            { key: 'medioTrasladoUrg', label: 'Medio de traslado', type: 'select', options: emergencyDischargeTransferMediumOptions },
             { key: 'condicionesTrasladoUrg', label: 'Condiciones de traslado', type: 'textarea' },
-            { key: 'medicoReceptorTrasladoUrg', label: 'Médico receptor', type: 'text' },
+            { key: 'medicoReceptorTrasladoUrg', label: 'Médico responsable receptor', type: 'text' },
           ],
         },
         {
           key: 'egreso_urg_consentimiento',
           title: 'Consentimiento informado',
           fields: [
-            { key: 'procedimientoConsentimientoUrg', label: 'Procedimiento', type: 'text' },
-            { key: 'riesgosConsentimientoUrg', label: 'Riesgos', type: 'textarea' },
-            { key: 'beneficiosConsentimientoUrg', label: 'Beneficios', type: 'textarea' },
-            { key: 'autorizacionConsentimientoUrg', label: 'Autorización', type: 'textarea' },
-            { key: 'firmasConsentimientoUrg', label: 'Firmas', type: 'textarea' },
+            { key: 'institucionConsentimientoUrg', label: 'Nombre de la institución', type: 'text' },
+            { key: 'razonSocialConsentimientoUrg', label: 'Razón social del establecimiento', type: 'text' },
+            { key: 'tituloConsentimientoUrg', label: 'Título del documento', type: 'text' },
+            { key: 'lugarFechaConsentimientoUrg', label: 'Lugar y fecha', type: 'text' },
+            { key: 'actoAutorizadoConsentimientoUrg', label: 'Acto autorizado', type: 'textarea' },
+            { key: 'riesgosConsentimientoUrg', label: 'Riesgos esperados', type: 'textarea' },
+            { key: 'beneficiosConsentimientoUrg', label: 'Beneficios esperados', type: 'textarea' },
+            { key: 'autorizacionContingenciasConsentimientoUrg', label: 'Autorización para contingencias', type: 'textarea' },
+            { key: 'nombreAutorizaConsentimientoUrg', label: 'Nombre de quien autoriza', type: 'text' },
+            { key: 'relacionAutorizaConsentimientoUrg', label: 'Relación con el paciente', type: 'select', options: emergencyDischargeConsentRelationshipOptions },
+            { key: 'testigo1ConsentimientoUrg', label: 'Testigo 1', type: 'text' },
+            { key: 'testigo2ConsentimientoUrg', label: 'Testigo 2', type: 'text' },
+            { key: 'profesionalActoConsentimientoUrg', label: 'Nombre de quien realiza el acto', type: 'text' },
+            { key: 'cedulaProfesionalActoConsentimientoUrg', label: 'Cédula profesional', type: 'text' },
           ],
         },
         {
-          key: 'egreso_urg_legales_condicionales',
-          title: 'Aviso MP / Defunción',
+          key: 'egreso_urg_aviso_ministerio_publico',
+          title: 'Aviso al Ministerio Público',
           fields: [
-            { key: 'avisoMinisterioPublico', label: 'Aviso al Ministerio Público', type: 'textarea' },
-            { key: 'certificadoDefuncion', label: 'Certificado de defunción', type: 'textarea' },
+            { key: 'establecimientoAvisoMpUrg', label: 'Nombre/Razón social del establecimiento', type: 'text' },
+            { key: 'fechaAvisoMpUrg', label: 'Fecha de elaboración', type: 'date' },
+            { key: 'actoNotificadoAvisoMpUrg', label: 'Acto notificado', type: 'select', options: emergencyDischargePublicMinistryNoticeOptions },
+            { key: 'agenciaMinisterioPublicoUrg', label: 'Agencia del Ministerio Público', type: 'text' },
+            { key: 'descripcionClinicaLegalAvisoMpUrg', label: 'Descripción clínica/legal del evento', type: 'textarea' },
+            { key: 'medicoNotificaAvisoMpUrg', label: 'Nombre del médico que notifica', type: 'text' },
+            { key: 'cedulaNotificaAvisoMpUrg', label: 'Cédula profesional', type: 'text' },
+          ],
+        },
+        {
+          key: 'egreso_urg_certificado_defuncion',
+          title: 'Certificado de defunción / muerte fetal',
+          fields: [
+            { key: 'tipoCertificadoDefuncionUrg', label: 'Tipo de documento', type: 'select', options: emergencyDischargeDeathCertificateTypeOptions },
+            { key: 'fechaCertificadoDefuncionUrg', label: 'Fecha de elaboración', type: 'date' },
+            { key: 'horaCertificadoDefuncionUrg', label: 'Hora de elaboración', type: 'time' },
+            { key: 'copiaExistenteCertificadoDefuncionUrg', label: '¿Se integra copia existente?', type: 'select', options: yesNoOptions },
+            { key: 'elaboraCertificadoDefuncionUrg', label: 'Nombre completo de quien elabora', type: 'text' },
+            { key: 'cedulaCertificadoDefuncionUrg', label: 'Cédula profesional', type: 'text' },
+            { key: 'registroFechaHoraCertificadoDefuncionUrg', label: 'Fecha/hora de registro', type: 'readonly', inheritanceMode: 'system' },
           ],
         },
         {

@@ -3029,20 +3029,54 @@ model EmergencyDischarge {
 
   transferOriginUnit String?
   transferDestinationUnit String?
+  transferReferencedAt DateTime?
+  transferBp String?
+  transferHeartRate Int?
+  transferRespiratoryRate Int?
+  transferTemperature Decimal? @db.Decimal(5, 2)
+  transferOxygenSaturation Int?
   transferVitalSigns String?
   transferClinicalSummary String?
   transferDiagnosis String?
+  transferRelevantResults String?
   transferPreviousTreatment String?
+  transferPrognosis String?
+  transferReason String?
+  transferMedium String?
   transferConditions String?
   transferReceivingPhysician String?
 
+  consentInstitutionName String?
+  consentEstablishmentLegalName String?
+  consentDocumentTitle String?
+  consentPlaceDate String?
   consentProcedure String?
   consentRisks String?
   consentBenefits String?
   consentAuthorization String?
+  consentContingencyAuthorization String?
+  consentAuthorizerName String?
+  consentAuthorizerRelationship String?
+  consentWitness1 String?
+  consentWitness2 String?
+  consentResponsibleProfessionalName String?
+  consentResponsibleProfessionalLicense String?
   consentSignatures String?
 
+  publicMinistryEstablishmentName String?
+  publicMinistryPreparedAt DateTime?
+  publicMinistryNotifiedAct String?
+  publicMinistryAgency String?
   publicMinistryNotice String?
+  publicMinistryPhysicianName String?
+  publicMinistryPhysicianLicense String?
+
+  deathCertificateType String?
+  deathCertificatePreparedAt DateTime?
+  deathCertificateCopyIntegrated String?
+  deathCertificateProfessionalName String?
+  deathCertificateProfessionalLicense String?
+  deathCertificateRegisteredAt DateTime?
   deathCertificateData String?
 
   professionalName String

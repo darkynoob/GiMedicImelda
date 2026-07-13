@@ -9219,22 +9219,32 @@ export class EncountersService {
     const evolution = this.normalizeJsonObject(input.evolutionFormDataJson);
     const orders = this.normalizeJsonObject(input.ordersFormDataJson);
     const consultation = this.normalizeJsonObject(input.consultationFormDataJson);
+    const facilityName = input.encounter.facility?.name ?? '';
+    const careLocation =
+      [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+        .filter(Boolean)
+        .join(' · ') || 'Lugar no configurado';
+    const responsibleName =
+      input.responsibleUser?.fullName ?? 'Sin profesional responsable';
+    const responsibleLicense =
+      input.responsibleUser?.professionalLicense ?? 'Sin cédula';
+    const recordedDate = input.recordedAt.toISOString().slice(0, 10);
+    const recordedTime = input.recordedAt.toISOString().slice(11, 16);
     const baseFormData: Record<string, unknown> = {
       ...input.incomingFormData,
       tipoRegistro: 'Egreso de urgencias',
       fechaHoraEgresoUrg:
         this.readStringValue(input.incomingFormData.fechaHoraEgresoUrg) ||
         input.recordedAt.toISOString().slice(0, 16),
-      medicoResponsableEgresoUrg:
-        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
-      cedulaResponsableEgresoUrg:
-        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      medicoResponsableEgresoUrg: responsibleName,
+      cedulaResponsableEgresoUrg: responsibleLicense,
       especialidadResponsableEgresoUrg:
         input.encounter.specialty?.name ?? 'Sin especialidad',
-      lugarAtencionEgresoUrg:
-        [input.encounter.facility?.name, input.encounter.serviceArea?.name]
-          .filter(Boolean)
-          .join(' · ') || 'Lugar no configurado',
+      lugarAtencionEgresoUrg: careLocation,
+      egresoLegalNombre: responsibleName,
+      egresoLegalCedula: responsibleLicense,
+      egresoLegalEspecialidad: input.encounter.specialty?.name ?? 'Sin especialidad',
+      egresoLegalLugar: careLocation,
     };
 
     const fieldSuggestions: Record<string, unknown> = {
@@ -9273,17 +9283,51 @@ export class EncountersService {
       educacionOtorgadaEgresoUrg:
         'Se explica diagnóstico, tratamiento recibido, indicaciones, datos de alarma y plan de seguimiento.',
       comprensionPacienteEgresoUrg: 'ADECUADA',
-      unidadOrigenTrasladoUrg: input.encounter.facility?.name ?? '',
+      fechaHoraReferenciaTrasladoUrg: input.recordedAt.toISOString().slice(0, 16),
+      unidadOrigenTrasladoUrg: facilityName,
       unidadDestinoTrasladoUrg: this.readStringValue(baseFormData.destinoEgresoUrg),
+      taTrasladoUrg:
+        this.readStringValue(initialNote.taSistolicaNota) &&
+        this.readStringValue(initialNote.taDiastolicaNota)
+          ? `${this.readStringValue(initialNote.taSistolicaNota)}/${this.readStringValue(initialNote.taDiastolicaNota)}`
+          : '',
+      fcTrasladoUrg: this.readStringValue(initialNote.fcNota),
+      frTrasladoUrg: this.readStringValue(initialNote.frNota),
+      temperaturaTrasladoUrg: this.readStringValue(initialNote.tempNota),
+      spo2TrasladoUrg: this.readStringValue(initialNote.spo2Nota),
       resumenTrasladoUrg:
         this.readStringValue(evolution.justificacionClinicaNom004) ||
         this.readStringValue(initialNote.resumenPronostico),
       diagnosticoTrasladoUrg:
         this.readStringValue(evolution.diagnosticoEvolucionUrg) ||
         this.readStringValue(initialNote.diagnosticoNota),
+      resultadosRelevantesTrasladoUrg:
+        this.readStringValue(evolution.resultadosEstudiosIntegrados) ||
+        this.readStringValue(initialNote.estudiosAnalisis),
       tratamientoPrevioTrasladoUrg:
         this.readStringValue(orders.estadoOrdenesTrazabilidad),
+      pronosticoTrasladoUrg:
+        this.readStringValue(initialNote.pronosticoNota) ||
+        this.readStringValue(initialNote.resumenPronostico),
+      motivoTrasladoUrg:
+        this.readStringValue(baseFormData.motivoTrasladoUrg) ||
+        this.readStringValue(baseFormData.tipoEgresoUrg),
       medicoReceptorTrasladoUrg: this.readStringValue(baseFormData.medicoReceptorUrg),
+      institucionConsentimientoUrg: facilityName,
+      razonSocialConsentimientoUrg: facilityName,
+      tituloConsentimientoUrg: 'Consentimiento informado',
+      lugarFechaConsentimientoUrg: `${careLocation} · ${recordedDate}`,
+      profesionalActoConsentimientoUrg: responsibleName,
+      cedulaProfesionalActoConsentimientoUrg: responsibleLicense,
+      establecimientoAvisoMpUrg: facilityName,
+      fechaAvisoMpUrg: recordedDate,
+      medicoNotificaAvisoMpUrg: responsibleName,
+      cedulaNotificaAvisoMpUrg: responsibleLicense,
+      fechaCertificadoDefuncionUrg: recordedDate,
+      horaCertificadoDefuncionUrg: recordedTime,
+      elaboraCertificadoDefuncionUrg: responsibleName,
+      cedulaCertificadoDefuncionUrg: responsibleLicense,
+      registroFechaHoraCertificadoDefuncionUrg: input.recordedAt.toISOString().slice(0, 16),
     };
 
     for (const [fieldKey, value] of Object.entries(fieldSuggestions)) {
@@ -10243,6 +10287,14 @@ export class EncountersService {
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const dischargedAt =
       this.parseOptionalDate(input.formData.fechaHoraEgresoUrg) ?? input.recordedAt;
+    const deathCertificatePreparedAt = this.parseOptionalDate(
+      [
+        this.readStringValue(input.formData.fechaCertificadoDefuncionUrg),
+        this.readStringValue(input.formData.horaCertificadoDefuncionUrg),
+      ]
+        .filter(Boolean)
+        .join('T'),
+    );
 
     await this.prisma.$executeRaw`
       INSERT INTO "EmergencyDischarge" (
@@ -10256,10 +10308,22 @@ export class EncountersService {
         "prescriptionJustification", "incapacityGranted", "incapacityDays",
         "incapacityType", "patientEducation", "patientComprehension",
         "transferOriginUnit", "transferDestinationUnit", "transferVitalSigns",
-        "transferClinicalSummary", "transferDiagnosis", "transferPreviousTreatment",
+        "transferReferencedAt", "transferBp", "transferHeartRate",
+        "transferRespiratoryRate", "transferTemperature", "transferOxygenSaturation",
+        "transferClinicalSummary", "transferDiagnosis", "transferRelevantResults", "transferPreviousTreatment",
+        "transferPrognosis", "transferReason", "transferMedium",
         "transferConditions", "transferReceivingPhysician", "consentProcedure",
-        "consentRisks", "consentBenefits", "consentAuthorization",
-        "consentSignatures", "publicMinistryNotice", "deathCertificateData",
+        "consentInstitutionName", "consentEstablishmentLegalName", "consentDocumentTitle",
+        "consentPlaceDate", "consentRisks", "consentBenefits", "consentAuthorization",
+        "consentContingencyAuthorization", "consentAuthorizerName",
+        "consentAuthorizerRelationship", "consentWitness1", "consentWitness2",
+        "consentResponsibleProfessionalName", "consentResponsibleProfessionalLicense",
+        "consentSignatures", "publicMinistryEstablishmentName", "publicMinistryPreparedAt",
+        "publicMinistryNotifiedAct", "publicMinistryAgency", "publicMinistryNotice",
+        "publicMinistryPhysicianName", "publicMinistryPhysicianLicense",
+        "deathCertificateType", "deathCertificatePreparedAt", "deathCertificateCopyIntegrated",
+        "deathCertificateProfessionalName", "deathCertificateProfessionalLicense",
+        "deathCertificateRegisteredAt", "deathCertificateData",
         "professionalName", "professionalLicense", "professionalSpecialty",
         "careLocation", "signerUserId", "signedAt", "closedEncounterAt",
         "createdAt", "updatedAt"
@@ -10275,10 +10339,22 @@ export class EncountersService {
         ${this.readStringValue(input.formData.justificacionSinRecetaEgresoUrg)}, ${this.readStringValue(input.formData.incapacidadOtorgadaUrg)}, ${this.readNumericValue(input.formData.diasIncapacidadUrg)},
         ${this.readStringValue(input.formData.tipoIncapacidadUrg)}, ${this.readStringValue(input.formData.educacionOtorgadaEgresoUrg)}, ${this.readStringValue(input.formData.comprensionPacienteEgresoUrg)},
         ${this.readStringValue(input.formData.unidadOrigenTrasladoUrg)}, ${this.readStringValue(input.formData.unidadDestinoTrasladoUrg)}, ${this.readStringValue(input.formData.signosVitalesTrasladoUrg)},
-        ${this.readStringValue(input.formData.resumenTrasladoUrg)}, ${this.readStringValue(input.formData.diagnosticoTrasladoUrg)}, ${this.readStringValue(input.formData.tratamientoPrevioTrasladoUrg)},
-        ${this.readStringValue(input.formData.condicionesTrasladoUrg)}, ${this.readStringValue(input.formData.medicoReceptorTrasladoUrg)}, ${this.readStringValue(input.formData.procedimientoConsentimientoUrg)},
-        ${this.readStringValue(input.formData.riesgosConsentimientoUrg)}, ${this.readStringValue(input.formData.beneficiosConsentimientoUrg)}, ${this.readStringValue(input.formData.autorizacionConsentimientoUrg)},
-        ${this.readStringValue(input.formData.firmasConsentimientoUrg)}, ${this.readStringValue(input.formData.avisoMinisterioPublico)}, ${this.readStringValue(input.formData.certificadoDefuncion)},
+        ${this.parseOptionalDate(input.formData.fechaHoraReferenciaTrasladoUrg)}, ${this.readStringValue(input.formData.taTrasladoUrg)}, ${this.readNumericValue(input.formData.fcTrasladoUrg)},
+        ${this.readNumericValue(input.formData.frTrasladoUrg)}, ${this.readNumericValue(input.formData.temperaturaTrasladoUrg)}, ${this.readNumericValue(input.formData.spo2TrasladoUrg)},
+        ${this.readStringValue(input.formData.resumenTrasladoUrg)}, ${this.readStringValue(input.formData.diagnosticoTrasladoUrg)}, ${this.readStringValue(input.formData.resultadosRelevantesTrasladoUrg)}, ${this.readStringValue(input.formData.tratamientoPrevioTrasladoUrg)},
+        ${this.readStringValue(input.formData.pronosticoTrasladoUrg)}, ${this.readStringValue(input.formData.motivoTrasladoUrg)}, ${this.readStringValue(input.formData.medioTrasladoUrg)},
+        ${this.readStringValue(input.formData.condicionesTrasladoUrg)}, ${this.readStringValue(input.formData.medicoReceptorTrasladoUrg)}, ${this.readStringValue(input.formData.actoAutorizadoConsentimientoUrg)},
+        ${this.readStringValue(input.formData.institucionConsentimientoUrg)}, ${this.readStringValue(input.formData.razonSocialConsentimientoUrg)}, ${this.readStringValue(input.formData.tituloConsentimientoUrg)},
+        ${this.readStringValue(input.formData.lugarFechaConsentimientoUrg)}, ${this.readStringValue(input.formData.riesgosConsentimientoUrg)}, ${this.readStringValue(input.formData.beneficiosConsentimientoUrg)}, ${this.readStringValue(input.formData.autorizacionConsentimientoUrg)},
+        ${this.readStringValue(input.formData.autorizacionContingenciasConsentimientoUrg)}, ${this.readStringValue(input.formData.nombreAutorizaConsentimientoUrg)},
+        ${this.readStringValue(input.formData.relacionAutorizaConsentimientoUrg)}, ${this.readStringValue(input.formData.testigo1ConsentimientoUrg)}, ${this.readStringValue(input.formData.testigo2ConsentimientoUrg)},
+        ${this.readStringValue(input.formData.profesionalActoConsentimientoUrg)}, ${this.readStringValue(input.formData.cedulaProfesionalActoConsentimientoUrg)},
+        ${this.readStringValue(input.formData.firmasConsentimientoUrg)}, ${this.readStringValue(input.formData.establecimientoAvisoMpUrg)}, ${this.parseOptionalDate(input.formData.fechaAvisoMpUrg)},
+        ${this.readStringValue(input.formData.actoNotificadoAvisoMpUrg)}, ${this.readStringValue(input.formData.agenciaMinisterioPublicoUrg)}, ${this.readStringValue(input.formData.descripcionClinicaLegalAvisoMpUrg)},
+        ${this.readStringValue(input.formData.medicoNotificaAvisoMpUrg)}, ${this.readStringValue(input.formData.cedulaNotificaAvisoMpUrg)},
+        ${this.readStringValue(input.formData.tipoCertificadoDefuncionUrg)}, ${deathCertificatePreparedAt}, ${this.readStringValue(input.formData.copiaExistenteCertificadoDefuncionUrg)},
+        ${this.readStringValue(input.formData.elaboraCertificadoDefuncionUrg)}, ${this.readStringValue(input.formData.cedulaCertificadoDefuncionUrg)},
+        ${this.parseOptionalDate(input.formData.registroFechaHoraCertificadoDefuncionUrg)}, ${this.readStringValue(input.formData.certificadoDefuncion)},
         ${this.readStringValue(input.formData.medicoResponsableEgresoUrg) || 'Sin profesional responsable'}, ${this.readStringValue(input.formData.cedulaResponsableEgresoUrg)}, ${this.readStringValue(input.formData.especialidadResponsableEgresoUrg)},
         ${this.readStringValue(input.formData.lugarAtencionEgresoUrg)}, ${signedAt ? input.userId : null}, ${signedAt}, ${signedAt}, NOW(), NOW()
       )
@@ -10315,17 +10391,50 @@ export class EncountersService {
         "transferOriginUnit" = EXCLUDED."transferOriginUnit",
         "transferDestinationUnit" = EXCLUDED."transferDestinationUnit",
         "transferVitalSigns" = EXCLUDED."transferVitalSigns",
+        "transferReferencedAt" = EXCLUDED."transferReferencedAt",
+        "transferBp" = EXCLUDED."transferBp",
+        "transferHeartRate" = EXCLUDED."transferHeartRate",
+        "transferRespiratoryRate" = EXCLUDED."transferRespiratoryRate",
+        "transferTemperature" = EXCLUDED."transferTemperature",
+        "transferOxygenSaturation" = EXCLUDED."transferOxygenSaturation",
         "transferClinicalSummary" = EXCLUDED."transferClinicalSummary",
         "transferDiagnosis" = EXCLUDED."transferDiagnosis",
+        "transferRelevantResults" = EXCLUDED."transferRelevantResults",
         "transferPreviousTreatment" = EXCLUDED."transferPreviousTreatment",
+        "transferPrognosis" = EXCLUDED."transferPrognosis",
+        "transferReason" = EXCLUDED."transferReason",
+        "transferMedium" = EXCLUDED."transferMedium",
         "transferConditions" = EXCLUDED."transferConditions",
         "transferReceivingPhysician" = EXCLUDED."transferReceivingPhysician",
+        "consentInstitutionName" = EXCLUDED."consentInstitutionName",
+        "consentEstablishmentLegalName" = EXCLUDED."consentEstablishmentLegalName",
+        "consentDocumentTitle" = EXCLUDED."consentDocumentTitle",
+        "consentPlaceDate" = EXCLUDED."consentPlaceDate",
         "consentProcedure" = EXCLUDED."consentProcedure",
         "consentRisks" = EXCLUDED."consentRisks",
         "consentBenefits" = EXCLUDED."consentBenefits",
         "consentAuthorization" = EXCLUDED."consentAuthorization",
+        "consentContingencyAuthorization" = EXCLUDED."consentContingencyAuthorization",
+        "consentAuthorizerName" = EXCLUDED."consentAuthorizerName",
+        "consentAuthorizerRelationship" = EXCLUDED."consentAuthorizerRelationship",
+        "consentWitness1" = EXCLUDED."consentWitness1",
+        "consentWitness2" = EXCLUDED."consentWitness2",
+        "consentResponsibleProfessionalName" = EXCLUDED."consentResponsibleProfessionalName",
+        "consentResponsibleProfessionalLicense" = EXCLUDED."consentResponsibleProfessionalLicense",
         "consentSignatures" = EXCLUDED."consentSignatures",
+        "publicMinistryEstablishmentName" = EXCLUDED."publicMinistryEstablishmentName",
+        "publicMinistryPreparedAt" = EXCLUDED."publicMinistryPreparedAt",
+        "publicMinistryNotifiedAct" = EXCLUDED."publicMinistryNotifiedAct",
+        "publicMinistryAgency" = EXCLUDED."publicMinistryAgency",
         "publicMinistryNotice" = EXCLUDED."publicMinistryNotice",
+        "publicMinistryPhysicianName" = EXCLUDED."publicMinistryPhysicianName",
+        "publicMinistryPhysicianLicense" = EXCLUDED."publicMinistryPhysicianLicense",
+        "deathCertificateType" = EXCLUDED."deathCertificateType",
+        "deathCertificatePreparedAt" = EXCLUDED."deathCertificatePreparedAt",
+        "deathCertificateCopyIntegrated" = EXCLUDED."deathCertificateCopyIntegrated",
+        "deathCertificateProfessionalName" = EXCLUDED."deathCertificateProfessionalName",
+        "deathCertificateProfessionalLicense" = EXCLUDED."deathCertificateProfessionalLicense",
+        "deathCertificateRegisteredAt" = EXCLUDED."deathCertificateRegisteredAt",
         "deathCertificateData" = EXCLUDED."deathCertificateData",
         "professionalName" = EXCLUDED."professionalName",
         "professionalLicense" = EXCLUDED."professionalLicense",
@@ -18677,10 +18786,55 @@ export class EncountersService {
       );
     }
 
-    if (dischargeType === 'REFERENCIA_TRASLADO' && !this.hasCapturedValue(formData.unidadDestinoTrasladoUrg)) {
-      throw new BadRequestException(
-        'No se puede firmar el egreso: referencia o traslado requiere unidad destino.',
+    if (dischargeType === 'REFERENCIA_TRASLADO') {
+      const requiredTransferFields = [
+        'fechaHoraReferenciaTrasladoUrg',
+        'unidadOrigenTrasladoUrg',
+        'unidadDestinoTrasladoUrg',
+        'taTrasladoUrg',
+        'fcTrasladoUrg',
+        'frTrasladoUrg',
+        'temperaturaTrasladoUrg',
+        'spo2TrasladoUrg',
+        'diagnosticoTrasladoUrg',
+        'resumenTrasladoUrg',
+        'tratamientoPrevioTrasladoUrg',
+        'pronosticoTrasladoUrg',
+        'motivoTrasladoUrg',
+        'medioTrasladoUrg',
+        'condicionesTrasladoUrg',
+        'medicoReceptorTrasladoUrg',
+      ];
+      const missingTransferField = requiredTransferFields.some(
+        (fieldKey) => !this.hasCapturedValue(formData[fieldKey]),
       );
+
+      if (missingTransferField) {
+        throw new BadRequestException(
+          'No se puede firmar el egreso: referencia o traslado requiere datos generales, signos vitales, resumen clínico, motivo, medio y médico receptor.',
+        );
+      }
+    }
+
+    if (dischargeType === 'DEFUNCION') {
+      const requiredDeathCertificateFields = [
+        'tipoCertificadoDefuncionUrg',
+        'fechaCertificadoDefuncionUrg',
+        'horaCertificadoDefuncionUrg',
+        'copiaExistenteCertificadoDefuncionUrg',
+        'elaboraCertificadoDefuncionUrg',
+        'cedulaCertificadoDefuncionUrg',
+        'registroFechaHoraCertificadoDefuncionUrg',
+      ];
+      const missingDeathCertificateField = requiredDeathCertificateFields.some(
+        (fieldKey) => !this.hasCapturedValue(formData[fieldKey]),
+      );
+
+      if (missingDeathCertificateField) {
+        throw new BadRequestException(
+          'No se puede firmar el egreso: defunción requiere completar el certificado de defunción o muerte fetal.',
+        );
+      }
     }
 
     if (dischargeType === 'ALTA_DOMICILIO') {
@@ -18713,6 +18867,68 @@ export class EncountersService {
     ) {
       throw new BadRequestException(
         'No se puede firmar el egreso: captura los días de incapacidad.',
+      );
+    }
+
+    const consentFields = [
+      'actoAutorizadoConsentimientoUrg',
+      'riesgosConsentimientoUrg',
+      'beneficiosConsentimientoUrg',
+      'autorizacionContingenciasConsentimientoUrg',
+      'nombreAutorizaConsentimientoUrg',
+      'relacionAutorizaConsentimientoUrg',
+      'testigo1ConsentimientoUrg',
+      'testigo2ConsentimientoUrg',
+      'profesionalActoConsentimientoUrg',
+      'cedulaProfesionalActoConsentimientoUrg',
+    ];
+    const hasConsentCapture = [
+      'actoAutorizadoConsentimientoUrg',
+      'riesgosConsentimientoUrg',
+      'beneficiosConsentimientoUrg',
+      'autorizacionContingenciasConsentimientoUrg',
+      'nombreAutorizaConsentimientoUrg',
+      'relacionAutorizaConsentimientoUrg',
+      'testigo1ConsentimientoUrg',
+      'testigo2ConsentimientoUrg',
+    ].some((fieldKey) =>
+      this.hasCapturedValue(formData[fieldKey]),
+    );
+
+    if (
+      hasConsentCapture &&
+      consentFields.some((fieldKey) => !this.hasCapturedValue(formData[fieldKey]))
+    ) {
+      throw new BadRequestException(
+        'No se puede firmar el egreso: completa el consentimiento informado iniciado.',
+      );
+    }
+
+    const publicMinistryFields = [
+      'establecimientoAvisoMpUrg',
+      'fechaAvisoMpUrg',
+      'actoNotificadoAvisoMpUrg',
+      'agenciaMinisterioPublicoUrg',
+      'descripcionClinicaLegalAvisoMpUrg',
+      'medicoNotificaAvisoMpUrg',
+      'cedulaNotificaAvisoMpUrg',
+    ];
+    const hasPublicMinistryCapture = [
+      'actoNotificadoAvisoMpUrg',
+      'agenciaMinisterioPublicoUrg',
+      'descripcionClinicaLegalAvisoMpUrg',
+    ].some((fieldKey) =>
+      this.hasCapturedValue(formData[fieldKey]),
+    );
+
+    if (
+      hasPublicMinistryCapture &&
+      publicMinistryFields.some(
+        (fieldKey) => !this.hasCapturedValue(formData[fieldKey]),
+      )
+    ) {
+      throw new BadRequestException(
+        'No se puede firmar el egreso: completa el aviso al Ministerio Público iniciado.',
       );
     }
   }

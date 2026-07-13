@@ -2256,6 +2256,17 @@ function buildEmergencyDischargeSnapshot(args: {
         : value !== undefined && value !== null && value !== false;
   const keep = (fieldKey: string, suggestion: RecordFieldValue): RecordFieldValue =>
     hasValue(current[fieldKey]) ? current[fieldKey] : suggestion;
+  const facilityName = args.detail.facility?.name ?? '';
+  const careLocation =
+    [args.detail.facility?.name, args.detail.serviceArea?.name]
+      .filter(Boolean)
+      .join(' · ') || 'Lugar no configurado';
+  const responsibleName =
+    args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable';
+  const responsibleLicense =
+    args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula';
+  const today = args.recordedAt.slice(0, 10);
+  const time = args.recordedAt.slice(11, 16);
 
   return {
     tipoRegistro: 'Egreso de urgencias',
@@ -2310,9 +2321,39 @@ function buildEmergencyDischargeSnapshot(args: {
       'Se explica diagnóstico, tratamiento recibido, indicaciones, datos de alarma y plan de seguimiento.',
     ),
     comprensionPacienteEgresoUrg: keep('comprensionPacienteEgresoUrg', 'ADECUADA'),
+    fechaHoraReferenciaTrasladoUrg: keep(
+      'fechaHoraReferenciaTrasladoUrg',
+      args.recordedAt,
+    ),
     unidadOrigenTrasladoUrg: keep(
       'unidadOrigenTrasladoUrg',
-      args.detail.facility?.name ?? '',
+      facilityName,
+    ),
+    unidadDestinoTrasladoUrg: keep(
+      'unidadDestinoTrasladoUrg',
+      read(current.servicioReceptorUrg) || read(current.destinoEgresoUrg),
+    ),
+    taTrasladoUrg: keep(
+      'taTrasladoUrg',
+      read(initial.taSistolicaNota) && read(initial.taDiastolicaNota)
+        ? `${read(initial.taSistolicaNota)}/${read(initial.taDiastolicaNota)}`
+        : '',
+    ),
+    fcTrasladoUrg: keep('fcTrasladoUrg', read(initial.fcNota)),
+    frTrasladoUrg: keep('frTrasladoUrg', read(initial.frNota)),
+    temperaturaTrasladoUrg: keep('temperaturaTrasladoUrg', read(initial.tempNota)),
+    spo2TrasladoUrg: keep('spo2TrasladoUrg', read(initial.spo2Nota)),
+    resultadosRelevantesTrasladoUrg: keep(
+      'resultadosRelevantesTrasladoUrg',
+      read(evolution.resultadosEstudiosIntegrados) || read(initial.estudiosAnalisis),
+    ),
+    pronosticoTrasladoUrg: keep(
+      'pronosticoTrasladoUrg',
+      read(initial.pronosticoNota) || read(initial.resumenPronostico),
+    ),
+    motivoTrasladoUrg: keep(
+      'motivoTrasladoUrg',
+      read(current.motivoTrasladoUrg) || read(current.tipoEgresoUrg),
     ),
     resumenTrasladoUrg: keep(
       'resumenTrasladoUrg',
@@ -2327,15 +2368,53 @@ function buildEmergencyDischargeSnapshot(args: {
       read(orders.estadoOrdenesTrazabilidad),
     ),
     medicoReceptorTrasladoUrg: keep('medicoReceptorTrasladoUrg', read(current.medicoReceptorUrg)),
-    medicoResponsableEgresoUrg:
-      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-    cedulaResponsableEgresoUrg:
-      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    institucionConsentimientoUrg: keep('institucionConsentimientoUrg', facilityName),
+    razonSocialConsentimientoUrg: keep('razonSocialConsentimientoUrg', facilityName),
+    tituloConsentimientoUrg: keep(
+      'tituloConsentimientoUrg',
+      'Consentimiento informado',
+    ),
+    lugarFechaConsentimientoUrg: keep(
+      'lugarFechaConsentimientoUrg',
+      `${careLocation} · ${today}`,
+    ),
+    actoAutorizadoConsentimientoUrg: keep(
+      'actoAutorizadoConsentimientoUrg',
+      read(current.actoAutorizadoConsentimientoUrg),
+    ),
+    profesionalActoConsentimientoUrg: keep(
+      'profesionalActoConsentimientoUrg',
+      responsibleName,
+    ),
+    cedulaProfesionalActoConsentimientoUrg: keep(
+      'cedulaProfesionalActoConsentimientoUrg',
+      responsibleLicense,
+    ),
+    establecimientoAvisoMpUrg: keep('establecimientoAvisoMpUrg', facilityName),
+    fechaAvisoMpUrg: keep('fechaAvisoMpUrg', today),
+    medicoNotificaAvisoMpUrg: keep('medicoNotificaAvisoMpUrg', responsibleName),
+    cedulaNotificaAvisoMpUrg: keep(
+      'cedulaNotificaAvisoMpUrg',
+      responsibleLicense,
+    ),
+    fechaCertificadoDefuncionUrg: keep('fechaCertificadoDefuncionUrg', today),
+    horaCertificadoDefuncionUrg: keep('horaCertificadoDefuncionUrg', time),
+    elaboraCertificadoDefuncionUrg: keep(
+      'elaboraCertificadoDefuncionUrg',
+      responsibleName,
+    ),
+    cedulaCertificadoDefuncionUrg: keep(
+      'cedulaCertificadoDefuncionUrg',
+      responsibleLicense,
+    ),
+    registroFechaHoraCertificadoDefuncionUrg: keep(
+      'registroFechaHoraCertificadoDefuncionUrg',
+      args.recordedAt,
+    ),
+    medicoResponsableEgresoUrg: responsibleName,
+    cedulaResponsableEgresoUrg: responsibleLicense,
     especialidadResponsableEgresoUrg: args.detail.specialty?.name ?? 'Sin especialidad',
-    lugarAtencionEgresoUrg:
-      [args.detail.facility?.name, args.detail.serviceArea?.name]
-        .filter(Boolean)
-        .join(' · ') || 'Lugar no configurado',
+    lugarAtencionEgresoUrg: careLocation,
     fechaHoraFirmaEgresoUrg: '',
     egresoLegalNombre:
       args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
@@ -2343,9 +2422,7 @@ function buildEmergencyDischargeSnapshot(args: {
       args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
     egresoLegalEspecialidad: args.detail.specialty?.name ?? 'Sin especialidad',
     egresoLegalLugar:
-      [args.detail.facility?.name, args.detail.serviceArea?.name]
-        .filter(Boolean)
-        .join(' · ') || 'Lugar no configurado',
+      careLocation,
   };
 }
 
@@ -7913,6 +7990,24 @@ export function EpisodeDetailPage() {
     uploadAttachmentsMutation.mutate(pendingFiles);
   };
 
+  const selectDeathCertificateFiles = (files: File[]) => {
+    const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    const validFiles = files.filter((file) => allowedMimeTypes.includes(file.type));
+
+    if (validFiles.length !== files.length) {
+      setFeedback('El certificado solo permite archivos PDF, JPG o PNG.');
+    }
+
+    setPendingFiles(validFiles);
+
+    if (validFiles.length > 0) {
+      updateRecordFormDataField(
+        'registroFechaHoraCertificadoDefuncionUrg',
+        new Date().toISOString().slice(0, 16),
+      );
+    }
+  };
+
   const getInitials = (name?: string) =>
                                       name
                                         ?.split(' ')
@@ -9869,11 +9964,7 @@ export function EpisodeDetailPage() {
                                 return dischargeType === 'REFERENCIA_TRASLADO';
                               }
 
-                              if (section.key === 'egreso_urg_consentimiento') {
-                                return dischargeType === 'REFERENCIA_TRASLADO';
-                              }
-
-                              if (section.key === 'egreso_urg_legales_condicionales') {
+                              if (section.key === 'egreso_urg_certificado_defuncion') {
                                 return dischargeType === 'DEFUNCION';
                               }
                             }
@@ -11177,6 +11268,64 @@ export function EpisodeDetailPage() {
                               })}
                             </div>
                             )}
+                            {isEmergencyDischargeSection &&
+                            section.key === 'egreso_urg_certificado_defuncion' ? (
+                              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                  <div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      Archivo digital
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      Adjunta la copia digitalizada del certificado oficial externo.
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                      <Paperclip className="h-4 w-4" />
+                                      Seleccionar PDF/JPG/PNG
+                                      <input
+                                        accept="application/pdf,image/jpeg,image/png"
+                                        className="hidden"
+                                        disabled={isRecordLocked || isEpisodeClosed}
+                                        multiple
+                                        onChange={(event) =>
+                                          selectDeathCertificateFiles(
+                                            Array.from(event.target.files ?? []),
+                                          )
+                                        }
+                                        type="file"
+                                      />
+                                    </label>
+                                    <Button
+                                      className="gap-2"
+                                      disabled={
+                                        uploadAttachmentsMutation.isPending ||
+                                        isRecordLocked ||
+                                        isEpisodeClosed
+                                      }
+                                      onClick={submitPendingFiles}
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      <FileUp className="h-4 w-4" />
+                                      {uploadAttachmentsMutation.isPending
+                                        ? 'Cargando...'
+                                        : 'Subir copia'}
+                                    </Button>
+                                  </div>
+                                </div>
+                                {pendingFiles.length > 0 ? (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {pendingFiles.map((file) => (
+                                      <Badge key={file.name} variant="secondary">
+                                        {file.name}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                             );
                           })}
