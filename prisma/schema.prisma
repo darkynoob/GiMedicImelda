@@ -234,6 +234,7 @@ model Tenant {
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
+  emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
   emergencyOrderSets         EmergencyOrderSet[]
   emergencyOrderMedications  EmergencyOrderMedication[]
   emergencyOrderSolutions    EmergencyOrderIntravenousSolution[]
@@ -507,6 +508,7 @@ model User {
   correctedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteCorrector")
   resignedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteResigner")
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
+  createdEmergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[] @relation("EmergencyEvolutionDiagnosisCreator")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
   signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
@@ -810,6 +812,7 @@ model Patient {
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions EmergencyEvolution[]
+  emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
   emergencyDocuments EmergencyDocument[]
@@ -1256,6 +1259,7 @@ model Encounter {
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions  EmergencyEvolution[]
+  emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
   emergencyDocuments   EmergencyDocument[]
@@ -2695,6 +2699,7 @@ model EmergencyEvolution {
   patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
   sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
   signer        User?                  @relation("EmergencyEvolutionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  diagnoses     EmergencyEvolutionDiagnosis[]
 
   @@index([tenantId])
   @@index([encounterId])
@@ -2703,6 +2708,40 @@ model EmergencyEvolution {
   @@index([recordedAt])
   @@index([clinicalStatus])
   @@index([signerUserId])
+}
+
+model EmergencyEvolutionDiagnosis {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  emergencyEvolutionId String
+
+  diagnosisName String
+  cie10Code String?
+  diagnosisType String?
+  displayOrder Int @default(0)
+  createdByUserId String?
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter          @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  evolution EmergencyEvolution @relation(fields: [emergencyEvolutionId], references: [id], onDelete: Cascade)
+  createdBy User?              @relation("EmergencyEvolutionDiagnosisCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([emergencyEvolutionId])
+  @@index([diagnosisType])
+  @@index([cie10Code])
+  @@index([createdByUserId])
+  @@index([deletedAt])
 }
 
 /// Conjunto versionado de órdenes operativas de Urgencias.

@@ -8963,6 +8963,11 @@ export class EncountersService {
       baseFormData.diagnosticosEvolucionUrg = sourceFormData.diagnosticosEvolucionUrg;
     }
 
+    baseFormData.diagnosticosEvolucionUrg =
+      this.normalizeEmergencyEvolutionDiagnoses(
+        baseFormData.diagnosticosEvolucionUrg,
+      );
+
     return baseFormData;
   }
 
@@ -9281,9 +9286,10 @@ export class EncountersService {
     return diagnosis || cie10
       ? [
           {
+            id: randomUUID(),
             diagnostico: diagnosis,
             cie10,
-            estado: 'ACTIVO',
+            tipo: '',
           },
         ]
       : [];
@@ -9631,6 +9637,9 @@ export class EncountersService {
     const evolutionDate = this.parseOptionalDate(input.formData.fechaEvolucionUrg);
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const normalizedDiagnoses = this.normalizeEmergencyEvolutionDiagnoses(
+      input.formData.diagnosticosEvolucionUrg,
+    );
 
     await this.prisma.$executeRaw`
       INSERT INTO "EmergencyEvolution" (
@@ -9653,7 +9662,7 @@ export class EncountersService {
         ${this.readStringValue(input.formData.horaEvolucionUrg)}, ${this.readNumericValue(input.formData.diaEvolucionUrg)}, ${this.readStringValue(input.formData.estadoClinicoEvolucionUrg)}, ${this.readStringValue(input.formData.referenciaPacienteUrg)},
         ${this.readNumericValue(input.formData.taSistolicaEvolUrg)}, ${this.readNumericValue(input.formData.taDiastolicaEvolUrg)}, ${this.readNumericValue(input.formData.fcEvolUrg)}, ${this.readNumericValue(input.formData.frEvolUrg)},
         ${this.readNumericValue(input.formData.tempEvolUrg)}, ${this.readNumericValue(input.formData.spo2EvolUrg)}, ${this.readNumericValue(input.formData.evaEvolUrg)}, ${this.readNumericValue(input.formData.glucosaEvolUrg)}, ${this.readNumericValue(input.formData.glasgowEvolUrg)},
-        ${this.readStringValue(input.formData.exploracionDirigidaUrg)}, ${this.readStringValue(input.formData.resultadosEstudiosIntegrados)}, ${this.jsonbParameter(input.formData.diagnosticosEvolucionUrg)},
+        ${this.readStringValue(input.formData.exploracionDirigidaUrg)}, ${this.readStringValue(input.formData.resultadosEstudiosIntegrados)}, ${this.jsonbParameter(normalizedDiagnoses)},
         ${this.readStringValue(input.formData.eventosAdversosUrg)}, ${this.readStringValue(input.formData.complicacionesUrg)}, ${this.readStringValue(input.formData.tratamientoEvolUrg)}, ${this.readStringValue(input.formData.estudiosPendientesUrg)},
         ${this.readStringValue(input.formData.interconsultasEvolUrg)}, ${this.readStringValue(input.formData.seguimientoEvolUrg)}, ${this.readStringValue(input.formData.consentimientoVigenteUrg)},
         ${this.readStringValue(input.formData.informacionBrindadaUrg)}, ${this.readStringValue(input.formData.justificacionClinicaNom004)}, ${this.readStringValue(input.formData.respuestaTratamientoUrg)},
@@ -9703,6 +9712,74 @@ export class EncountersService {
         "signedAt" = EXCLUDED."signedAt",
         "updatedAt" = NOW()
     `;
+
+    const [emergencyEvolution] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id"
+      FROM "EmergencyEvolution"
+      WHERE "sectionRecordId" = ${input.sectionRecordId}
+      LIMIT 1
+    `;
+
+    if (emergencyEvolution) {
+      await this.syncEmergencyEvolutionDiagnoses({
+        tenantId: input.tenantId,
+        userId: input.userId,
+        encounter: input.encounter,
+        emergencyEvolutionId: emergencyEvolution.id,
+        diagnoses: normalizedDiagnoses,
+      });
+    }
+  }
+
+  private async syncEmergencyEvolutionDiagnoses(input: {
+    tenantId: string;
+    userId: string;
+    encounter: TenantEncounterRecord;
+    emergencyEvolutionId: string;
+    diagnoses: Array<{
+      id: string;
+      diagnostico: string;
+      cie10: string;
+      tipo: string;
+    }>;
+  }) {
+    await this.prisma.$executeRaw`
+      UPDATE "EmergencyEvolutionDiagnosis"
+      SET "deletedAt" = NOW(), "updatedAt" = NOW()
+      WHERE "emergencyEvolutionId" = ${input.emergencyEvolutionId}
+        AND "deletedAt" IS NULL
+    `;
+
+    for (const [displayOrder, diagnosis] of input.diagnoses.entries()) {
+      if (diagnosis.diagnostico.length === 0) {
+        continue;
+      }
+
+      await this.prisma.$executeRaw`
+        INSERT INTO "EmergencyEvolutionDiagnosis" (
+          "id", "tenantId", "encounterId", "patientId", "emergencyEvolutionId",
+          "diagnosisName", "cie10Code", "diagnosisType", "displayOrder",
+          "createdByUserId", "deletedAt", "createdAt", "updatedAt"
+        )
+        VALUES (
+          ${diagnosis.id}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.emergencyEvolutionId},
+          ${diagnosis.diagnostico}, ${diagnosis.cie10 || null}, ${diagnosis.tipo || null}, ${displayOrder},
+          ${input.userId}, NULL, NOW(), NOW()
+        )
+        ON CONFLICT ("id") DO UPDATE SET
+          "tenantId" = EXCLUDED."tenantId",
+          "encounterId" = EXCLUDED."encounterId",
+          "patientId" = EXCLUDED."patientId",
+          "emergencyEvolutionId" = EXCLUDED."emergencyEvolutionId",
+          "diagnosisName" = EXCLUDED."diagnosisName",
+          "cie10Code" = EXCLUDED."cie10Code",
+          "diagnosisType" = EXCLUDED."diagnosisType",
+          "displayOrder" = EXCLUDED."displayOrder",
+          "createdByUserId" = COALESCE("EmergencyEvolutionDiagnosis"."createdByUserId", EXCLUDED."createdByUserId"),
+          "deletedAt" = NULL,
+          "updatedAt" = NOW()
+      `;
+    }
   }
 
   private async syncEmergencyOrdersRecord(input: {
@@ -13717,6 +13794,30 @@ export class EncountersService {
       : [];
   }
 
+  private normalizeEmergencyEvolutionDiagnosisType(value: unknown) {
+    const diagnosisType = this.readStringValue(value).trim().toUpperCase();
+
+    return ['PRESUNTIVO', 'CONFIRMADO', 'DIFERENCIAL'].includes(diagnosisType)
+      ? diagnosisType
+      : '';
+  }
+
+  private normalizeEmergencyEvolutionDiagnoses(value: unknown) {
+    return this.readObjectArray(value)
+      .map((diagnosis) => ({
+        id: this.readStringValue(diagnosis.id).trim() || randomUUID(),
+        diagnostico: this.readStringValue(diagnosis.diagnostico).trim(),
+        cie10: this.readStringValue(diagnosis.cie10).trim(),
+        tipo: this.normalizeEmergencyEvolutionDiagnosisType(
+          diagnosis.tipo || diagnosis.estado,
+        ),
+      }))
+      .filter(
+        (diagnosis) =>
+          diagnosis.diagnostico || diagnosis.cie10 || diagnosis.tipo,
+      );
+  }
+
   private readStringValueFromJson(
     rawValue: Prisma.JsonValue | null,
     key: string,
@@ -13895,7 +13996,7 @@ export class EncountersService {
       .map((item) => ({
         diagnostico: this.readStringValue(item.diagnostico),
         cie10: this.readStringValue(item.cie10),
-        estado: this.readStringValue(item.estado),
+        estado: this.readStringValue(item.estado) || this.readStringValue(item.tipo),
       }))
       .filter((item) => item.diagnostico || item.cie10 || item.estado);
   }
@@ -14249,7 +14350,7 @@ export class EncountersService {
         !Array.isArray(latestEmergencyOrdersRecord.formDataJson)
           ? (latestEmergencyOrdersRecord.formDataJson as Record<string, unknown>)
           : {};
-      const emergencyEvolutionDiagnoses = this.normalizeObjectArray(
+      const emergencyEvolutionDiagnoses = this.normalizeEmergencyEvolutionDiagnoses(
         latestEvolutionFormData.diagnosticosEvolucionUrg,
       );
       const primaryDiagnosis =
@@ -14292,7 +14393,7 @@ export class EncountersService {
             ? emergencyEvolutionDiagnoses.map((diagnosis) => ({
                 diagnostico: this.readStringValue(diagnosis.diagnostico),
                 cie10: this.readStringValue(diagnosis.cie10),
-                estado: this.readStringValue(diagnosis.estado),
+                estado: this.readStringValue(diagnosis.tipo),
               }))
             : primaryDiagnosis || primaryDiagnosisCode
               ? [{ diagnostico: primaryDiagnosis, cie10: primaryDiagnosisCode, estado: '' }]
@@ -16651,6 +16752,10 @@ export class EncountersService {
         ? this.resolveAmbulatoryDischargeRequiredFields(formData)
         : [];
 
+    if (this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)) {
+      this.assertEmergencyEvolutionDiagnosesCanBeSigned(formData);
+    }
+
     const missingFields = [
       ...(this.isHospitalDocumentRecord(input.encounterType, input.tabKey) ||
       this.isAmbulatoryProcedureSupportingDocumentRecord(
@@ -16809,6 +16914,20 @@ export class EncountersService {
     }
     if (this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyNursingSheetReadyForSignature(formData);
+    }
+  }
+
+  private assertEmergencyEvolutionDiagnosesCanBeSigned(
+    formData: Record<string, unknown>,
+  ) {
+    const hasCapturedDiagnosis = this.normalizeEmergencyEvolutionDiagnoses(
+      formData.diagnosticosEvolucionUrg,
+    ).some((diagnosis) => diagnosis.diagnostico.length > 0);
+
+    if (!hasCapturedDiagnosis) {
+      throw new BadRequestException(
+        'Debes agregar al menos un diagnóstico antes de firmar la nota.',
+      );
     }
   }
 

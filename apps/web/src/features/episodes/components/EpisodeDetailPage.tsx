@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FileCheck,
@@ -117,6 +117,60 @@ type RecordFormState = {
   recordedAt: string;
   formData: Record<string, RecordFieldValue>;
 };
+
+const emergencyEvolutionDiagnosisFieldKey = 'diagnosticosEvolucionUrg';
+const emergencyEvolutionDiagnosisTypeValues = [
+  'PRESUNTIVO',
+  'CONFIRMADO',
+  'DIFERENCIAL',
+];
+
+function createClientRecordId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeEmergencyEvolutionDiagnosisItem(
+  item: Record<string, unknown>,
+) {
+  const diagnosisType =
+    typeof item.tipo === 'string' && emergencyEvolutionDiagnosisTypeValues.includes(item.tipo)
+      ? item.tipo
+      : '';
+
+  return {
+    ...item,
+    id: typeof item.id === 'string' && item.id ? item.id : createClientRecordId(),
+    diagnostico: typeof item.diagnostico === 'string' ? item.diagnostico : '',
+    cie10: typeof item.cie10 === 'string' ? item.cie10 : '',
+    tipo: diagnosisType,
+  };
+}
+
+function normalizeEmergencyEvolutionDiagnoses(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+        )
+        .map(normalizeEmergencyEvolutionDiagnosisItem)
+    : [];
+}
+
+function hasEmergencyEvolutionDiagnosisValue(item: Record<string, unknown>) {
+  return ['diagnostico', 'cie10', 'tipo'].some((fieldKey) => {
+    const value = item[fieldKey];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+}
+
+function hasValidEmergencyEvolutionDiagnosis(value: unknown) {
+  return normalizeEmergencyEvolutionDiagnoses(value).some((item) => {
+    return item.diagnostico.trim().length > 0;
+  });
+}
 
 const emergencyTriageClinicalQuickStateFieldKeys =
   emergencyTriageClinicalQuickStateFields.map((field) => field.key);
@@ -1462,7 +1516,14 @@ function buildEmergencyEvolutionDiagnoses(
       : '';
 
   return diagnostico || cie10
-    ? [{ diagnostico, cie10, estado: 'ACTIVO' }]
+    ? [
+        {
+          id: createClientRecordId(),
+          diagnostico,
+          cie10,
+          tipo: '',
+        },
+      ]
     : [];
 }
 
@@ -1558,14 +1619,15 @@ function buildEmergencyEvolutionSnapshot(args: {
       'glasgowEvolUrg',
       'glasgowNota',
     ),
-    diagnosticosEvolucionUrg:
+    diagnosticosEvolucionUrg: normalizeEmergencyEvolutionDiagnoses(
       Array.isArray(currentFormData.diagnosticosEvolucionUrg) &&
-      currentFormData.diagnosticosEvolucionUrg.length > 0
+        currentFormData.diagnosticosEvolucionUrg.length > 0
         ? currentFormData.diagnosticosEvolucionUrg
         : Array.isArray(previousFormData.diagnosticosEvolucionUrg) &&
             previousFormData.diagnosticosEvolucionUrg.length > 0
           ? previousFormData.diagnosticosEvolucionUrg
           : buildEmergencyEvolutionDiagnoses(initialFormData),
+    ),
     tratamientoEvolUrg: readCurrentOrSource(
       'tratamientoEvolUrg',
       'tratamientoEvolUrg',
@@ -3462,7 +3524,12 @@ function readDiagnosesArrayFromUnknown(value: unknown) {
     .map((item) => ({
       diagnostico: typeof item.diagnostico === 'string' ? item.diagnostico : '',
       cie10: typeof item.cie10 === 'string' ? item.cie10 : '',
-      estado: typeof item.estado === 'string' ? item.estado : '',
+      estado:
+        typeof item.estado === 'string'
+          ? item.estado
+          : typeof item.tipo === 'string'
+            ? item.tipo
+            : '',
     }))
     .filter((item) => item.diagnostico || item.cie10 || item.estado);
 }
@@ -4014,6 +4081,12 @@ function normalizeRecordFormData(
       }
 
       if (field.type === 'object-array') {
+        if (field.key === emergencyEvolutionDiagnosisFieldKey) {
+          normalizedFormData[field.key] =
+            normalizeEmergencyEvolutionDiagnoses(rawFieldValue);
+          continue;
+        }
+
         normalizedFormData[field.key] = Array.isArray(rawFieldValue)
           ? rawFieldValue
               .filter(
@@ -4152,6 +4225,20 @@ export function EpisodeDetailPage() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSigningRecord, setIsSigningRecord] = useState(false);
   const [signaturePassword, setSignaturePassword] = useState('');
+  const pendingDiagnosisFocusIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const focusId = pendingDiagnosisFocusIdRef.current;
+    if (!focusId) {
+      return;
+    }
+
+    const input = document.querySelector<HTMLInputElement>(
+      `[data-diagnosis-input-id="${focusId}"]`,
+    );
+    input?.focus();
+    pendingDiagnosisFocusIdRef.current = null;
+  }, [recordForm?.formData.diagnosticosEvolucionUrg]);
 
   const detailQuery = useQuery({
     queryKey: ['encounter-detail', episodeNumber],
@@ -7237,6 +7324,14 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (
+      isEmergencyEvolutionSection &&
+      !hasValidEmergencyEvolutionDiagnosis(recordForm?.formData.diagnosticosEvolucionUrg)
+    ) {
+      setFeedback('Debes agregar al menos un diagnóstico antes de firmar la nota.');
+      return;
+    }
+
     if (!signaturePassword.trim()) {
       setFeedback('Captura tu contraseña para firmar el registro.');
       return;
@@ -9679,14 +9774,65 @@ export function EpisodeDetailPage() {
                                 }
 
                                 if (field.type === 'object-array') {
-                                  const items = Array.isArray(fieldValue)
-                                    ? fieldValue.filter(
-                                        (value): value is Record<string, unknown> =>
-                                          Boolean(value) &&
-                                          typeof value === 'object' &&
-                                          !Array.isArray(value),
+                                  const isEmergencyEvolutionDiagnosisList =
+                                    field.key === emergencyEvolutionDiagnosisFieldKey;
+                                  const items: Record<string, unknown>[] =
+                                    isEmergencyEvolutionDiagnosisList
+                                      ? normalizeEmergencyEvolutionDiagnoses(fieldValue)
+                                      : Array.isArray(fieldValue)
+                                        ? fieldValue.filter(
+                                            (value): value is Record<string, unknown> =>
+                                              Boolean(value) &&
+                                              typeof value === 'object' &&
+                                              !Array.isArray(value),
+                                          )
+                                        : [];
+                                  const addObjectArrayItem = () => {
+                                    const nextItem = isEmergencyEvolutionDiagnosisList
+                                      ? normalizeEmergencyEvolutionDiagnosisItem({})
+                                      : Object.fromEntries(
+                                          (field.itemFields ?? []).map((itemField) => [
+                                            itemField.key,
+                                            buildDefaultFieldValue(itemField),
+                                          ]),
+                                        );
+
+                                    if (isEmergencyEvolutionDiagnosisList) {
+                                      pendingDiagnosisFocusIdRef.current =
+                                        nextItem.id as string;
+                                    }
+
+                                    updateRecordFormDataField(field.key, [
+                                      ...items,
+                                      nextItem,
+                                    ]);
+                                  };
+                                  const removeObjectArrayItem = (
+                                    item: Record<string, unknown>,
+                                    itemIndex: number,
+                                  ) => {
+                                    const shouldConfirm =
+                                      isEmergencyEvolutionDiagnosisList &&
+                                      (hasEmergencyEvolutionDiagnosisValue(item) ||
+                                        Boolean(selectedRecord));
+
+                                    if (
+                                      shouldConfirm &&
+                                      !window.confirm(
+                                        'Eliminar diagnóstico puede descartar información capturada. ¿Deseas continuar?',
                                       )
-                                    : [];
+                                    ) {
+                                      return;
+                                    }
+
+                                    updateRecordFormDataField(
+                                      field.key,
+                                      items.filter(
+                                        (_, currentIndex) =>
+                                          currentIndex !== itemIndex,
+                                      ),
+                                    );
+                                  };
 
                                   return (
                                     <div
@@ -9699,17 +9845,7 @@ export function EpisodeDetailPage() {
                                         </span>
                                         <Button
                                           disabled={isRecordLocked}
-                                          onClick={() =>
-                                            updateRecordFormDataField(field.key, [
-                                              ...items,
-                                              Object.fromEntries(
-                                                (field.itemFields ?? []).map((itemField) => [
-                                                  itemField.key,
-                                                  buildDefaultFieldValue(itemField),
-                                                ]),
-                                              ),
-                                            ])
-                                          }
+                                          onClick={addObjectArrayItem}
                                           size="sm"
                                           type="button"
                                           variant="outline"
@@ -9722,7 +9858,11 @@ export function EpisodeDetailPage() {
                                           items.map((item, itemIndex) => (
                                             <div
                                               className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
-                                              key={`${field.key}-${itemIndex}`}
+                                              key={`${field.key}-${
+                                                typeof item.id === 'string' && item.id
+                                                  ? item.id
+                                                  : itemIndex
+                                              }`}
                                             >
                                               <div className="flex items-center justify-between">
                                                 <p className="text-sm font-semibold text-slate-900">
@@ -9736,19 +9876,16 @@ export function EpisodeDetailPage() {
                                                       : undefined
                                                   }
                                                   onClick={() =>
-                                                    updateRecordFormDataField(
-                                                      field.key,
-                                                      items.filter(
-                                                        (_, currentIndex) =>
-                                                          currentIndex !== itemIndex,
-                                                      ),
+                                                    removeObjectArrayItem(
+                                                      item,
+                                                      itemIndex,
                                                     )
                                                   }
                                                   size="sm"
                                                   type="button"
                                                   variant="outline"
                                                 >
-                                                  Eliminar
+                                                  {field.itemRemoveLabel ?? 'Eliminar'}
                                                 </Button>
                                               </div>
                                               <div className="grid gap-3 md:grid-cols-2">
@@ -9806,6 +9943,13 @@ export function EpisodeDetailPage() {
                                                         {itemField.label}
                                                       </span>
                                                       <Input
+                                                        data-diagnosis-input-id={
+                                                          isEmergencyEvolutionDiagnosisList &&
+                                                          itemField.key === 'diagnostico' &&
+                                                          typeof item.id === 'string'
+                                                            ? item.id
+                                                            : undefined
+                                                        }
                                                         disabled={isRecordLocked}
                                                         onChange={(event) => {
                                                           const nextItems = [...items];
@@ -9837,7 +9981,9 @@ export function EpisodeDetailPage() {
                                           ))
                                         ) : (
                                           <p className="text-xs text-muted-foreground">
-                                            Aún no hay elementos agregados.
+                                            {isEmergencyEvolutionDiagnosisList
+                                              ? 'Aún no hay diagnósticos agregados'
+                                              : 'Aún no hay elementos agregados.'}
                                           </p>
                                         )}
                                       </div>

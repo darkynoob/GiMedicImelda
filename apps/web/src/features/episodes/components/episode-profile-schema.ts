@@ -637,6 +637,13 @@ const diagnosisStatusOptions: EpisodeFieldOption[] = [
   { value: 'DESCARTADO', label: 'Descartado' },
 ];
 
+const emergencyEvolutionDiagnosisTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PRESUNTIVO', label: 'Presuntivo' },
+  { value: 'CONFIRMADO', label: 'Confirmado' },
+  { value: 'DIFERENCIAL', label: 'Diferencial' },
+];
+
 const prescriptionMedicationTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
   { value: 'FARMACOLOGICO', label: 'Farmacológico' },
@@ -2104,11 +2111,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               label: 'Diagnósticos',
               type: 'object-array',
               itemAddLabel: 'Agregar diagnóstico',
-              disableItemRemoval: true,
+              itemRemoveLabel: 'Eliminar diagnóstico',
               itemFields: [
                 { key: 'diagnostico', label: 'Diagnóstico', type: 'text' },
                 { key: 'cie10', label: 'CIE-10', type: 'text' },
-                { key: 'estado', label: 'Estado', type: 'select', options: diagnosisStatusOptions },
+                { key: 'tipo', label: 'Tipo de diagnóstico', type: 'select', options: emergencyEvolutionDiagnosisTypeOptions },
               ],
             },
           ],
