@@ -124,6 +124,28 @@ const emergencyEvolutionDiagnosisTypeValues = [
   'CONFIRMADO',
   'DIFERENCIAL',
 ];
+const emergencyEvolutionDiagnosticResultsFieldKey =
+  'resultadosAuxiliaresDiagnosticoUrg';
+const emergencyEvolutionDiagnosticStudyTypeValues = [
+  'ECG',
+  'TROPONINA',
+  'BIOMETRIA_HEMATICA',
+  'GASOMETRIA',
+  'RX_TORAX',
+  'TAC',
+  'ULTRASONIDO',
+  'OTRO',
+];
+const emergencyEvolutionDiagnosticStudyTypeLabels: Record<string, string> = {
+  ECG: 'ECG',
+  TROPONINA: 'Troponina',
+  BIOMETRIA_HEMATICA: 'Biometría hemática',
+  GASOMETRIA: 'Gasometría',
+  RX_TORAX: 'RX tórax',
+  TAC: 'TAC',
+  ULTRASONIDO: 'Ultrasonido',
+  OTRO: 'Otro',
+};
 
 function createClientRecordId() {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -170,6 +192,122 @@ function hasValidEmergencyEvolutionDiagnosis(value: unknown) {
   return normalizeEmergencyEvolutionDiagnoses(value).some((item) => {
     return item.diagnostico.trim().length > 0;
   });
+}
+
+function readTextRecordValue(item: Record<string, unknown>, fieldKey: string) {
+  const value = item[fieldKey];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeEmergencyEvolutionDiagnosticStudyType(value: unknown) {
+  return typeof value === 'string' &&
+    emergencyEvolutionDiagnosticStudyTypeValues.includes(value)
+    ? value
+    : '';
+}
+
+function normalizeEmergencyEvolutionDiagnosticResultItem(
+  item: Record<string, unknown>,
+) {
+  return {
+    ...item,
+    id: readTextRecordValue(item, 'id') || createClientRecordId(),
+    tipoEstudio: normalizeEmergencyEvolutionDiagnosticStudyType(item.tipoEstudio),
+    otroEstudio: readTextRecordValue(item, 'otroEstudio'),
+    problemaEstudio: readTextRecordValue(item, 'problemaEstudio'),
+    resultado: readTextRecordValue(item, 'resultado'),
+    interpretacionClinica: readTextRecordValue(item, 'interpretacionClinica'),
+    incidentes: readTextRecordValue(item, 'incidentes'),
+    fechaHoraEstudio: readTextRecordValue(item, 'fechaHoraEstudio'),
+  };
+}
+
+function hasEmergencyEvolutionDiagnosticResultValue(
+  item: Record<string, unknown>,
+) {
+  return [
+    'tipoEstudio',
+    'otroEstudio',
+    'problemaEstudio',
+    'resultado',
+    'interpretacionClinica',
+    'incidentes',
+    'fechaHoraEstudio',
+  ].some((fieldKey) => readTextRecordValue(item, fieldKey).length > 0);
+}
+
+function buildEmergencyEvolutionLegacyDiagnosticResults(
+  value: unknown,
+): Array<Record<string, unknown>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return [];
+  }
+
+  const formData = value as Record<string, unknown>;
+  const readLegacyAuxiliaryValue = (fieldKey: string) => {
+    const fieldValue = readTextRecordValue(formData, fieldKey);
+
+    return fieldValue &&
+      !fieldValue.toLowerCase().startsWith('sin ') &&
+      fieldValue !== 'Sin dato disponible'
+      ? fieldValue
+      : '';
+  };
+  const resultLines = [
+    readLegacyAuxiliaryValue('auxEcgUrg'),
+    readLegacyAuxiliaryValue('auxLaboratoriosUrg'),
+  ].filter(Boolean);
+  const interpretation = readLegacyAuxiliaryValue('auxInterpretacionUrg');
+  const incidents = readLegacyAuxiliaryValue('auxIncidentesUrg');
+
+  if (
+    resultLines.length === 0 &&
+    !interpretation &&
+    !incidents
+  ) {
+    return [];
+  }
+
+  return [
+    normalizeEmergencyEvolutionDiagnosticResultItem({
+      tipoEstudio: 'OTRO',
+      otroEstudio: 'Servicios auxiliares previos',
+      resultado: resultLines.join('\n'),
+      interpretacionClinica: interpretation,
+      incidentes: incidents,
+    }),
+  ];
+}
+
+function normalizeEmergencyEvolutionDiagnosticResults(
+  value: unknown,
+  legacySource?: Record<string, unknown>,
+) {
+  const items = Array.isArray(value)
+    ? value
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+        )
+        .map(normalizeEmergencyEvolutionDiagnosticResultItem)
+        .filter(hasEmergencyEvolutionDiagnosticResultValue)
+    : [];
+
+  return items.length > 0
+    ? items
+    : buildEmergencyEvolutionLegacyDiagnosticResults(legacySource);
+}
+
+function getEmergencyEvolutionDiagnosticResultValidationMessage(value: unknown) {
+  const incompleteResult = normalizeEmergencyEvolutionDiagnosticResults(value).find(
+    (item) =>
+      hasEmergencyEvolutionDiagnosticResultValue(item) &&
+      (!item.tipoEstudio || !item.resultado || !item.fechaHoraEstudio),
+  );
+
+  return incompleteResult
+    ? 'Completa tipo de estudio, resultado y fecha/hora en cada resultado de estudio antes de firmar.'
+    : '';
 }
 
 const emergencyTriageClinicalQuickStateFieldKeys =
@@ -1666,13 +1804,12 @@ function buildEmergencyEvolutionSnapshot(args: {
       args.detail.metrics.labs || args.detail.metrics.imaging
         ? `Laboratorio: ${args.detail.metrics.labs} · Imagenología: ${args.detail.metrics.imaging}`
         : 'Sin resultados externos vinculados al episodio.',
-    auxEcgUrg: 'Sin ECG vinculado al episodio',
-    auxLaboratoriosUrg:
-      args.detail.metrics.labs > 0
-        ? `${args.detail.metrics.labs} resultado(s) o solicitud(es) de laboratorio`
-        : 'Sin laboratorios vinculados',
-    auxInterpretacionUrg: 'Sin interpretación externa vinculada',
-    auxIncidentesUrg: 'Sin incidentes registrados en servicios auxiliares',
+    resultadosAuxiliaresDiagnosticoUrg:
+      normalizeEmergencyEvolutionDiagnosticResults(
+        currentFormData.resultadosAuxiliaresDiagnosticoUrg ??
+          previousFormData.resultadosAuxiliaresDiagnosticoUrg,
+        currentFormData,
+      ),
     evolucionUrgLegalNombre:
       args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
     evolucionUrgLegalCedula:
@@ -4134,6 +4271,15 @@ function normalizeRecordFormData(
         if (field.key === emergencyEvolutionDiagnosisFieldKey) {
           normalizedFormData[field.key] =
             normalizeEmergencyEvolutionDiagnoses(rawFieldValue);
+          continue;
+        }
+
+        if (field.key === emergencyEvolutionDiagnosticResultsFieldKey) {
+          normalizedFormData[field.key] =
+            normalizeEmergencyEvolutionDiagnosticResults(
+              rawFieldValue,
+              rawFormData,
+            );
           continue;
         }
 
@@ -7478,6 +7624,18 @@ export function EpisodeDetailPage() {
       return;
     }
 
+    if (isEmergencyEvolutionSection) {
+      const diagnosticResultValidationMessage =
+        getEmergencyEvolutionDiagnosticResultValidationMessage(
+          recordForm?.formData.resultadosAuxiliaresDiagnosticoUrg,
+        );
+
+      if (diagnosticResultValidationMessage) {
+        setFeedback(diagnosticResultValidationMessage);
+        return;
+      }
+    }
+
     if (!signaturePassword.trim()) {
       setFeedback('Captura tu contraseña para firmar el registro.');
       return;
@@ -10093,9 +10251,16 @@ export function EpisodeDetailPage() {
                                 if (field.type === 'object-array') {
                                   const isEmergencyEvolutionDiagnosisList =
                                     field.key === emergencyEvolutionDiagnosisFieldKey;
+                                  const isEmergencyEvolutionDiagnosticResultsList =
+                                    field.key === emergencyEvolutionDiagnosticResultsFieldKey;
                                   const items: Record<string, unknown>[] =
                                     isEmergencyEvolutionDiagnosisList
                                       ? normalizeEmergencyEvolutionDiagnoses(fieldValue)
+                                      : isEmergencyEvolutionDiagnosticResultsList
+                                        ? normalizeEmergencyEvolutionDiagnosticResults(
+                                            fieldValue,
+                                            recordForm.formData,
+                                          )
                                       : Array.isArray(fieldValue)
                                         ? fieldValue.filter(
                                             (value): value is Record<string, unknown> =>
@@ -10104,6 +10269,344 @@ export function EpisodeDetailPage() {
                                               !Array.isArray(value),
                                           )
                                         : [];
+
+                                  if (isEmergencyEvolutionDiagnosticResultsList) {
+                                    const updateDiagnosticResultItem = (
+                                      itemIndex: number,
+                                      fieldKey: string,
+                                      value: string,
+                                    ) => {
+                                      const nextItems = [...items];
+                                      nextItems[itemIndex] = {
+                                        ...nextItems[itemIndex],
+                                        [fieldKey]: value,
+                                      };
+                                      updateRecordFormDataField(field.key, nextItems);
+                                    };
+                                    const addDiagnosticResultItem = () => {
+                                      updateRecordFormDataField(field.key, [
+                                        ...items,
+                                        normalizeEmergencyEvolutionDiagnosticResultItem({}),
+                                      ]);
+                                    };
+                                    const removeDiagnosticResultItem = (
+                                      item: Record<string, unknown>,
+                                      itemIndex: number,
+                                    ) => {
+                                      if (
+                                        hasEmergencyEvolutionDiagnosticResultValue(item) &&
+                                        !window.confirm(
+                                          'Eliminar resultado puede descartar información capturada. ¿Deseas continuar?',
+                                        )
+                                      ) {
+                                        return;
+                                      }
+
+                                      updateRecordFormDataField(
+                                        field.key,
+                                        items.filter(
+                                          (_, currentIndex) =>
+                                            currentIndex !== itemIndex,
+                                        ),
+                                      );
+                                    };
+
+                                    return (
+                                      <div
+                                        className="space-y-3 text-sm md:col-span-2"
+                                        key={field.key}
+                                      >
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                          <span className="font-medium text-slate-900">
+                                            {field.label}
+                                          </span>
+                                          {!isRecordLocked ? (
+                                            <Button
+                                              onClick={addDiagnosticResultItem}
+                                              size="sm"
+                                              type="button"
+                                              variant="outline"
+                                            >
+                                              {field.itemAddLabel ??
+                                                'Agregar resultado de estudio'}
+                                            </Button>
+                                          ) : null}
+                                        </div>
+                                        <div className="space-y-3">
+                                          {items.length > 0 ? (
+                                            items.map((item, itemIndex) => {
+                                              const studyType = readTextRecordValue(
+                                                item,
+                                                'tipoEstudio',
+                                              );
+                                              const studyLabel = [
+                                                emergencyEvolutionDiagnosticStudyTypeLabels[
+                                                  studyType
+                                                ] ?? studyType,
+                                                studyType === 'OTRO'
+                                                  ? readTextRecordValue(
+                                                      item,
+                                                      'otroEstudio',
+                                                    )
+                                                  : '',
+                                              ]
+                                                .filter(Boolean)
+                                                .join(' · ');
+
+                                              return (
+                                                <div
+                                                  className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                                                  key={`${field.key}-${
+                                                    readTextRecordValue(item, 'id') ||
+                                                    itemIndex
+                                                  }`}
+                                                >
+                                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                    <p className="text-sm font-semibold text-slate-900">
+                                                      {`Resultado de estudio ${itemIndex + 1}`}
+                                                    </p>
+                                                    {!isRecordLocked ? (
+                                                      <Button
+                                                        onClick={() =>
+                                                          removeDiagnosticResultItem(
+                                                            item,
+                                                            itemIndex,
+                                                          )
+                                                        }
+                                                        size="sm"
+                                                        type="button"
+                                                        variant="outline"
+                                                      >
+                                                        {field.itemRemoveLabel ??
+                                                          'Eliminar resultado'}
+                                                      </Button>
+                                                    ) : null}
+                                                  </div>
+
+                                                  {isRecordLocked ? (
+                                                    <div className="grid gap-3 md:grid-cols-2">
+                                                      <ReadOnlyField
+                                                        label="Tipo de estudio"
+                                                        value={studyLabel}
+                                                      />
+                                                      <ReadOnlyField
+                                                        label="Fecha y hora"
+                                                        value={
+                                                          readTextRecordValue(
+                                                            item,
+                                                            'fechaHoraEstudio',
+                                                          )
+                                                            ? formatDateTime(
+                                                                readTextRecordValue(
+                                                                  item,
+                                                                  'fechaHoraEstudio',
+                                                                ),
+                                                              )
+                                                            : ''
+                                                        }
+                                                      />
+                                                      <ReadOnlyField
+                                                        label="Problema en estudio"
+                                                        value={readTextRecordValue(
+                                                          item,
+                                                          'problemaEstudio',
+                                                        )}
+                                                      />
+                                                      <div className="md:col-span-2">
+                                                        <ReadOnlyField
+                                                          label="Resultado"
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'resultado',
+                                                          )}
+                                                        />
+                                                      </div>
+                                                      <div className="md:col-span-2">
+                                                        <ReadOnlyField
+                                                          label="Interpretación clínica"
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'interpretacionClinica',
+                                                          )}
+                                                        />
+                                                      </div>
+                                                      {readTextRecordValue(
+                                                        item,
+                                                        'incidentes',
+                                                      ) ? (
+                                                        <div className="md:col-span-2">
+                                                          <ReadOnlyField
+                                                            label="Incidentes"
+                                                            value={readTextRecordValue(
+                                                              item,
+                                                              'incidentes',
+                                                            )}
+                                                          />
+                                                        </div>
+                                                      ) : null}
+                                                    </div>
+                                                  ) : (
+                                                    <div className="grid gap-3 md:grid-cols-2">
+                                                      <label className="space-y-2 text-sm">
+                                                        <span className="font-medium text-slate-900">
+                                                          Tipo de estudio
+                                                        </span>
+                                                        <select
+                                                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                          onChange={(event) =>
+                                                            updateDiagnosticResultItem(
+                                                              itemIndex,
+                                                              'tipoEstudio',
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                          value={studyType}
+                                                        >
+                                                          {(field.itemFields?.find(
+                                                            (itemField) =>
+                                                              itemField.key ===
+                                                              'tipoEstudio',
+                                                          )?.options ?? []).map(
+                                                            (option) => (
+                                                              <option
+                                                                key={
+                                                                  option.value ||
+                                                                  'empty'
+                                                                }
+                                                                value={option.value}
+                                                              >
+                                                                {option.label}
+                                                              </option>
+                                                            ),
+                                                          )}
+                                                        </select>
+                                                      </label>
+                                                      {studyType === 'OTRO' ? (
+                                                        <label className="space-y-2 text-sm">
+                                                          <span className="font-medium text-slate-900">
+                                                            Estudio realizado
+                                                          </span>
+                                                          <Input
+                                                            onChange={(event) =>
+                                                              updateDiagnosticResultItem(
+                                                                itemIndex,
+                                                                'otroEstudio',
+                                                                event.target.value,
+                                                              )
+                                                            }
+                                                            value={readTextRecordValue(
+                                                              item,
+                                                              'otroEstudio',
+                                                            )}
+                                                          />
+                                                        </label>
+                                                      ) : null}
+                                                      <label className="space-y-2 text-sm">
+                                                        <span className="font-medium text-slate-900">
+                                                          Fecha y hora del estudio
+                                                        </span>
+                                                        <Input
+                                                          onChange={(event) =>
+                                                            updateDiagnosticResultItem(
+                                                              itemIndex,
+                                                              'fechaHoraEstudio',
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                          type="datetime-local"
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'fechaHoraEstudio',
+                                                          )}
+                                                        />
+                                                      </label>
+                                                      <label className="space-y-2 text-sm md:col-span-2">
+                                                        <span className="font-medium text-slate-900">
+                                                          Problema en estudio
+                                                        </span>
+                                                        <Textarea
+                                                          onChange={(event) =>
+                                                            updateDiagnosticResultItem(
+                                                              itemIndex,
+                                                              'problemaEstudio',
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'problemaEstudio',
+                                                          )}
+                                                        />
+                                                      </label>
+                                                      <label className="space-y-2 text-sm md:col-span-2">
+                                                        <span className="font-medium text-slate-900">
+                                                          Resultado
+                                                        </span>
+                                                        <Textarea
+                                                          onChange={(event) =>
+                                                            updateDiagnosticResultItem(
+                                                              itemIndex,
+                                                              'resultado',
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'resultado',
+                                                          )}
+                                                        />
+                                                      </label>
+                                                      <label className="space-y-2 text-sm md:col-span-2">
+                                                        <span className="font-medium text-slate-900">
+                                                          Interpretación clínica
+                                                        </span>
+                                                        <Textarea
+                                                          onChange={(event) =>
+                                                            updateDiagnosticResultItem(
+                                                              itemIndex,
+                                                              'interpretacionClinica',
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'interpretacionClinica',
+                                                          )}
+                                                        />
+                                                      </label>
+                                                      <label className="space-y-2 text-sm md:col-span-2">
+                                                        <span className="font-medium text-slate-900">
+                                                          Incidentes
+                                                        </span>
+                                                        <Textarea
+                                                          onChange={(event) =>
+                                                            updateDiagnosticResultItem(
+                                                              itemIndex,
+                                                              'incidentes',
+                                                              event.target.value,
+                                                            )
+                                                          }
+                                                          value={readTextRecordValue(
+                                                            item,
+                                                            'incidentes',
+                                                          )}
+                                                        />
+                                                      </label>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              );
+                                            })
+                                          ) : (
+                                            <p className="text-xs text-muted-foreground">
+                                              Aún no hay resultados de estudios agregados
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
+
                                   const addObjectArrayItem = () => {
                                     const nextItem = isEmergencyEvolutionDiagnosisList
                                       ? normalizeEmergencyEvolutionDiagnosisItem({})

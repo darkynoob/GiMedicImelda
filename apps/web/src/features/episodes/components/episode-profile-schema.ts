@@ -644,6 +644,18 @@ const emergencyEvolutionDiagnosisTypeOptions: EpisodeFieldOption[] = [
   { value: 'DIFERENCIAL', label: 'Diferencial' },
 ];
 
+const emergencyEvolutionDiagnosticStudyTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ECG', label: 'ECG' },
+  { value: 'TROPONINA', label: 'Troponina' },
+  { value: 'BIOMETRIA_HEMATICA', label: 'Biometría hemática' },
+  { value: 'GASOMETRIA', label: 'Gasometría' },
+  { value: 'RX_TORAX', label: 'RX tórax' },
+  { value: 'TAC', label: 'TAC' },
+  { value: 'ULTRASONIDO', label: 'Ultrasonido' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
 const prescriptionMedicationTypeOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
   { value: 'FARMACOLOGICO', label: 'Farmacológico' },
@@ -2161,12 +2173,24 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'evolucion_urg_auxiliares',
-          title: 'Servicios auxiliares',
+          title: 'Servicios auxiliares de diagnóstico',
           fields: [
-            { key: 'auxEcgUrg', label: 'ECG', type: 'readonly' },
-            { key: 'auxLaboratoriosUrg', label: 'Laboratorios', type: 'readonly' },
-            { key: 'auxInterpretacionUrg', label: 'Interpretación', type: 'readonly' },
-            { key: 'auxIncidentesUrg', label: 'Incidentes', type: 'readonly' },
+            {
+              key: 'resultadosAuxiliaresDiagnosticoUrg',
+              label: 'Resultados de estudios',
+              type: 'object-array',
+              itemAddLabel: 'Agregar resultado de estudio',
+              itemRemoveLabel: 'Eliminar resultado',
+              itemFields: [
+                { key: 'tipoEstudio', label: 'Tipo de estudio', type: 'select', options: emergencyEvolutionDiagnosticStudyTypeOptions },
+                { key: 'otroEstudio', label: 'Estudio realizado', type: 'text' },
+                { key: 'problemaEstudio', label: 'Problema en estudio', type: 'textarea' },
+                { key: 'resultado', label: 'Resultado', type: 'textarea' },
+                { key: 'interpretacionClinica', label: 'Interpretación clínica', type: 'textarea' },
+                { key: 'incidentes', label: 'Incidentes', type: 'textarea' },
+                { key: 'fechaHoraEstudio', label: 'Fecha y hora del estudio', type: 'datetime-local' },
+              ],
+            },
           ],
         },
         {

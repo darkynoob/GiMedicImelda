@@ -235,6 +235,7 @@ model Tenant {
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
   emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
+  emergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[]
   emergencyOrderSets         EmergencyOrderSet[]
   emergencyOrderMedications  EmergencyOrderMedication[]
   emergencyOrderSolutions    EmergencyOrderIntravenousSolution[]
@@ -509,6 +510,8 @@ model User {
   resignedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteResigner")
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
   createdEmergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[] @relation("EmergencyEvolutionDiagnosisCreator")
+  createdEmergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[] @relation("EmergencyEvolutionDiagnosticResultCreator")
+  updatedEmergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[] @relation("EmergencyEvolutionDiagnosticResultUpdater")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
   signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
@@ -813,6 +816,7 @@ model Patient {
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions EmergencyEvolution[]
   emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
+  emergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
   emergencyDocuments EmergencyDocument[]
@@ -1260,6 +1264,7 @@ model Encounter {
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions  EmergencyEvolution[]
   emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
+  emergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
   emergencyDocuments   EmergencyDocument[]
@@ -2700,6 +2705,7 @@ model EmergencyEvolution {
   sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
   signer        User?                  @relation("EmergencyEvolutionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
   diagnoses     EmergencyEvolutionDiagnosis[]
+  diagnosticResults EmergencyEvolutionDiagnosticResult[]
 
   @@index([tenantId])
   @@index([encounterId])
@@ -2741,6 +2747,47 @@ model EmergencyEvolutionDiagnosis {
   @@index([diagnosisType])
   @@index([cie10Code])
   @@index([createdByUserId])
+  @@index([deletedAt])
+}
+
+model EmergencyEvolutionDiagnosticResult {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  emergencyEvolutionId String
+
+  studyType String?
+  otherStudyName String?
+  problemUnderStudy String?
+  resultText String?
+  clinicalInterpretation String?
+  incidents String?
+  studyPerformedAt DateTime?
+  displayOrder Int @default(0)
+  createdByUserId String?
+  updatedByUserId String?
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter          @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  evolution EmergencyEvolution @relation(fields: [emergencyEvolutionId], references: [id], onDelete: Cascade)
+  createdBy User?              @relation("EmergencyEvolutionDiagnosticResultCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?              @relation("EmergencyEvolutionDiagnosticResultUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([emergencyEvolutionId])
+  @@index([studyType])
+  @@index([studyPerformedAt])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
   @@index([deletedAt])
 }
 
