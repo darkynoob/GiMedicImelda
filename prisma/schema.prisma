@@ -234,6 +234,8 @@ model Tenant {
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   consultationHistoryPriorStudies ConsultationHistoryPriorStudy[]
   emergencyEvolutions        EmergencyEvolution[]
+  emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
+  emergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[]
   emergencyOrderSets         EmergencyOrderSet[]
   emergencyOrderMedications  EmergencyOrderMedication[]
   emergencyOrderSolutions    EmergencyOrderIntravenousSolution[]
@@ -507,6 +509,9 @@ model User {
   correctedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteCorrector")
   resignedEmergencyInitialNotes EmergencyInitialNoteCorrection[] @relation("EmergencyInitialNoteResigner")
   signedEmergencyEvolutions EmergencyEvolution[] @relation("EmergencyEvolutionSigner")
+  createdEmergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[] @relation("EmergencyEvolutionDiagnosisCreator")
+  createdEmergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[] @relation("EmergencyEvolutionDiagnosticResultCreator")
+  updatedEmergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[] @relation("EmergencyEvolutionDiagnosticResultUpdater")
   signedEmergencyOrderSets EmergencyOrderSet[] @relation("EmergencyOrderSetSigner")
   signedEmergencyDischarges EmergencyDischarge[] @relation("EmergencyDischargeSigner")
   signedEmergencyDocuments EmergencyDocument[] @relation("EmergencyDocumentSigner")
@@ -810,6 +815,8 @@ model Patient {
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions EmergencyEvolution[]
+  emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
+  emergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[]
   emergencyOrderSets EmergencyOrderSet[]
   emergencyDischarges EmergencyDischarge[]
   emergencyDocuments EmergencyDocument[]
@@ -1256,6 +1263,8 @@ model Encounter {
   emergencyInitialNoteCorrections EmergencyInitialNoteCorrection[]
   emergencyInitialNoteObjectives EmergencyInitialNoteObjective[]
   emergencyEvolutions  EmergencyEvolution[]
+  emergencyEvolutionDiagnoses EmergencyEvolutionDiagnosis[]
+  emergencyEvolutionDiagnosticResults EmergencyEvolutionDiagnosticResult[]
   emergencyOrderSets   EmergencyOrderSet[]
   emergencyDischarge   EmergencyDischarge?
   emergencyDocuments   EmergencyDocument[]
@@ -2695,6 +2704,8 @@ model EmergencyEvolution {
   patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
   sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
   signer        User?                  @relation("EmergencyEvolutionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  diagnoses     EmergencyEvolutionDiagnosis[]
+  diagnosticResults EmergencyEvolutionDiagnosticResult[]
 
   @@index([tenantId])
   @@index([encounterId])
@@ -2703,6 +2714,81 @@ model EmergencyEvolution {
   @@index([recordedAt])
   @@index([clinicalStatus])
   @@index([signerUserId])
+}
+
+model EmergencyEvolutionDiagnosis {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  emergencyEvolutionId String
+
+  diagnosisName String
+  cie10Code String?
+  diagnosisType String?
+  displayOrder Int @default(0)
+  createdByUserId String?
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter          @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  evolution EmergencyEvolution @relation(fields: [emergencyEvolutionId], references: [id], onDelete: Cascade)
+  createdBy User?              @relation("EmergencyEvolutionDiagnosisCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([emergencyEvolutionId])
+  @@index([diagnosisType])
+  @@index([cie10Code])
+  @@index([createdByUserId])
+  @@index([deletedAt])
+}
+
+model EmergencyEvolutionDiagnosticResult {
+  id String @id @default(uuid())
+
+  tenantId String
+  encounterId String
+  patientId String
+  emergencyEvolutionId String
+
+  studyType String?
+  otherStudyName String?
+  problemUnderStudy String?
+  resultText String?
+  clinicalInterpretation String?
+  incidents String?
+  studyPerformedAt DateTime?
+  displayOrder Int @default(0)
+  createdByUserId String?
+  updatedByUserId String?
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  encounter Encounter          @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  patient   Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  evolution EmergencyEvolution @relation(fields: [emergencyEvolutionId], references: [id], onDelete: Cascade)
+  createdBy User?              @relation("EmergencyEvolutionDiagnosticResultCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?              @relation("EmergencyEvolutionDiagnosticResultUpdater", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([encounterId])
+  @@index([patientId])
+  @@index([emergencyEvolutionId])
+  @@index([studyType])
+  @@index([studyPerformedAt])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+  @@index([deletedAt])
 }
 
 /// Conjunto versionado de órdenes operativas de Urgencias.
@@ -2721,7 +2807,10 @@ model EmergencyOrderSet {
   recordedAt DateTime
 
   recordType String @default("Órdenes e indicaciones")
+  documentType String @default("ORDEN_MEDICA")
   monitoringInstructions String?
+  specialCareInstructions String?
+  generalIndications String?
   oxygenType String?
   oxygenFlow String?
   oxygenTarget String?
@@ -2759,6 +2848,7 @@ model EmergencyOrderSet {
   @@index([encounterId])
   @@index([patientId])
   @@index([status])
+  @@index([documentType])
   @@index([recordedAt])
   @@index([signerUserId])
 }
@@ -2867,10 +2957,17 @@ model EmergencyOrderTransfusion {
   tenantId String
   orderSetId String
   bloodProductType String?
+  otherBloodProductType String?
+  units Int?
   volume Decimal? @db.Decimal(10, 2)
   startedAt DateTime?
   endedAt DateTime?
+  adverseReactionOccurred Boolean?
   adverseReactions String?
+  indicatedByName String?
+  applyingStaffName String?
+  applyingServiceName String?
+  observations String?
   responsibleName String?
   sortOrder Int @default(0)
 
@@ -2932,20 +3029,54 @@ model EmergencyDischarge {
 
   transferOriginUnit String?
   transferDestinationUnit String?
+  transferReferencedAt DateTime?
+  transferBp String?
+  transferHeartRate Int?
+  transferRespiratoryRate Int?
+  transferTemperature Decimal? @db.Decimal(5, 2)
+  transferOxygenSaturation Int?
   transferVitalSigns String?
   transferClinicalSummary String?
   transferDiagnosis String?
+  transferRelevantResults String?
   transferPreviousTreatment String?
+  transferPrognosis String?
+  transferReason String?
+  transferMedium String?
   transferConditions String?
   transferReceivingPhysician String?
 
+  consentInstitutionName String?
+  consentEstablishmentLegalName String?
+  consentDocumentTitle String?
+  consentPlaceDate String?
   consentProcedure String?
   consentRisks String?
   consentBenefits String?
   consentAuthorization String?
+  consentContingencyAuthorization String?
+  consentAuthorizerName String?
+  consentAuthorizerRelationship String?
+  consentWitness1 String?
+  consentWitness2 String?
+  consentResponsibleProfessionalName String?
+  consentResponsibleProfessionalLicense String?
   consentSignatures String?
 
+  publicMinistryEstablishmentName String?
+  publicMinistryPreparedAt DateTime?
+  publicMinistryNotifiedAct String?
+  publicMinistryAgency String?
   publicMinistryNotice String?
+  publicMinistryPhysicianName String?
+  publicMinistryPhysicianLicense String?
+
+  deathCertificateType String?
+  deathCertificatePreparedAt DateTime?
+  deathCertificateCopyIntegrated String?
+  deathCertificateProfessionalName String?
+  deathCertificateProfessionalLicense String?
+  deathCertificateRegisteredAt DateTime?
   deathCertificateData String?
 
   professionalName String
@@ -4973,6 +5104,7 @@ model EmergencyNursingSheet {
   observations String?
   professionalName String?
   professionalLicense String?
+  lastEditedByUserId String?
   signerUserId String?
   signedAt DateTime?
   contentJson Json?
@@ -4985,6 +5117,7 @@ model EmergencyNursingSheet {
   @@index([tenantId])
   @@index([encounterId])
   @@index([patientId])
+  @@index([lastEditedByUserId])
   @@index([signerUserId])
 }
 
