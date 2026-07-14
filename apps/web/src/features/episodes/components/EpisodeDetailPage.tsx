@@ -8009,12 +8009,68 @@ export function EpisodeDetailPage() {
   };
 
   const getInitials = (name?: string) =>
-                                      name
-                                        ?.split(' ')
-                                        .map(n => n[0])
-                                        .slice(0, 2)
-                                        .join('')
-                                        .toUpperCase()
+    name
+      ?.split(' ')
+      .map((part) => part[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  const isEmergencySummaryTab =
+    detail.encounterType === 'EMERGENCY' && activeTab === 'Resumen';
+  const emergencySummary = isEmergencySummaryTab ? detail.emergencySummary : null;
+  const formatEmergencySummaryValue = (label: string, value: string) => {
+    if (label.startsWith('Fecha')) {
+      return formatDateTime(value);
+    }
+
+    if (label === 'Estado') {
+      return encounterStatusConfig[value]?.label ?? value;
+    }
+
+    return value === value.toUpperCase() && value.includes('_')
+      ? value
+          .toLowerCase()
+          .replace(/_/g, ' ')
+          .replace(/^\w/, (letter) => letter.toUpperCase())
+      : value;
+  };
+  const openLinkedEmergencyNursingSheet = (recordId: string) => {
+    const nursingSheetRecord = detail.sectionRecords.find(
+      (record) => record.id === recordId && record.tabKey === 'Hoja de enfermería',
+    );
+    const nursingSheetTabDefinition = getEpisodeTabDefinition(
+      detail.encounterType,
+      'Hoja de enfermería',
+    );
+
+    if (!nursingSheetRecord || !nursingSheetTabDefinition) {
+      setFeedback('No se encontró la Hoja de enfermería vinculada.');
+      return;
+    }
+
+    setIsCreatingRecord(false);
+    setFeedback(null);
+    setActiveTab('Hoja de enfermería');
+    setActiveRecordId(nursingSheetRecord.id);
+    setRecordForm(
+      buildRecordFormState({
+        tabDefinition: nursingSheetTabDefinition,
+        noteType: nursingSheetRecord.noteType,
+        title: nursingSheetRecord.title,
+        status: nursingSheetRecord.status,
+        recordedAt: nursingSheetRecord.recordedAt.slice(0, 16),
+        rawFormData: nursingSheetRecord.formData,
+      }),
+    );
+  };
+  const currentTreatmentGroups: Array<[string, string[]]> = emergencySummary
+    ? [
+        ['Medicamentos', emergencySummary.clinicalSummary.currentTreatment.medications],
+        ['Soluciones IV', emergencySummary.clinicalSummary.currentTreatment.solutions],
+        ['Estudios', emergencySummary.clinicalSummary.currentTreatment.studies],
+        ['Cuidados e indicaciones', emergencySummary.clinicalSummary.currentTreatment.care],
+      ]
+    : [];
 
   return (
     <AppLayout>
@@ -8063,26 +8119,38 @@ export function EpisodeDetailPage() {
                     {detail.patient.sexAtBirth} ·{' '}
                     {detail.patient.ageLabel ?? 'Edad no disponible'}
                   </span>
-                  <span className="text-xs text-muted-foreground/70">
-                    {detail.patient.curp ?? 'Sin CURP'}
-                  </span>
+                  {!isEmergencySummaryTab || detail.patient.curp ? (
+                    <span className="text-xs text-muted-foreground/70">
+                      {detail.patient.curp ?? 'Sin CURP'}
+                    </span>
+                  ) : null}
                   <span className="text-xs text-muted-foreground/70">
                     Exp: {detail.medicalRecord.recordNumber}
                   </span>
                 </div>
 
                 <div className="mt-1 mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                  <span className="text-xs text-muted-foreground/70">
-                    {detail.facility?.name ?? 'Sin sede'}
-                  </span>
-                  <span className="text-xs text-muted-foreground/70">
-                    {detail.serviceArea?.name ??
-                      detail.specialty?.name ??
-                      'Sin area clinica'}
-                  </span>
-                  <span className="text-xs text-muted-foreground/70">
-                    {detail.attendingClinician?.fullName ?? 'Sin responsable'}
-                  </span>
+                  {!isEmergencySummaryTab || detail.facility?.name ? (
+                    <span className="text-xs text-muted-foreground/70">
+                      {detail.facility?.name ?? 'Sin sede'}
+                    </span>
+                  ) : null}
+                  {!isEmergencySummaryTab ? (
+                    <span className="text-xs text-muted-foreground/70">
+                      {detail.serviceArea?.name ??
+                        detail.specialty?.name ??
+                        'Sin area clinica'}
+                    </span>
+                  ) : detail.specialty?.name ? (
+                    <span className="text-xs text-muted-foreground/70">
+                      {detail.specialty.name}
+                    </span>
+                  ) : null}
+                  {!isEmergencySummaryTab || detail.attendingClinician?.fullName ? (
+                    <span className="text-xs text-muted-foreground/70">
+                      {detail.attendingClinician?.fullName ?? 'Sin responsable'}
+                    </span>
+                  ) : null}
                   <span className="text-xs text-muted-foreground/70">
                     {formatDateTime(detail.openedAt)}
                   </span>
@@ -8100,6 +8168,7 @@ export function EpisodeDetailPage() {
               </div>
             </div>
 
+            {!isEmergencySummaryTab ? (
             <div className="flex gap-2">
               <Button
                 className="gap-1.5"
@@ -8120,16 +8189,27 @@ export function EpisodeDetailPage() {
                 )}
               </Button>
             </div>
+            ) : null}
           </div>
 
           <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 md:grid-cols-4">
-            <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
-            <InfoRow
-              label="Origen"
-              value={admissionSourceLabels[detail.admissionSource ?? ''] ?? 'Sin origen'}
-            />
+            {isEmergencySummaryTab ? (
+              detail.reasonForVisit ? (
+                <InfoRow label="Motivo" value={detail.reasonForVisit} />
+              ) : null
+            ) : (
+              <>
+                <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
+                <InfoRow
+                  label="Origen"
+                  value={admissionSourceLabels[detail.admissionSource ?? ''] ?? 'Sin origen'}
+                />
+              </>
+            )}
             <InfoRow label="Actualizado" value={formatDateTime(detail.updatedAt)} />
-            <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
+            {detail.closedAt || !isEmergencySummaryTab ? (
+              <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
+            ) : null}
           </div>
         </div>
 
@@ -8152,9 +8232,345 @@ export function EpisodeDetailPage() {
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.55fr_0.95fr]">
+        <div
+          className={`grid gap-6 ${
+            isEmergencySummaryTab ? '' : 'xl:grid-cols-[1.55fr_0.95fr]'
+          }`}
+        >
           <div className="space-y-6">
             {activeTab === 'Resumen' ? (
+              isEmergencySummaryTab ? (
+                emergencySummary ? (
+                  <>
+                    <SectionCard
+                      description="Datos operativos mínimos del episodio."
+                      title="Datos base del episodio"
+                      icon={LayoutDashboard}
+                    >
+                      {emergencySummary.baseData.length > 0 ? (
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {emergencySummary.baseData.map((item) => (
+                            <div
+                              className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3"
+                              key={item.label}
+                            >
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                {item.label}
+                              </p>
+                              <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-900">
+                                {formatEmergencySummaryValue(item.label, item.value)}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Sin datos base disponibles
+                        </p>
+                      )}
+                    </SectionCard>
+
+                    <SectionCard
+                      description="Vista clínica consolidada de las fuentes documentales del episodio."
+                      title="Resumen clínico"
+                      icon={Stethoscope}
+                    >
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Motivo de consulta
+                          </p>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-900">
+                            {emergencySummary.clinicalSummary.chiefComplaint ??
+                              'Sin motivo de consulta documentado'}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Diagnóstico principal
+                          </p>
+                          {emergencySummary.clinicalSummary.primaryDiagnosis ? (
+                            <div className="mt-2 space-y-2">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {emergencySummary.clinicalSummary.primaryDiagnosis.label}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {emergencySummary.clinicalSummary.primaryDiagnosis.code ? (
+                                  <Badge variant="secondary">
+                                    CIE-10{' '}
+                                    {emergencySummary.clinicalSummary.primaryDiagnosis.code}
+                                  </Badge>
+                                ) : null}
+                                <Badge variant="draft">
+                                  {emergencySummary.clinicalSummary.primaryDiagnosis.source}
+                                </Badge>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Sin diagnóstico principal documentado
+                            </p>
+                          )}
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Destino actual
+                          </p>
+                          {emergencySummary.clinicalSummary.currentDestination ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-900">
+                                {formatEmergencySummaryValue(
+                                  'Destino',
+                                  emergencySummary.clinicalSummary.currentDestination.label,
+                                )}
+                              </span>
+                              <Badge variant="secondary">
+                                {emergencySummary.clinicalSummary.currentDestination.source}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Sin destino actual documentado
+                            </p>
+                          )}
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Última evolución registrada
+                          </p>
+                          {emergencySummary.clinicalSummary.latestEvolution ? (
+                            <div className="mt-2 space-y-1 text-sm text-slate-700">
+                              <p className="font-semibold text-slate-900">
+                                {formatDateTime(
+                                  emergencySummary.clinicalSummary.latestEvolution.recordedAt,
+                                )}
+                              </p>
+                              <p>
+                                {emergencySummary.clinicalSummary.latestEvolution.authorName ??
+                                  'Profesional no especificado'}
+                              </p>
+                              <Badge variant="secondary">
+                                {emergencySummary.clinicalSummary.latestEvolution.status}
+                              </Badge>
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Sin evoluciones registradas
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Problemas activos
+                          </p>
+                          {emergencySummary.clinicalSummary.activeProblems.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {emergencySummary.clinicalSummary.activeProblems.map((problem) => (
+                                <Badge key={problem} variant="secondary">
+                                  {problem}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Sin problemas activos documentados
+                            </p>
+                          )}
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Tratamiento actual
+                          </p>
+                          {currentTreatmentGroups.some(([, items]) => items.length > 0) ? (
+                            <div className="mt-3 space-y-3">
+                              {currentTreatmentGroups.map(([label, items]) =>
+                                items.length > 0 ? (
+                                  <div key={label}>
+                                    <p className="text-xs font-semibold text-slate-600">
+                                      {label}
+                                    </p>
+                                    <ul className="mt-1 space-y-1 text-sm leading-relaxed text-slate-800">
+                                      {items.map((item) => (
+                                        <li key={item}>{item}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ) : null,
+                              )}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              Sin tratamiento activo registrado
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </SectionCard>
+
+                    <SectionCard
+                      description="Último registro clínico disponible por fecha y hora clínica."
+                      title="Signos vitales"
+                      icon={HeartPulse}
+                    >
+                      {emergencySummary.vitalSigns ? (
+                        <>
+                          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <Badge variant="secondary">
+                              {emergencySummary.vitalSigns.source}
+                            </Badge>
+                            <span>{formatDateTime(emergencySummary.vitalSigns.recordedAt)}</span>
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {emergencySummary.vitalSigns.values.map((item) => (
+                              <div
+                                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
+                                key={item.label}
+                              >
+                                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                  {item.label}
+                                </p>
+                                <p className="mt-2 text-xl font-semibold text-slate-900">
+                                  {item.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Sin signos vitales registrados
+                        </p>
+                      )}
+                    </SectionCard>
+
+                    <SectionCard
+                      description="Alertas vigentes derivadas de datos clínicos existentes."
+                      title="Alertas clínicas activas"
+                      icon={ShieldAlert}
+                    >
+                      {emergencySummary.activeAlerts.length > 0 ? (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {emergencySummary.activeAlerts.map((alert) => (
+                            <div
+                              className={`rounded-2xl border px-4 py-3 ${
+                                alert.severity === 'CRITICAL'
+                                  ? 'border-red-200 bg-red-50 text-red-900'
+                                  : alert.severity === 'WARNING'
+                                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                    : 'border-slate-200 bg-slate-50 text-slate-800'
+                              }`}
+                              key={`${alert.source}-${alert.label}`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div>
+                                  <p className="text-sm font-semibold">{alert.label}</p>
+                                  <p className="mt-1 text-xs opacity-75">{alert.source}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Sin alertas clínicas activas
+                        </p>
+                      )}
+                    </SectionCard>
+
+                    <SectionCard
+                      description="Resumen read-only del último documento vinculado."
+                      title="Hoja de enfermería"
+                      icon={HeartPulse}
+                    >
+                      {emergencySummary.nursingSheet ? (
+                        <div className="space-y-4">
+                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            <InfoRow
+                              label="Última actualización"
+                              value={formatDateTime(emergencySummary.nursingSheet.recordedAt)}
+                            />
+                            <InfoRow
+                              label="Responsable"
+                              value={
+                                emergencySummary.nursingSheet.responsible ??
+                                'No especificado'
+                              }
+                            />
+                            <InfoRow
+                              label="Riesgo de caídas"
+                              value={
+                                emergencySummary.nursingSheet.fallRisk ??
+                                'No documentado'
+                              }
+                            />
+                            <InfoRow
+                              label="Dolor"
+                              value={
+                                emergencySummary.nursingSheet.painEva ??
+                                'No documentado'
+                              }
+                            />
+                          </div>
+                          {emergencySummary.nursingSheet.observations ? (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Observaciones relevantes
+                              </p>
+                              <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-900">
+                                {emergencySummary.nursingSheet.observations}
+                              </p>
+                            </div>
+                          ) : null}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant={
+                                emergencySummary.nursingSheet.signed
+                                  ? 'success'
+                                  : 'secondary'
+                              }
+                            >
+                              {emergencySummary.nursingSheet.signed
+                                ? 'Firmada'
+                                : emergencySummary.nursingSheet.status}
+                            </Badge>
+                            <Button
+                              className="gap-2"
+                              onClick={() =>
+                                openLinkedEmergencyNursingSheet(
+                                  emergencySummary.nursingSheet!.recordId,
+                                )
+                              }
+                              type="button"
+                              variant="outline"
+                            >
+                              <Eye className="h-4 w-4" />
+                              Ver hoja completa
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Sin hoja de enfermería vinculada
+                        </p>
+                      )}
+                    </SectionCard>
+                  </>
+                ) : (
+                  <SectionCard
+                    description="El resumen clínico se genera desde las fuentes documentales del episodio."
+                    title="Resumen clínico"
+                    icon={Stethoscope}
+                  >
+                    <p className="text-sm text-muted-foreground">
+                      Sin resumen clínico disponible
+                    </p>
+                  </SectionCard>
+                )
+              ) : (
               <>
                 <SectionCard
                   description="Consulta y edita la información principal del episodio clínico."
@@ -8442,6 +8858,7 @@ export function EpisodeDetailPage() {
                   )}
                 </SectionCard>
               </>
+              )
             ) : null}
 
             {activeTabDefinition ? (
@@ -11458,6 +11875,7 @@ export function EpisodeDetailPage() {
             ) : null}
           </div>
 
+          {!isEmergencySummaryTab ? (
           <div className="space-y-6">
             <SectionCard
               description="Resumen rápido e información clave para el seguimiento del episodio."
@@ -11605,6 +12023,7 @@ export function EpisodeDetailPage() {
               </div>
             </SectionCard>
           </div>
+          ) : null}
         </div>
 
         {isSigningRecord ? (

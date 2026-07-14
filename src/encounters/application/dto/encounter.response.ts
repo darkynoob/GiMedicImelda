@@ -86,6 +86,60 @@ export interface EncounterListItemResponse {
   diagnosisCount: number;
 }
 
+export interface EmergencySummaryResponse {
+  baseData: Array<{
+    label: string;
+    value: string;
+  }>;
+  clinicalSummary: {
+    chiefComplaint: string | null;
+    primaryDiagnosis: {
+      label: string;
+      code: string | null;
+      source: string;
+    } | null;
+    activeProblems: string[];
+    currentTreatment: {
+      medications: string[];
+      solutions: string[];
+      studies: string[];
+      care: string[];
+    };
+    currentDestination: {
+      label: string;
+      source: string;
+    } | null;
+    latestEvolution: {
+      recordedAt: string;
+      authorName: string | null;
+      status: string;
+    } | null;
+  };
+  vitalSigns: {
+    source: string;
+    recordedAt: string;
+    values: Array<{
+      label: string;
+      value: string;
+    }>;
+  } | null;
+  activeAlerts: Array<{
+    label: string;
+    severity: 'CRITICAL' | 'WARNING' | 'INFO';
+    source: string;
+  }>;
+  nursingSheet: {
+    recordId: string;
+    recordedAt: string;
+    responsible: string | null;
+    status: string;
+    fallRisk: string | null;
+    painEva: string | null;
+    observations: string | null;
+    signed: boolean;
+  } | null;
+}
+
 export interface EncounterDetailResponse {
   id: string;
   encounterNumber: string;
@@ -194,6 +248,7 @@ export interface EncounterDetailResponse {
     latestRecordTitle: string | null;
     latestRecordFormData: Record<string, unknown> | null;
   };
+  emergencySummary: EmergencySummaryResponse | null;
   sectionRecords: Array<{
     id: string;
     tabKey: string;
