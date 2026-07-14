@@ -5387,13 +5387,13 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
       },
       {
         key: 'documentoNombreProfesional',
-        label: 'Nombre del profesional',
+        label: 'Profesional responsable',
         type: 'readonly',
         inheritanceMode: 'system',
       },
       {
         key: 'documentoCedulaProfesional',
-        label: 'Cédula',
+        label: 'Cédula profesional',
         type: 'readonly',
         inheritanceMode: 'system',
       },

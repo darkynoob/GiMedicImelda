@@ -3346,7 +3346,7 @@ function buildDocumentLegalSnapshot(
 
   return {
     documentoPacienteNombre: detail.patient.fullName,
-    documentoPacienteCurp: detail.patient.curp ?? 'Sin dato disponible',
+    documentoPacienteCurp: detail.patient.curp ?? '',
     documentoExpediente: detail.medicalRecord.recordNumber,
     documentoFolioEpisodio: detail.encounterNumber,
     documentoTipoEpisodio:
@@ -3363,12 +3363,12 @@ function buildDocumentLegalSnapshot(
       detail.facility?.name ??
       sessionUser?.facility?.name ??
       sessionUser?.tenant.name ??
-      'Sin dato disponible',
-    documentoRfcMedico: detail.legalContext.tenantTaxId ?? 'Sin dato disponible',
+      '',
+    documentoRfcMedico: detail.legalContext.tenantTaxId ?? '',
     documentoLicenciaSanitaria:
       detail.legalContext.facilityLegalName ??
       facilityMeta?.code ??
-      'Sin dato disponible',
+      '',
     documentoCodigoVerificacion: 'Se generará al guardar',
     documentoHash: 'Se generará al guardar',
     documentoSelloDigital: 'Se generará al guardar',
@@ -3377,22 +3377,22 @@ function buildDocumentLegalSnapshot(
       clinicalFallback.professionalName ??
       responsibleClinician?.fullName ??
       sessionUser?.fullName ??
-      'Sin dato disponible',
+      '',
     documentoCedulaProfesional:
       detail.attendingClinician?.professionalLicense ??
       clinicalFallback.professionalLicense ??
       responsibleClinician?.professionalLicense ??
       sessionUser?.professionalLicense ??
-      'Sin dato disponible',
+      '',
     documentoEspecialidadProfesional:
       detail.specialty?.name ??
       clinicalFallback.specialty ??
-      'Sin dato disponible',
+      '',
     documentoLugarAtencion:
       [detail.facility?.name, detail.serviceArea?.name].filter(Boolean).join(' · ') ||
       clinicalFallback.place ||
       sessionUser?.facility?.name ||
-      'Sin dato disponible',
+      '',
   };
 }
 
@@ -9495,7 +9495,7 @@ export function EpisodeDetailPage() {
                                 </Badge>
                               </div>
                             </div>
-                          ) : (
+                          ) : isConsultationDocumentsSection ? null : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
                               <select
@@ -9549,6 +9549,17 @@ export function EpisodeDetailPage() {
                                 ))}
                               </select>
                             </label>
+                          ) : null}
+
+                          {isConsultationDocumentsSection ? (
+                            <div className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">
+                                Título / versión
+                              </span>
+                              <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
+                                {recordForm.title}
+                              </div>
+                            </div>
                           ) : null}
 
                           {isConsultationPrescriptionSection ||
@@ -9708,7 +9719,9 @@ export function EpisodeDetailPage() {
                           </div>
                         ) : null}
 
-                        {isConsultationDocumentsSection && currentDocumentLegalSnapshot ? (
+                        {isConsultationDocumentsSection &&
+                        detail.encounterType !== 'EMERGENCY' &&
+                        currentDocumentLegalSnapshot ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
                               <p className="text-sm font-semibold text-slate-900">
@@ -11332,7 +11345,7 @@ export function EpisodeDetailPage() {
                       </div>
                     ) : null}
 
-                    {activeTab === 'Documentos' ? (
+                    {activeTab === 'Documentos' && detail.encounterType !== 'EMERGENCY' ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>

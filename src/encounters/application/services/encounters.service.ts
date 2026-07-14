@@ -6775,7 +6775,6 @@ export class EncountersService {
       'Referencia / contrarreferencia',
       'Consentimiento informado',
       'Certificado / constancia',
-      'Egreso voluntario',
     ].includes(noteType);
   }
 
@@ -15002,22 +15001,22 @@ export class EncountersService {
         encounter.tenant.legalName ??
         encounter.tenant.name ??
         encounter.facility?.name ??
-        'Institución no configurada',
-      documentoRfcMedico: encounter.tenant.taxId ?? 'RFC no configurado',
+        '',
+      documentoRfcMedico: encounter.tenant.taxId ?? '',
       documentoLicenciaSanitaria:
         encounter.facility?.legalName ??
         encounter.facility?.code ??
-        'Licencia no configurada',
+        '',
       documentoNombreProfesional:
-        responsibleUser?.fullName ?? 'Sin profesional responsable',
+        responsibleUser?.fullName ?? '',
       documentoCedulaProfesional:
-        responsibleUser?.professionalLicense ?? 'Sin cédula',
+        responsibleUser?.professionalLicense ?? '',
       documentoEspecialidadProfesional:
-        encounter.specialty?.name ?? 'Sin especialidad',
+        encounter.specialty?.name ?? '',
       documentoLugarAtencion:
         [encounter.facility?.name, encounter.serviceArea?.name]
           .filter(Boolean)
-          .join(' · ') || 'Lugar no configurado',
+          .join(' · ') || '',
     };
   }
 
@@ -15635,7 +15634,10 @@ export class EncountersService {
     verificationCode: string;
     downloadCount: number;
   }) {
-    if (input.encounter.encounterType === EncounterType.OUTPATIENT) {
+    if (
+      input.encounter.encounterType === EncounterType.OUTPATIENT ||
+      input.encounter.encounterType === EncounterType.EMERGENCY
+    ) {
       return this.renderSimplePdf(
         this.buildConsultationDocumentPdfLines(input),
       );
