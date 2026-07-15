@@ -4432,6 +4432,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             { key: 'aldreteSpo2RecEval', label: 'SpO2', type: 'select', options: [{ value: '', label: 'Sin calcular' }, { value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' }] },
             { key: 'aldreteTotalRecEval', label: 'Aldrete total', type: 'readonly', inheritanceMode: 'system' },
             { key: 'aldreteInterpretacionRecEval', label: 'Interpretación Aldrete', type: 'readonly', inheritanceMode: 'system' },
+            {
+              key: 'criteriosAltaAmbulatoriaRecEvalSubtitle',
+              label: 'Criterios de alta ambulatoria',
+              type: 'subtitle',
+            },
             { key: 'altaToleraViaOralRecEval', label: 'Tolera vía oral sin náusea ni vómito', type: 'checkbox' },
             { key: 'altaDeambulacionIndependienteRecEval', label: 'Deambulación independiente', type: 'checkbox' },
             { key: 'altaMiccionEspontaneaRecEval', label: 'Micción espontánea', type: 'checkbox' },
