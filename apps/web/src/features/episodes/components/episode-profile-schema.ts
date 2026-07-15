@@ -128,6 +128,22 @@ const priorityOptions: EpisodeFieldOption[] = [
   { value: 'BAJA', label: 'Baja' },
 ];
 
+const hospitalShiftOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'MATUTINO', label: 'Matutino' },
+  { value: 'VESPERTINO', label: 'Vespertino' },
+  { value: 'NOCTURNO', label: 'Nocturno' },
+];
+
+const hospitalEvolutionClinicalStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'MEJORANDO', label: 'Mejorando' },
+  { value: 'SIN_CAMBIOS', label: 'Sin cambios' },
+  { value: 'EMPEORANDO', label: 'Empeorando' },
+  { value: 'CRITICO', label: 'Crítico' },
+  { value: 'ESTABLE', label: 'Estable' },
+];
+
 const triagePriorityOptions: EpisodeFieldOption[] = [
   { value: '', label: 'Selecciona una opción' },
   { value: '1', label: '1 - Reanimación' },
@@ -2782,12 +2798,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               { value: 'TERAPIA_INTENSIVA', label: 'Terapia intensiva' },
             ] },
             { key: 'medicoAdscritoHosp', label: 'Médico adscrito', type: 'text' },
-            { key: 'turnoIngresoHosp', label: 'Turno de ingreso', type: 'select', options: [
-              { value: '', label: 'Sin especificar' },
-              { value: 'MATUTINO', label: 'Matutino' },
-              { value: 'VESPERTINO', label: 'Vespertino' },
-              { value: 'NOCTURNO', label: 'Nocturno' },
-            ] },
+            { key: 'turnoIngresoHosp', label: 'Turno de ingreso', type: 'select', options: hospitalShiftOptions },
             { key: 'enfermeriaAsignadaHosp', label: 'Enfermería asignada', type: 'text' },
             { key: 'responsableAdmisionHosp', label: 'Responsable de admisión', type: 'text' },
             { key: 'episodioOrigenHosp', label: 'Episodio origen', type: 'readonly' },
@@ -2986,6 +2997,18 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Seguimiento clínico intrahospitalario.',
       icon: Activity,
       sections: [
+        {
+          key: 'datos_generales_evol_hosp',
+          title: 'Datos generales de evolución',
+          fields: [
+            { key: 'fechaHoraEvolucionHosp', label: 'Fecha y hora de evolución', type: 'datetime-local' },
+            { key: 'diaEstanciaHosp', label: 'Día de estancia hospitalaria', type: 'number' },
+            { key: 'turnoEvolHosp', label: 'Turno', type: 'select', options: hospitalShiftOptions },
+            { key: 'estadoClinicoEvolHosp', label: 'Estado clínico', type: 'select', options: hospitalEvolutionClinicalStatusOptions },
+            { key: 'especialidadGuardiaEvolHosp', label: 'Especialidad / guardia responsable', type: 'readonly' },
+            { key: 'referenciaEvolucionPreviaHosp', label: 'Referencia de evolución previa', type: 'readonly' },
+          ],
+        },
         {
           key: 'subjetivo_evol_hosp',
           title: 'Subjetivo',

@@ -73,6 +73,29 @@ const emergencyEvolutionDiagnosticStudyTypes = [
   'ULTRASONIDO',
   'OTRO',
 ] as const;
+const hospitalEvolutionClinicalStatusValues = [
+  'MEJORANDO',
+  'SIN_CAMBIOS',
+  'EMPEORANDO',
+  'CRITICO',
+  'ESTABLE',
+] as const;
+const hospitalShiftValues = ['MATUTINO', 'VESPERTINO', 'NOCTURNO'] as const;
+const hospitalEvolutionClinicalStatusLabels: Record<
+  (typeof hospitalEvolutionClinicalStatusValues)[number],
+  string
+> = {
+  MEJORANDO: 'Mejorando',
+  SIN_CAMBIOS: 'Sin cambios',
+  EMPEORANDO: 'Empeorando',
+  CRITICO: 'Crítico',
+  ESTABLE: 'Estable',
+};
+const hospitalShiftLabels: Record<(typeof hospitalShiftValues)[number], string> = {
+  MATUTINO: 'Matutino',
+  VESPERTINO: 'Vespertino',
+  NOCTURNO: 'Nocturno',
+};
 const triageClinicalDiscriminatorFields = [
   { key: 'discDolorToracico', label: 'Dolor torácico' },
   { key: 'discDisneaSevera', label: 'Disnea severa' },
@@ -5074,6 +5097,7 @@ export class EncountersService {
     encounter: TenantEncounterRecord;
     currentRecord:
       | {
+          id: string;
           title: string;
           noteType: string;
           status: EncounterRecordStatus;
@@ -5623,6 +5647,12 @@ export class EncountersService {
       );
       const latestHospitalEvolutionRecord =
         input.hospitalEvolutionVersionContext?.latestRecord ?? null;
+      const previousHospitalEvolutionRecord =
+        this.findPreviousHospitalEvolutionRecord(
+          input.encounter.sectionRecords,
+          input.recordedAt,
+          input.currentRecord?.id ?? null,
+        );
       const latestHospitalAdmissionRecord = this.findLatestSectionRecord(
         input.encounter.sectionRecords,
         'Ingreso',
@@ -5635,8 +5665,10 @@ export class EncountersService {
         encounter: input.encounter,
         incomingFormData: input.input.formData,
         admissionFormDataJson: latestHospitalAdmissionRecord?.formDataJson ?? null,
+        recordedAt: input.recordedAt,
+        previousEvolutionRecord: previousHospitalEvolutionRecord,
         previousEvolutionFormDataJson:
-          latestHospitalEvolutionRecord?.formDataJson ?? null,
+          previousHospitalEvolutionRecord?.formDataJson ?? null,
         responsibleUser: input.responsibleUser,
       });
 
@@ -5657,14 +5689,10 @@ export class EncountersService {
           recordType: 'Evolución hospitalaria',
           inheritedFromRecordId:
             currentRecordMetadata.inheritedFromRecordId ??
-            latestHospitalEvolutionRecord?.id ??
+            previousHospitalEvolutionRecord?.id ??
             latestHospitalAdmissionRecord?.id ??
             null,
-          previousEvolutionRecordId:
-            this.readStringValue(
-              this.normalizeRecordMetadata(input.currentRecord?.metadataJson)
-                ?.previousEvolutionRecordId,
-            ) || latestHospitalEvolutionRecord?.id || null,
+          previousEvolutionRecordId: previousHospitalEvolutionRecord?.id ?? null,
           pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
           pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
         },
@@ -7298,6 +7326,8 @@ export class EncountersService {
     encounter: TenantEncounterRecord;
     incomingFormData: Record<string, unknown>;
     admissionFormDataJson: Prisma.JsonValue | null;
+    recordedAt: Date;
+    previousEvolutionRecord: EncounterSectionRecord | null;
     previousEvolutionFormDataJson: Prisma.JsonValue | null;
     responsibleUser: {
       id: string;
@@ -7317,10 +7347,56 @@ export class EncountersService {
             estado: diagnosis.isPrimary ? 'ACTIVO' : 'ACTIVO',
             sourceDiagnosisId: diagnosis.id,
           }));
+    const admissionDate = this.readStringValueFromJson(
+      input.admissionFormDataJson,
+      'fechaIngresoHosp',
+    );
+    const admissionTime = this.readStringValueFromJson(
+      input.admissionFormDataJson,
+      'horaIngresoHosp',
+    );
+    const admittedAt =
+      admissionDate && admissionTime
+        ? this.parseOptionalDate(`${admissionDate}T${admissionTime}`)
+        : input.encounter.openedAt;
+    const suggestedStayDay = this.calculateHospitalStayDay(
+      admittedAt ?? input.encounter.openedAt,
+      input.recordedAt,
+    );
+    const capturedStayDay = this.readPositiveIntegerValue(
+      input.incomingFormData.diaEstanciaHosp,
+    );
+    const stayDay = capturedStayDay ?? suggestedStayDay;
+    const capturedClinicalStatus = this.readStringValue(
+      input.incomingFormData.estadoClinicoEvolHosp,
+    );
+    const clinicalStatus =
+      this.isHospitalEvolutionClinicalStatus(capturedClinicalStatus)
+        ? capturedClinicalStatus
+        : '';
+    const capturedShift = this.readStringValue(input.incomingFormData.turnoEvolHosp);
+    const shift = this.isHospitalShift(capturedShift)
+      ? capturedShift
+      : this.resolveHospitalShiftValue(input.recordedAt);
+    const responsibleSpecialty =
+      [input.encounter.specialty?.name, input.encounter.serviceArea?.name]
+        .filter(Boolean)
+        .join(' — ') || 'Sin especialidad / guardia responsable';
 
     return {
       ...input.incomingFormData,
       tipoRegistro: 'Evolución hospitalaria',
+      fechaHoraEvolucionHosp: input.recordedAt.toISOString().slice(0, 16),
+      diaEstanciaHosp: String(stayDay),
+      diaEstanciaHospSugerido: String(suggestedStayDay),
+      estadoClinicoEvolHosp: clinicalStatus,
+      turnoEvolHosp: shift,
+      especialidadGuardiaEvolHosp: responsibleSpecialty,
+      referenciaEvolucionPreviaHosp: this.formatHospitalEvolutionPreviousReference(
+        input.previousEvolutionRecord,
+      ),
+      fechaHoraEvolucionPreviaHosp:
+        input.previousEvolutionRecord?.recordedAt.toISOString() ?? '',
       diagnosticosActivosEvolHosp: activeDiagnoses,
       cambiosClinicosEvolHosp:
         this.readStringValue(input.incomingFormData.cambiosClinicosEvolHosp) ||
@@ -7357,6 +7433,87 @@ export class EncountersService {
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  private calculateHospitalStayDay(admittedAt: Date, evolutionAt: Date) {
+    const admissionDay = new Date(
+      admittedAt.getFullYear(),
+      admittedAt.getMonth(),
+      admittedAt.getDate(),
+    );
+    const evolutionDay = new Date(
+      evolutionAt.getFullYear(),
+      evolutionAt.getMonth(),
+      evolutionAt.getDate(),
+    );
+    const dayDifference = Math.floor(
+      (evolutionDay.getTime() - admissionDay.getTime()) / 86_400_000,
+    );
+
+    return Math.max(dayDifference + 1, 1);
+  }
+
+  private readPositiveIntegerValue(value: unknown) {
+    const numericValue = this.readNumericValue(value);
+
+    if (
+      numericValue === null ||
+      !Number.isInteger(numericValue) ||
+      numericValue < 1
+    ) {
+      return null;
+    }
+
+    return numericValue;
+  }
+
+  private resolveHospitalShiftValue(recordedAt: Date) {
+    const hour = recordedAt.getHours();
+
+    if (hour >= 6 && hour < 14) return 'MATUTINO';
+    if (hour >= 14 && hour < 22) return 'VESPERTINO';
+    return 'NOCTURNO';
+  }
+
+  private isHospitalShift(value: string): value is (typeof hospitalShiftValues)[number] {
+    return hospitalShiftValues.includes(
+      value as (typeof hospitalShiftValues)[number],
+    );
+  }
+
+  private isHospitalEvolutionClinicalStatus(
+    value: string,
+  ): value is (typeof hospitalEvolutionClinicalStatusValues)[number] {
+    return hospitalEvolutionClinicalStatusValues.includes(
+      value as (typeof hospitalEvolutionClinicalStatusValues)[number],
+    );
+  }
+
+  private formatHospitalShiftLabel(value: unknown) {
+    const shift = this.readStringValue(value);
+
+    return this.isHospitalShift(shift) ? hospitalShiftLabels[shift] : shift;
+  }
+
+  private formatHospitalEvolutionClinicalStatusLabel(value: unknown) {
+    const clinicalStatus = this.readStringValue(value);
+
+    return this.isHospitalEvolutionClinicalStatus(clinicalStatus)
+      ? hospitalEvolutionClinicalStatusLabels[clinicalStatus]
+      : clinicalStatus;
+  }
+
+  private formatHospitalEvolutionPreviousReference(
+    record: EncounterSectionRecord | null,
+  ) {
+    if (!record) {
+      return 'Sin evolución hospitalaria previa';
+    }
+
+    return `Evolución hospitalaria previa — ${record.recordedAt
+      .toISOString()
+      .slice(0, 16)
+      .replace('T', ' ')}`;
   }
 
   private buildHospitalMedicalOrdersFormData(input: {
@@ -11758,11 +11915,34 @@ export class EncountersService {
       input.metadata.previousEvolutionRecordId,
     );
     const hospitalEvolutionId = randomUUID();
+    const suggestedStayDay =
+      this.readPositiveIntegerValue(input.formData.diaEstanciaHospSugerido) ??
+      this.calculateHospitalStayDay(input.encounter.openedAt, input.recordedAt);
+    const stayDay =
+      this.readPositiveIntegerValue(input.formData.diaEstanciaHosp) ??
+      suggestedStayDay;
+    const stayDayManuallyAdjusted = stayDay !== suggestedStayDay;
+    const clinicalStatus = this.readStringValue(
+      input.formData.estadoClinicoEvolHosp,
+    );
+    const shift = this.readStringValue(input.formData.turnoEvolHosp);
+    const previousEvolutionRecordedAt = previousEvolutionRecordId
+      ? this.parseOptionalDate(input.formData.fechaHoraEvolucionPreviaHosp)
+      : null;
+    const previousEvolutionLabel = this.readStringValue(
+      input.formData.referenciaEvolucionPreviaHosp,
+    );
+    const responsibleSpecialtySnapshot = this.readStringValue(
+      input.formData.especialidadGuardiaEvolHosp,
+    );
 
     await this.prisma.$executeRaw`
       INSERT INTO "HospitalEvolution" (
         "id", "tenantId", "encounterId", "patientId", "sectionRecordId",
         "versionNumber", "title", "status", "recordedAt", "subjective",
+        "hospitalStayDay", "hospitalStayDayManuallyAdjusted", "clinicalStatus",
+        "shift", "previousEvolutionRecordedAt", "previousEvolutionLabel",
+        "responsibleSpecialtyId", "responsibleServiceAreaId", "responsibleSpecialtySnapshot",
         "systolicBp", "diastolicBp", "heartRate", "respiratoryRate", "temperature",
         "oxygenSaturation", "painEva", "capillaryGlucose", "physicalExam",
         "clinicalInterpretation", "clinicalChanges", "nom004Justification",
@@ -11776,6 +11956,9 @@ export class EncountersService {
       VALUES (
         ${hospitalEvolutionId}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
         ${versionNumber}, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.subjetivoEvolHosp)},
+        ${stayDay}, ${stayDayManuallyAdjusted}, ${this.isHospitalEvolutionClinicalStatus(clinicalStatus) ? clinicalStatus : null},
+        ${this.isHospitalShift(shift) ? shift : null}, ${previousEvolutionRecordedAt}, ${previousEvolutionLabel || null},
+        ${input.encounter.specialtyId}, ${input.encounter.serviceAreaId}, ${responsibleSpecialtySnapshot || null},
         ${this.readNumericValue(input.formData.taSistolicaEvolHosp)}, ${this.readNumericValue(input.formData.taDiastolicaEvolHosp)}, ${this.readNumericValue(input.formData.fcEvolHosp)}, ${this.readNumericValue(input.formData.frEvolHosp)}, ${this.readNumericValue(input.formData.temperaturaEvolHosp)},
         ${this.readNumericValue(input.formData.spo2EvolHosp)}, ${this.readNumericValue(input.formData.dolorEvaEvolHosp)}, ${this.readNumericValue(input.formData.glucosaCapilarEvolHosp)}, ${this.readStringValue(input.formData.exploracionFisicaEvolHosp)},
         ${this.readStringValue(input.formData.interpretacionClinicaEvolHosp)}, ${this.readStringValue(input.formData.cambiosClinicosEvolHosp)}, ${this.readStringValue(input.formData.justificacionNom004EvolHosp)},
@@ -11792,6 +11975,15 @@ export class EncountersService {
         "status" = EXCLUDED."status",
         "recordedAt" = EXCLUDED."recordedAt",
         "subjective" = EXCLUDED."subjective",
+        "hospitalStayDay" = EXCLUDED."hospitalStayDay",
+        "hospitalStayDayManuallyAdjusted" = EXCLUDED."hospitalStayDayManuallyAdjusted",
+        "clinicalStatus" = EXCLUDED."clinicalStatus",
+        "shift" = EXCLUDED."shift",
+        "previousEvolutionRecordedAt" = EXCLUDED."previousEvolutionRecordedAt",
+        "previousEvolutionLabel" = EXCLUDED."previousEvolutionLabel",
+        "responsibleSpecialtyId" = EXCLUDED."responsibleSpecialtyId",
+        "responsibleServiceAreaId" = EXCLUDED."responsibleServiceAreaId",
+        "responsibleSpecialtySnapshot" = EXCLUDED."responsibleSpecialtySnapshot",
         "systolicBp" = EXCLUDED."systolicBp",
         "diastolicBp" = EXCLUDED."diastolicBp",
         "heartRate" = EXCLUDED."heartRate",
@@ -14571,6 +14763,28 @@ export class EncountersService {
     return records.find((record) => record.tabKey === tabKey) ?? null;
   }
 
+  private findPreviousHospitalEvolutionRecord(
+    records: TenantEncounterRecord['sectionRecords'],
+    recordedAt: Date,
+    currentRecordId: string | null,
+  ) {
+    return [...records]
+      .filter(
+        (record) =>
+          record.tabKey === 'Evolución' &&
+          record.noteType === 'Evolución hospitalaria' &&
+          record.id !== currentRecordId &&
+          record.recordedAt.getTime() <= recordedAt.getTime(),
+      )
+      .sort((left, right) => {
+        if (left.recordedAt.getTime() !== right.recordedAt.getTime()) {
+          return right.recordedAt.getTime() - left.recordedAt.getTime();
+        }
+
+        return right.createdAt.getTime() - left.createdAt.getTime();
+      })[0] ?? null;
+  }
+
   private buildConsultationReferenceSnapshot(
     encounter: TenantEncounterRecord,
     historyFormData: Prisma.JsonValue | null,
@@ -17150,6 +17364,13 @@ export class EncountersService {
       `Episodio: ${input.encounter.encounterNumber}`,
       `Fecha: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
       `Código verificación: ${input.verificationCode}`,
+      'Datos generales de evolución',
+      `Fecha y hora de evolución: ${this.readStringValue(input.formData.fechaHoraEvolucionHosp) || input.recordedAt.toISOString().slice(0, 16)}`,
+      `Día de estancia hospitalaria: ${this.readStringValue(input.formData.diaEstanciaHosp)}`,
+      `Estado clínico: ${this.formatHospitalEvolutionClinicalStatusLabel(input.formData.estadoClinicoEvolHosp)}`,
+      `Turno: ${this.formatHospitalShiftLabel(input.formData.turnoEvolHosp)}`,
+      `Especialidad / guardia responsable: ${this.readStringValue(input.formData.especialidadGuardiaEvolHosp)}`,
+      `Referencia de evolución previa: ${this.readStringValue(input.formData.referenciaEvolucionPreviaHosp) || 'Sin evolución hospitalaria previa'}`,
       `Subjetivo: ${this.readStringValue(input.formData.subjetivoEvolHosp)}`,
       `TA/FC/FR/T/SpO2/EVA: ${this.readStringValue(input.formData.taSistolicaEvolHosp)}/${this.readStringValue(input.formData.taDiastolicaEvolHosp)} ${this.readStringValue(input.formData.fcEvolHosp)} ${this.readStringValue(input.formData.frEvolHosp)} ${this.readStringValue(input.formData.temperaturaEvolHosp)} ${this.readStringValue(input.formData.spo2EvolHosp)} ${this.readStringValue(input.formData.dolorEvaEvolHosp)}`,
       `Glucosa capilar: ${this.readStringValue(input.formData.glucosaCapilarEvolHosp)}`,
@@ -17787,6 +18008,9 @@ export class EncountersService {
       input.tabKey,
     )
       ? [
+          'diaEstanciaHosp',
+          'estadoClinicoEvolHosp',
+          'turnoEvolHosp',
           'subjetivoEvolHosp',
           'taSistolicaEvolHosp',
           'taDiastolicaEvolHosp',
@@ -19121,6 +19345,28 @@ export class EncountersService {
   }
 
   private assertHospitalEvolutionReadyForSignature(formData: Record<string, unknown>) {
+    if (!this.readPositiveIntegerValue(formData.diaEstanciaHosp)) {
+      throw new BadRequestException(
+        'El día de estancia hospitalaria debe ser un entero positivo',
+      );
+    }
+
+    if (
+      !this.isHospitalEvolutionClinicalStatus(
+        this.readStringValue(formData.estadoClinicoEvolHosp),
+      )
+    ) {
+      throw new BadRequestException(
+        'Selecciona un estado clínico válido para la evolución hospitalaria',
+      );
+    }
+
+    if (!this.isHospitalShift(this.readStringValue(formData.turnoEvolHosp))) {
+      throw new BadRequestException(
+        'Selecciona un turno válido para la evolución hospitalaria',
+      );
+    }
+
     const resultsMissingDate = this
       .readObjectArray(formData.resultadosEstudiosEvolHosp)
       .some((result) => {

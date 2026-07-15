@@ -1607,6 +1607,63 @@ function getLatestRecordByTab(
     })[0] ?? null;
 }
 
+function getLatestRecordByTabExcluding(
+  records: EncounterDetailResponse['sectionRecords'],
+  tabKey: string,
+  excludedRecordId: string | null,
+) {
+  return getLatestRecordByTab(
+    excludedRecordId
+      ? records.filter((record) => record.id !== excludedRecordId)
+      : records,
+    tabKey,
+  );
+}
+
+function resolveHospitalShiftValue(dateTimeValue: string) {
+  const date = dateTimeValue ? new Date(dateTimeValue) : new Date();
+  const hour = Number.isNaN(date.getTime()) ? new Date().getHours() : date.getHours();
+
+  if (hour >= 6 && hour < 14) return 'MATUTINO';
+  if (hour >= 14 && hour < 22) return 'VESPERTINO';
+  return 'NOCTURNO';
+}
+
+function formatHospitalEvolutionPreviousReference(
+  record: EncounterDetailResponse['sectionRecords'][number] | null,
+) {
+  if (!record) {
+    return 'Sin evolución hospitalaria previa';
+  }
+
+  return `Evolución hospitalaria previa — ${formatDateTime(record.recordedAt)}`;
+}
+
+function calculateHospitalStayDay(admittedAtValue: string, evolutionAtValue: string) {
+  const admittedAt = new Date(admittedAtValue);
+  const evolutionAt = new Date(evolutionAtValue);
+
+  if (Number.isNaN(admittedAt.getTime()) || Number.isNaN(evolutionAt.getTime())) {
+    return '';
+  }
+
+  const admissionDay = new Date(
+    admittedAt.getFullYear(),
+    admittedAt.getMonth(),
+    admittedAt.getDate(),
+  );
+  const evolutionDay = new Date(
+    evolutionAt.getFullYear(),
+    evolutionAt.getMonth(),
+    evolutionAt.getDate(),
+  );
+  const dayDifference = Math.floor(
+    (evolutionDay.getTime() - admissionDay.getTime()) / 86_400_000,
+  );
+
+  return String(Math.max(dayDifference + 1, 1));
+}
+
 function buildEmergencyInitialNoteSnapshot(args: {
   detail: EncounterDetailResponse;
   triageRecord: EncounterDetailResponse['sectionRecords'][number] | null;
@@ -2521,6 +2578,7 @@ function buildHospitalEvolutionSnapshot(args: {
   detail: EncounterDetailResponse;
   admissionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
   previousEvolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  recordedAt: string;
   currentFormData?: Record<string, RecordFieldValue>;
 }) {
   const current = args.currentFormData ?? {};
@@ -2568,9 +2626,32 @@ function buildHospitalEvolutionSnapshot(args: {
     estado: 'ACTIVO',
     sourceDiagnosisId: diagnosis.id,
   }));
+  const admissionDate = read(admission.fechaIngresoHosp);
+  const admissionTime = read(admission.horaIngresoHosp);
+  const admittedAt =
+    admissionDate && admissionTime
+      ? `${admissionDate}T${admissionTime}`
+      : args.detail.openedAt.slice(0, 16);
+  const responsibleSpecialty =
+    [args.detail.specialty?.name, args.detail.serviceArea?.name]
+      .filter(Boolean)
+      .join(' — ') || 'Sin especialidad / guardia responsable';
+  const stayDaySuggestion = calculateHospitalStayDay(admittedAt, args.recordedAt);
+  const hasManualStayDay = current.diaEstanciaHospManual === 'SI';
 
   return {
     tipoRegistro: 'Evolución hospitalaria',
+    fechaHoraEvolucionHosp: args.recordedAt,
+    diaEstanciaHosp: hasManualStayDay
+      ? keep('diaEstanciaHosp', stayDaySuggestion)
+      : stayDaySuggestion,
+    diaEstanciaHospManual: hasManualStayDay ? 'SI' : 'NO',
+    estadoClinicoEvolHosp: keep('estadoClinicoEvolHosp', ''),
+    turnoEvolHosp: keep('turnoEvolHosp', resolveHospitalShiftValue(args.recordedAt)),
+    especialidadGuardiaEvolHosp: responsibleSpecialty,
+    referenciaEvolucionPreviaHosp: formatHospitalEvolutionPreviousReference(
+      args.previousEvolutionRecord,
+    ),
     diagnosticosActivosEvolHosp: keep(
       'diagnosticosActivosEvolHosp',
       previousDiagnoses.length > 0
@@ -4499,6 +4580,34 @@ function normalizeRecordFormData(
     }
   }
 
+  for (const [fieldKey, rawFieldValue] of Object.entries(rawFormData ?? {})) {
+    if (fieldKey in normalizedFormData) {
+      continue;
+    }
+
+    if (
+      typeof rawFieldValue === 'string' ||
+      typeof rawFieldValue === 'number' ||
+      typeof rawFieldValue === 'boolean' ||
+      rawFieldValue === null
+    ) {
+      normalizedFormData[fieldKey] = rawFieldValue;
+      continue;
+    }
+
+    if (Array.isArray(rawFieldValue)) {
+      if (rawFieldValue.every((item) => typeof item === 'string')) {
+        normalizedFormData[fieldKey] = rawFieldValue as string[];
+        continue;
+      }
+
+      normalizedFormData[fieldKey] = rawFieldValue.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      );
+    }
+  }
+
   return normalizedFormData;
 }
 
@@ -5783,12 +5892,27 @@ export function EpisodeDetailPage() {
     ? getLatestRecordByTab(activeTabRecords, 'Ingreso')
     : getLatestRecordByTab(detail.sectionRecords, 'Ingreso');
   const latestHospitalEvolutionRecord = isHospitalEvolutionSection
-    ? getLatestRecordByTab(activeTabRecords, 'Evolución')
+    ? getLatestRecordByTabExcluding(activeTabRecords, 'Evolución', activeRecordId)
     : getLatestRecordByTab(detail.sectionRecords, 'Evolución');
   const selectedRecord =
     activeRecordId === null
       ? null
       : activeTabRecords.find((record) => record.id === activeRecordId) ?? null;
+  const resolveHospitalEvolutionStayDay = (
+    recordedAt: string,
+    formData: Record<string, RecordFieldValue>,
+  ) => {
+    const admissionFormData = latestHospitalAdmissionRecord?.formData ?? {};
+    const read = (value: unknown) => (typeof value === 'string' ? value : '');
+    const admissionDate = read(admissionFormData.fechaIngresoHosp);
+    const admissionTime = read(admissionFormData.horaIngresoHosp);
+    const admittedAt =
+      admissionDate && admissionTime
+        ? `${admissionDate}T${admissionTime}`
+        : detail.openedAt.slice(0, 16);
+
+    return calculateHospitalStayDay(admittedAt, recordedAt) || read(formData.diaEstanciaHosp);
+  };
   const selectedDocumentNoteType =
     selectedRecord?.noteType ??
     recordForm?.noteType ??
@@ -6549,6 +6673,7 @@ export function EpisodeDetailPage() {
               detail,
               admissionRecord: latestHospitalAdmissionRecord,
               previousEvolutionRecord: latestHospitalEvolutionRecord,
+              recordedAt: nextRecordedAt,
             }),
           },
         }),
@@ -6906,6 +7031,7 @@ export function EpisodeDetailPage() {
                                                 left.recordedAt,
                                               ),
                                             )[0] ?? null,
+                                        recordedAt: record.recordedAt.slice(0, 16),
                                         currentFormData:
                                           record.formData as Record<
                                             string,
@@ -7243,10 +7369,37 @@ export function EpisodeDetailPage() {
   ) => {
     setRecordForm((currentValue) =>
       currentValue
-        ? {
-            ...currentValue,
-            [field]: value,
-          }
+        ? (() => {
+            if (field === 'recordedAt' && isHospitalEvolutionSection) {
+              const recordedAt = value as string;
+
+              return {
+                ...currentValue,
+                recordedAt,
+                formData: {
+                  ...currentValue.formData,
+                  fechaHoraEvolucionHosp: recordedAt,
+                  diaEstanciaHosp:
+                    currentValue.formData.diaEstanciaHospManual === 'SI'
+                      ? currentValue.formData.diaEstanciaHosp
+                      : resolveHospitalEvolutionStayDay(
+                          recordedAt,
+                          currentValue.formData,
+                        ),
+                  turnoEvolHosp:
+                    typeof currentValue.formData.turnoEvolHosp === 'string' &&
+                    currentValue.formData.turnoEvolHosp.trim().length > 0
+                      ? currentValue.formData.turnoEvolHosp
+                      : resolveHospitalShiftValue(recordedAt),
+                },
+              };
+            }
+
+            return {
+              ...currentValue,
+              [field]: value,
+            };
+          })()
         : currentValue,
     );
   };
@@ -7309,10 +7462,37 @@ export function EpisodeDetailPage() {
     setRecordForm((currentValue) =>
       currentValue
         ? (() => {
+            if (
+              isHospitalEvolutionSection &&
+              fieldKey === 'fechaHoraEvolucionHosp' &&
+              typeof value === 'string'
+            ) {
+              return {
+                ...currentValue,
+                recordedAt: value,
+                formData: {
+                  ...currentValue.formData,
+                  fechaHoraEvolucionHosp: value,
+                  diaEstanciaHosp:
+                    currentValue.formData.diaEstanciaHospManual === 'SI'
+                      ? currentValue.formData.diaEstanciaHosp
+                      : resolveHospitalEvolutionStayDay(value, currentValue.formData),
+                  turnoEvolHosp:
+                    typeof currentValue.formData.turnoEvolHosp === 'string' &&
+                    currentValue.formData.turnoEvolHosp.trim().length > 0
+                      ? currentValue.formData.turnoEvolHosp
+                      : resolveHospitalShiftValue(value),
+                },
+              };
+            }
+
             const nextFormData = {
               ...currentValue.formData,
               [fieldKey]: value,
             };
+            if (isHospitalEvolutionSection && fieldKey === 'diaEstanciaHosp') {
+              nextFormData.diaEstanciaHospManual = 'SI';
+            }
             if (
               isEmergencyTriageSection &&
               fieldKey === 'discOtro' &&
@@ -7702,6 +7882,7 @@ export function EpisodeDetailPage() {
                                       admissionRecord: latestHospitalAdmissionRecord,
                                       previousEvolutionRecord:
                                         latestHospitalEvolutionRecord,
+                                      recordedAt: recordForm.recordedAt,
                                       currentFormData: recordForm.formData,
                                     }),
                                   }
@@ -10799,6 +10980,38 @@ export function EpisodeDetailPage() {
                                 }
 
                                 const fieldValue = recordForm.formData[field.key];
+                                const isHospitalEvolutionGeneralDataSection =
+                                  isHospitalEvolutionSection &&
+                                  section.key === 'datos_generales_evol_hosp';
+
+                                if (
+                                  isRecordLocked &&
+                                  isHospitalEvolutionGeneralDataSection &&
+                                  field.type !== 'readonly' &&
+                                  field.type !== 'action'
+                                ) {
+                                  const readonlyValue =
+                                    field.type === 'select'
+                                      ? field.options?.find(
+                                          (option) => option.value === fieldValue,
+                                        )?.label ?? ''
+                                      : field.type === 'datetime-local' &&
+                                          typeof fieldValue === 'string' &&
+                                          fieldValue
+                                        ? formatDateTime(fieldValue)
+                                        : typeof fieldValue === 'string' ||
+                                            typeof fieldValue === 'number'
+                                          ? String(fieldValue)
+                                          : '';
+
+                                  return (
+                                    <ReadOnlyField
+                                      key={field.key}
+                                      label={field.label}
+                                      value={readonlyValue}
+                                    />
+                                  );
+                                }
 
                                 if (field.type === 'action') {
                                   return (
@@ -11683,13 +11896,17 @@ export function EpisodeDetailPage() {
                                     </span>
                                     <Input
                                       disabled={isRecordLocked}
-                                      onChange={(event) =>
-                                        updateRecordFormDataField(
-                                          field.key,
-                                          event.target.value,
-                                        )
-                                      }
+                                      min={field.key === 'diaEstanciaHosp' ? '1' : undefined}
+                                      onChange={(event) => {
+                                        const nextValue =
+                                          field.key === 'diaEstanciaHosp'
+                                            ? event.target.value.replace(/\D/g, '')
+                                            : event.target.value;
+
+                                        updateRecordFormDataField(field.key, nextValue);
+                                      }}
                                       placeholder={field.placeholder}
+                                      step={field.key === 'diaEstanciaHosp' ? '1' : undefined}
                                       type={field.type === 'date' ? 'date' : field.type}
                                       value={typeof fieldValue === 'string' ? fieldValue : ''}
                                     />
