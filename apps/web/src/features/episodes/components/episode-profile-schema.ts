@@ -4148,6 +4148,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             { key: 'suspensionMedicamentosPreproc', label: 'Suspensión de medicamentos', type: 'text' },
             { key: 'atbProfilacticoPreproc', label: 'ATB profiláctico', type: 'text' },
             { key: 'preparacionEspecialPreproc', label: 'Preparación especial', type: 'text' },
+            {
+              key: 'checklistSeguridadQuirurgicaOmsPreprocSubtitle',
+              label: 'Checklist de seguridad quirúrgica (OMS)',
+              type: 'subtitle',
+            },
             { key: 'omsPacienteIdentificadoPreproc', label: 'Paciente identificado', type: 'checkbox' },
             { key: 'omsProcedimientoConfirmadoPreproc', label: 'Procedimiento confirmado', type: 'checkbox' },
             { key: 'omsSitioQuirurgicoMarcadoPreproc', label: 'Sitio quirúrgico marcado', type: 'checkbox' },
