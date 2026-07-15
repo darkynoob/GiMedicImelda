@@ -75,6 +75,7 @@ import {
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  isPresentationField,
   triageClinicalDiscriminatorFields,
   triageOtherClinicalDiscriminatorFieldKey,
   type EpisodeFieldDefinition,
@@ -5157,6 +5158,10 @@ function normalizeRecordFormData(
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
+      if (isPresentationField(field)) {
+        continue;
+      }
+
       const rawFieldValue = rawFormData?.[field.key];
 
       if (field.type === 'checkbox') {
@@ -5266,6 +5271,10 @@ function buildConsultationVersionPrefill(args: {
 
   for (const section of args.tabDefinition.sections) {
     for (const field of section.fields) {
+      if (isPresentationField(field)) {
+        continue;
+      }
+
       const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
 
       if (field.key === 'tipoConsultaActual') {
@@ -12093,6 +12102,19 @@ export function EpisodeDetailPage() {
                                   recordForm.formData.ingresoPorReferencia !== 'SI'
                                 ) {
                                   return null;
+                                }
+
+                                if (field.type === 'subtitle') {
+                                  return (
+                                    <div
+                                      className="pt-2 text-sm md:col-span-2"
+                                      key={field.key}
+                                    >
+                                      <span className="font-medium text-slate-900">
+                                        {field.label}
+                                      </span>
+                                    </div>
+                                  );
                                 }
 
                                 const fieldValue = recordForm.formData[field.key];

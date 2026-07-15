@@ -35,7 +35,8 @@ export type EpisodeFieldDefinition = {
     | 'string-array'
     | 'object-array'
     | 'readonly'
-    | 'action';
+    | 'action'
+    | 'subtitle';
   placeholder?: string;
   options?: EpisodeFieldOption[];
   inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
@@ -50,6 +51,10 @@ export type EpisodeFieldDefinition = {
     values: string[];
   };
 };
+
+export function isPresentationField(field: EpisodeFieldDefinition) {
+  return field.type === 'subtitle';
+}
 
 export type EpisodeSectionDefinition = {
   key: string;
@@ -4002,6 +4007,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             },
             { key: 'sintomasActualesPreproc', label: 'Síntomas actuales', type: 'textarea' },
             { key: 'evolucionPadecimientoPreproc', label: 'Evolución del padecimiento', type: 'textarea' },
+            {
+              key: 'antecedentesRelevantesPreprocSubtitle',
+              label: 'Antecedentes relevantes para el procedimiento',
+              type: 'subtitle',
+            },
             { key: 'antDiabetesPreproc', label: 'Diabetes', type: 'checkbox' },
             { key: 'antHipertensionPreproc', label: 'Hipertensión', type: 'checkbox' },
             { key: 'antCardiopatiaPreproc', label: 'Cardiopatía', type: 'checkbox' },
@@ -4771,6 +4781,10 @@ export function buildInitialStructuredSections(encounterType: string) {
 
     for (const section of tab.sections) {
       for (const field of section.fields) {
+        if (isPresentationField(field)) {
+          continue;
+        }
+
         sections[tab.title][field.key] = buildDefaultFieldValue(field);
       }
     }
@@ -4820,6 +4834,10 @@ export function buildHistoryVersionPrefill(
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
+      if (isPresentationField(field)) {
+        continue;
+      }
+
       const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
 
       if (inheritanceMode === 'carry_forward') {
