@@ -7046,15 +7046,15 @@ export class EncountersService {
         input.encounter.facility?.legalName ??
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
-      documentoRfcMedico: input.encounter.tenant.taxId ?? 'Sin dato disponible',
+      documentoRfcMedico: input.encounter.tenant.taxId ?? '',
       documentoLicenciaSanitaria:
-        input.encounter.facility?.legalName ?? 'Sin dato disponible',
+        input.encounter.facility?.legalName ?? '',
       documentoNombreProfesional:
-        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
+        input.responsibleUser?.fullName ?? '',
       documentoCedulaProfesional:
-        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+        input.responsibleUser?.professionalLicense ?? '',
       documentoEspecialidadProfesional:
-        input.encounter.specialty?.name ?? 'Sin especialidad',
+        input.encounter.specialty?.name ?? '',
       documentoLugarAtencion: careLocation,
     };
   }
@@ -7340,12 +7340,6 @@ export class EncountersService {
       return {
         documentoDatosPacienteDefuncion:
           this.readStringValueFromJson(input.latestDischarge, 'resumenNarrativoEgresoHosp') ||
-          '',
-        documentoMedicoCertificante:
-          this.readStringValueFromJson(input.latestDischarge, 'medicoResponsableEgresoHosp') ||
-          '',
-        documentoCedulaCertificante:
-          this.readStringValueFromJson(input.latestDischarge, 'cedulaResponsableEgresoHosp') ||
           '',
       };
     }
@@ -11660,12 +11654,7 @@ export class EncountersService {
       {
         signerType: 'PACIENTE',
         signerName: input.formData.documentoNombrePacienteConsentimiento,
-        signatureLabel: input.formData.documentoFirmaPacienteConsentimiento,
-      },
-      {
-        signerType: 'MEDICO',
-        signerName: input.formData.documentoNombreProfesional,
-        signatureLabel: input.formData.documentoFirmaMedicoConsentimiento,
+        signatureLabel: null,
       },
       ...this.readObjectArray(input.formData.documentoTestigosConsentimiento).map(
         (signer) => ({
@@ -16747,6 +16736,10 @@ export class EncountersService {
       );
     }
 
+    if (input.encounter.encounterType === EncounterType.HOSPITALIZATION) {
+      return this.renderSimplePdf(this.buildHospitalDocumentPdfLines(input));
+    }
+
     const diagnosisLines = this.readDiagnosesArrayFromUnknown(
       input.formData.documentoDiagnosticos,
     ).map((item, index) =>
@@ -16831,7 +16824,7 @@ export class EncountersService {
         `Riesgos de no tratamiento: ${this.readStringValue(input.formData.documentoRiesgosNoTratamiento) || this.readStringValue(input.formData.documentoPronosticoSinTratamiento)}`,
         `Paciente / tutor: ${this.readStringValue(input.formData.documentoNombrePacienteConsentimiento) || this.readStringValue(input.formData.documentoNombreTutor)}`,
         `Relación: ${this.readStringValue(input.formData.documentoRelacionTutor)}`,
-        `Firma paciente: ${this.readStringValue(input.formData.documentoFirmaPacienteConsentimiento) || this.readStringValue(input.formData.documentoFirmaPaciente)}`,
+        `Firma paciente: ${this.readStringValue(input.formData.documentoFirmaPaciente)}`,
         'Testigos:',
         ...(consentWitnessLines.length > 0 ? consentWitnessLines : ['Sin testigos capturados']),
       ],
@@ -16871,8 +16864,6 @@ export class EncountersService {
         `Comorbilidades: ${this.readStringValue(input.formData.documentoComorbilidadesDefuncion)}`,
         `Tipo de muerte: ${this.readStringValue(input.formData.documentoTipoMuerte)}`,
         `Aviso institucional: ${this.readStringValue(input.formData.documentoAvisoInstitucionalDefuncion)}`,
-        `Médico certificante: ${this.readStringValue(input.formData.documentoMedicoCertificante)}`,
-        `Cédula certificante: ${this.readStringValue(input.formData.documentoCedulaCertificante)}`,
       ],
       'Certificado / constancia': [
         `Tipo: ${this.readStringValue(input.formData.documentoTipoCertificado)}`,
@@ -16901,6 +16892,186 @@ export class EncountersService {
     ];
 
     return this.renderSimplePdf(lines);
+  }
+
+  private buildHospitalDocumentPdfLines(input: {
+    encounter: TenantEncounterRecord;
+    noteType: string;
+    recordTitle: string;
+    recordedAt: Date;
+    formData: Record<string, unknown>;
+    verificationCode: string;
+    downloadCount: number;
+  }) {
+    const value = (rawValue: unknown) =>
+      this.readPrintableDocumentValue(rawValue);
+    const line = (label: string, rawValue: unknown) =>
+      this.buildPrintableDocumentLine(label, rawValue);
+    const lines = (...rawLines: Array<string | null>) =>
+      rawLines.filter((item): item is string => Boolean(item));
+    const section = (title: string, rawLines: string[]) =>
+      rawLines.length ? [title, ...rawLines] : [];
+    const objectListLines = (
+      rawValue: unknown,
+      fields: Array<[string, string]>,
+    ) =>
+      this.readObjectArray(rawValue)
+        .map((item, index) => {
+          const parts = fields
+            .map(([label, key]) => line(label, item[key]))
+            .filter((itemLine): itemLine is string => Boolean(itemLine))
+            .map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''));
+
+          return parts.length ? `${index + 1}. ${parts.join(' · ')}` : null;
+        })
+        .filter((item): item is string => Boolean(item));
+
+    const documentDate =
+      value(input.formData.documentoFecha) ||
+      input.recordedAt.toISOString().slice(0, 10);
+    const documentTime =
+      value(input.formData.documentoHora) ||
+      input.recordedAt.toISOString().slice(11, 16);
+    const verificationCode =
+      value(input.verificationCode) ||
+      value(input.formData.documentoCodigoVerificacion);
+    const professionalName = value(input.formData.documentoNombreProfesional);
+    const professionalLicense = value(input.formData.documentoCedulaProfesional);
+    const professionalSpecialty = value(
+      input.formData.documentoEspecialidadProfesional,
+    );
+    const issuer = value(input.formData.documentoInstitucionEmisora);
+    const careLocation = value(input.formData.documentoLugarAtencion);
+    const headerLines = issuer
+      ? lines(
+          line('Nombre institucional', issuer),
+          line('RFC', input.formData.documentoRfcMedico),
+          line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
+          line('Lugar de atención', careLocation),
+        )
+      : lines(
+          line('Nombre del médico', professionalName),
+          line('Especialidad', professionalSpecialty),
+          line('Cédula profesional', professionalLicense),
+        );
+    const labStudyLines = objectListLines(input.formData.documentoEstudiosLaboratorio, [
+      ['Estudio', 'tipoEstudio'],
+      ['Prioridad', 'prioridad'],
+      ['Indicación clínica', 'indicacionClinica'],
+    ]);
+    const consentWitnessLines = objectListLines(
+      input.formData.documentoTestigosConsentimiento,
+      [['Testigo', 'nombre']],
+    );
+    const clinicalLinesByDocument: Record<string, string[]> = {
+      'Solicitud de laboratorio': lines(
+        line('Servicio', input.formData.documentoServicioSolicitud),
+        ...(labStudyLines.length ? ['Estudios solicitados:', ...labStudyLines] : []),
+        line('Diagnóstico relacionado', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Observaciones', input.formData.documentoObservaciones),
+      ),
+      'Solicitud de imagenología': lines(
+        line('Servicio', input.formData.documentoServicioSolicitud),
+        line('Estudio solicitado', input.formData.documentoEstudioImagen),
+        line('Tipo', input.formData.documentoTipoImagen),
+        line('Región anatómica', input.formData.documentoRegionAnatomica),
+        line('Proyección', input.formData.documentoProyeccion),
+        line('Prioridad', input.formData.documentoPrioridadImagen),
+        line('Indicación clínica', input.formData.documentoIndicacionClinicaImagen),
+        line('Diagnóstico', input.formData.documentoDiagnosticoPrincipal),
+        line('CIE-10', input.formData.documentoDiagnosticoCie10),
+        line('Alergia a contraste', input.formData.documentoAlergiaContraste),
+        line('Embarazo', input.formData.documentoEmbarazo),
+        line('Función renal', input.formData.documentoFuncionRenal),
+      ),
+      'Consentimiento informado': lines(
+        line('Nombre del procedimiento', input.formData.documentoProcedimientoNombre),
+        line('Descripción', input.formData.documentoProcedimientoDescripcion),
+        line('Riesgos generales', input.formData.documentoRiesgosGenerales),
+        line('Riesgos específicos', input.formData.documentoRiesgosEspecificos),
+        line('Beneficios', input.formData.documentoBeneficios),
+        line('Alternativas', input.formData.documentoAlternativas),
+        line('Riesgos de no tratamiento', input.formData.documentoRiesgosNoTratamiento),
+        line('Nombre del paciente', input.formData.documentoNombrePacienteConsentimiento),
+        ...(consentWitnessLines.length ? ['Testigos:', ...consentWitnessLines] : []),
+      ),
+      'Resumen clínico': lines(
+        line('Motivo de atención', input.formData.documentoMotivoAtencion),
+        line('Diagnósticos iniciales', input.formData.documentoDiagnosticosIniciales),
+        line('Diagnósticos finales', input.formData.documentoDiagnosticosFinales),
+        line('Evolución', input.formData.documentoEvolucion),
+        line('Estudios relevantes', input.formData.documentoEstudiosRelevantes),
+        line('Tratamientos', input.formData.documentoTratamientos),
+        line('Estado actual', input.formData.documentoEstadoActual),
+        line('Plan', input.formData.documentoPlan),
+      ),
+      'Referencia / traslado': lines(
+        line('Unidad origen', input.formData.documentoUnidadOrigen),
+        line('Unidad receptora', input.formData.documentoUnidadReceptora),
+        line('Hospital destino', input.formData.documentoHospitalDestino),
+        line('Servicio', input.formData.documentoServicioDestino),
+        line('Motivo de traslado', input.formData.documentoMotivoTraslado),
+        line('Resumen clínico breve', input.formData.documentoResumenClinicoBreve),
+        line('Signos vitales', input.formData.documentoSignosVitalesTraslado),
+        line('Estabilidad', input.formData.documentoEstabilidadPaciente),
+        line('Manejo previo', input.formData.documentoManejoPrevio),
+        line('Tratamiento durante traslado', input.formData.documentoTratamientoTraslado),
+        line('Ambulancia', input.formData.documentoAmbulanciaTraslado),
+        line('Tipo de ambulancia', input.formData.documentoTipoAmbulancia),
+      ),
+      Defunción: lines(
+        line('Datos del paciente', input.formData.documentoDatosPacienteDefuncion),
+        line('Fecha de muerte', input.formData.documentoFechaMuerte),
+        line('Hora de muerte', input.formData.documentoHoraMuerte),
+        line('Lugar', input.formData.documentoLugarMuerte),
+        line('Causa inmediata', input.formData.documentoCausaInmediata),
+        line('Causa intermedia', input.formData.documentoCausaIntermedia),
+        line('Causa básica', input.formData.documentoCausaBasica),
+        line('Otros estados', input.formData.documentoOtrosEstadosDefuncion),
+        line('Comorbilidades', input.formData.documentoComorbilidadesDefuncion),
+        line('Tipo de muerte', input.formData.documentoTipoMuerte),
+        line('Aviso institucional', input.formData.documentoAvisoInstitucionalDefuncion),
+      ),
+    };
+    const legalLines = lines(
+      line('Tipo de documento', input.noteType),
+      line('Fecha', documentDate),
+      line('Hora', documentTime),
+      line('Folio del documento', input.formData.documentoFolio),
+      line('Versión', input.formData.documentoVersion),
+      line('Estado', input.formData.documentoEstado),
+      line('Institución emisora', issuer),
+      line('RFC', input.formData.documentoRfcMedico),
+      line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
+      line('Código de verificación', verificationCode),
+      line('Profesional responsable', professionalName),
+      line('Cédula profesional', professionalLicense),
+      line('Especialidad', professionalSpecialty),
+      line('Lugar de atención', careLocation),
+      line('Firma electrónica', professionalName),
+    );
+    const footerLines = lines(
+      line('Nombre del médico', professionalName),
+      line('Cédula profesional', professionalLicense),
+      line('Fecha', documentDate),
+      line('Firma electrónica', professionalName),
+      line('Código de verificación', verificationCode),
+    );
+
+    return lines(
+      input.recordTitle,
+      ...section('Encabezado PDF', headerLines),
+      line('Tipo de documento', input.noteType),
+      line('Estado', input.formData.documentoEstado),
+      line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+      line('Título / versión', input.recordTitle),
+      line('Paciente', input.encounter.patient.fullName),
+      line('Expediente', input.formData.documentoExpediente),
+      ...section('Contenido clínico', clinicalLinesByDocument[input.noteType] ?? []),
+      ...section('Datos legales y firma', legalLines),
+      ...section('Pie del PDF', footerLines),
+    );
   }
 
   private buildConsultationDocumentPdfLines(input: {
@@ -17096,9 +17267,15 @@ export class EncountersService {
 
     if (
       !printableValue ||
-      ['N/A', 'Sin dato disponible', 'Sin cédula', 'Sin especialidad'].includes(
-        printableValue,
-      ) ||
+      [
+        'N/A',
+        'Sin dato disponible',
+        'Sin profesional responsable',
+        'Sin cédula',
+        'Sin especialidad',
+        'RFC no configurado',
+        'Licencia no configurada',
+      ].includes(printableValue) ||
       printableValue.startsWith('Se generará')
     ) {
       return '';
@@ -19346,8 +19523,6 @@ export class EncountersService {
         'documentoCausaInmediata',
         'documentoCausaBasica',
         'documentoTipoMuerte',
-        'documentoMedicoCertificante',
-        'documentoCedulaCertificante',
       ];
     }
 

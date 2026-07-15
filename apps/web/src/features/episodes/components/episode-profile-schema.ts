@@ -5330,8 +5330,6 @@ const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinitio
         { key: 'documentoAlternativas', label: 'Alternativas', type: 'textarea' },
         { key: 'documentoRiesgosNoTratamiento', label: 'Riesgos de no tratamiento', type: 'textarea' },
         { key: 'documentoNombrePacienteConsentimiento', label: 'Nombre del paciente', type: 'text' },
-        { key: 'documentoFirmaPacienteConsentimiento', label: 'Firma paciente', type: 'text' },
-        { key: 'documentoFirmaMedicoConsentimiento', label: 'Firma médico', type: 'text' },
         {
           key: 'documentoTestigosConsentimiento',
           label: 'Testigos',
@@ -5339,7 +5337,6 @@ const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinitio
           itemAddLabel: 'Agregar testigo',
           itemFields: [
             { key: 'nombre', label: 'Nombre', type: 'text' },
-            { key: 'firma', label: 'Firma', type: 'text' },
           ],
         },
       ],
@@ -5405,8 +5402,6 @@ const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinitio
           { value: 'VIOLENTA', label: 'Violenta' },
         ] },
         { key: 'documentoAvisoInstitucionalDefuncion', label: 'Aviso institucional', type: 'text' },
-        { key: 'documentoMedicoCertificante', label: 'Médico certificante', type: 'text' },
-        { key: 'documentoCedulaCertificante', label: 'Cédula', type: 'text' },
       ],
     },
   ],
@@ -5503,7 +5498,7 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
       },
       {
         key: 'firmarDocumentoClinico',
-        label: 'Firma',
+        label: 'Firma electrónica',
         type: 'action',
         actionLabel: 'Firmar documento',
         inheritanceMode: 'system',

@@ -3955,12 +3955,6 @@ function buildHospitalDocumentSuggestionSnapshot(
   if (noteType === 'Defunción') {
     return {
       documentoDatosPacienteDefuncion: `${detail.patient.fullName} · Exp. ${detail.medicalRecord.recordNumber}`,
-      documentoMedicoCertificante:
-        (latestDischarge?.formData.medicoResponsableEgresoHosp as string | undefined) ??
-        '',
-      documentoCedulaCertificante:
-        (latestDischarge?.formData.cedulaResponsableEgresoHosp as string | undefined) ??
-        '',
     };
   }
 
@@ -4379,6 +4373,22 @@ function ReadOnlyField({
         {value || 'Sin dato disponible'}
       </div>
     </div>
+  );
+}
+
+function hasPrintableDocumentValue(value: string) {
+  const normalizedValue = value.trim();
+
+  return (
+    normalizedValue.length > 0 &&
+    ![
+      'N/A',
+      'Sin dato disponible',
+      'Sin profesional responsable',
+      'Sin cédula',
+      'Sin especialidad',
+    ].includes(normalizedValue) &&
+    !normalizedValue.startsWith('Se generará')
   );
 }
 
@@ -10456,6 +10466,7 @@ export function EpisodeDetailPage() {
 
                         {isConsultationDocumentsSection &&
                         detail.encounterType !== 'EMERGENCY' &&
+                        detail.encounterType !== 'HOSPITALIZATION' &&
                         currentDocumentLegalSnapshot ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
@@ -11062,6 +11073,14 @@ export function EpisodeDetailPage() {
                                         : typeof recordForm.formData[field.key] === 'string'
                                           ? (recordForm.formData[field.key] as string)
                                           : '';
+
+                                    if (
+                                      isConsultationDocumentsSection &&
+                                      detail.encounterType === 'HOSPITALIZATION' &&
+                                      !hasPrintableDocumentValue(readonlyValue)
+                                    ) {
+                                      return null;
+                                    }
 
                                     return (
                                       <ReadOnlyField
@@ -12130,7 +12149,9 @@ export function EpisodeDetailPage() {
                       </div>
                     ) : null}
 
-                    {activeTab === 'Documentos' && detail.encounterType !== 'EMERGENCY' ? (
+                    {activeTab === 'Documentos' &&
+                    detail.encounterType !== 'EMERGENCY' &&
+                    detail.encounterType !== 'HOSPITALIZATION' ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
