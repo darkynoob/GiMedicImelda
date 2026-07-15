@@ -96,6 +96,98 @@ const hospitalShiftLabels: Record<(typeof hospitalShiftValues)[number], string> 
   VESPERTINO: 'Vespertino',
   NOCTURNO: 'Nocturno',
 };
+const hospitalDischargeTypeValues = [
+  'ALTA_MEDICA',
+  'ALTA_VOLUNTARIA',
+  'TRASLADO',
+  'REFERENCIA',
+  'DEFUNCION',
+  'FUGA_ABANDONO',
+] as const;
+const hospitalDischargeTypeLabels: Record<
+  (typeof hospitalDischargeTypeValues)[number],
+  string
+> = {
+  ALTA_MEDICA: 'Alta médica',
+  ALTA_VOLUNTARIA: 'Alta voluntaria',
+  TRASLADO: 'Traslado',
+  REFERENCIA: 'Referencia',
+  DEFUNCION: 'Defunción',
+  FUGA_ABANDONO: 'Fuga / abandono',
+};
+const hospitalTransportMethodValues = [
+  'AMBULANCIA_BASICA',
+  'AMBULANCIA_AVANZADA',
+  'TRANSPORTE_INSTITUCIONAL',
+  'TRANSPORTE_PARTICULAR',
+  'OTRO',
+] as const;
+const hospitalConformitySignerValues = [
+  'PACIENTE',
+  'FAMILIAR',
+  'TUTOR_LEGAL',
+] as const;
+const hospitalConformityConfirmationValues = ['FIRMADA', 'NO_FIRMA'] as const;
+const hospitalDischargeConditionalFieldKeys = [
+  'motivoAltaVoluntariaEgresoHosp',
+  'riesgosExplicadosAltaVoluntariaEgresoHosp',
+  'profesionalResponsableAltaVoluntariaEgresoHosp',
+  'firmanteConformidadNombreEgresoHosp',
+  'firmanteConformidadCalidadEgresoHosp',
+  'firmanteConformidadRelacionEgresoHosp',
+  'fechaHoraConformidadEgresoHosp',
+  'confirmacionConformidadEgresoHosp',
+  'unidadReceptoraEgresoHosp',
+  'medicoReceptorEgresoHosp',
+  'cedulaMedicoReceptorEgresoHosp',
+  'servicioReceptorEgresoHosp',
+  'medioTrasladoEgresoHosp',
+  'horaDefuncionEgresoHosp',
+  'causaDefuncionEgresoHosp',
+  'certificadoDefuncionRelacionadoEgresoHosp',
+  'horaUltimoContactoEgresoHosp',
+  'circunstanciasAbandonoEgresoHosp',
+  'profesionalDocumentaAbandonoEgresoHosp',
+  'fechaHoraDocumentacionAbandonoEgresoHosp',
+] as const;
+const hospitalDischargeConditionalFieldKeysByType: Record<string, string[]> = {
+  ALTA_MEDICA: [],
+  ALTA_VOLUNTARIA: [
+    'motivoAltaVoluntariaEgresoHosp',
+    'riesgosExplicadosAltaVoluntariaEgresoHosp',
+    'profesionalResponsableAltaVoluntariaEgresoHosp',
+    'firmanteConformidadNombreEgresoHosp',
+    'firmanteConformidadCalidadEgresoHosp',
+    'firmanteConformidadRelacionEgresoHosp',
+    'fechaHoraConformidadEgresoHosp',
+    'confirmacionConformidadEgresoHosp',
+  ],
+  TRASLADO: [
+    'unidadReceptoraEgresoHosp',
+    'medicoReceptorEgresoHosp',
+    'cedulaMedicoReceptorEgresoHosp',
+    'servicioReceptorEgresoHosp',
+    'medioTrasladoEgresoHosp',
+  ],
+  REFERENCIA: [
+    'unidadReceptoraEgresoHosp',
+    'medicoReceptorEgresoHosp',
+    'cedulaMedicoReceptorEgresoHosp',
+    'servicioReceptorEgresoHosp',
+    'medioTrasladoEgresoHosp',
+  ],
+  DEFUNCION: [
+    'horaDefuncionEgresoHosp',
+    'causaDefuncionEgresoHosp',
+    'certificadoDefuncionRelacionadoEgresoHosp',
+  ],
+  FUGA_ABANDONO: [
+    'horaUltimoContactoEgresoHosp',
+    'circunstanciasAbandonoEgresoHosp',
+    'profesionalDocumentaAbandonoEgresoHosp',
+    'fechaHoraDocumentacionAbandonoEgresoHosp',
+  ],
+};
 const triageClinicalDiscriminatorFields = [
   { key: 'discDolorToracico', label: 'Dolor torácico' },
   { key: 'discDisneaSevera', label: 'Disnea severa' },
@@ -7261,6 +7353,60 @@ export class EncountersService {
     return {};
   }
 
+  private isHospitalDischargeType(
+    value: string,
+  ): value is (typeof hospitalDischargeTypeValues)[number] {
+    return hospitalDischargeTypeValues.includes(
+      value as (typeof hospitalDischargeTypeValues)[number],
+    );
+  }
+
+  private isHospitalTransportMethod(
+    value: string,
+  ): value is (typeof hospitalTransportMethodValues)[number] {
+    return hospitalTransportMethodValues.includes(
+      value as (typeof hospitalTransportMethodValues)[number],
+    );
+  }
+
+  private isHospitalConformitySigner(
+    value: string,
+  ): value is (typeof hospitalConformitySignerValues)[number] {
+    return hospitalConformitySignerValues.includes(
+      value as (typeof hospitalConformitySignerValues)[number],
+    );
+  }
+
+  private isHospitalConformityConfirmation(
+    value: string,
+  ): value is (typeof hospitalConformityConfirmationValues)[number] {
+    return hospitalConformityConfirmationValues.includes(
+      value as (typeof hospitalConformityConfirmationValues)[number],
+    );
+  }
+
+  private cleanHospitalDischargeConditionalFields(
+    formData: Record<string, unknown>,
+    dischargeType: string,
+  ) {
+    const compatibleKeys =
+      hospitalDischargeConditionalFieldKeysByType[dischargeType] ?? [];
+
+    for (const fieldKey of hospitalDischargeConditionalFieldKeys) {
+      if (!compatibleKeys.includes(fieldKey)) {
+        formData[fieldKey] = '';
+      }
+    }
+  }
+
+  private formatHospitalDischargeTypeLabel(value: unknown) {
+    const dischargeType = this.readStringValue(value);
+
+    return this.isHospitalDischargeType(dischargeType)
+      ? hospitalDischargeTypeLabels[dischargeType]
+      : dischargeType;
+  }
+
   private buildHospitalAdmissionFormData(input: {
     encounter: TenantEncounterRecord;
     incomingFormData: Record<string, unknown>;
@@ -8438,22 +8584,38 @@ export class EncountersService {
             ),
           )
         : null;
+    const incomingDischargeType = this.readStringValue(
+      input.incomingFormData.tipoEgresoHosp,
+    );
+    const dischargeType = this.isHospitalDischargeType(incomingDischargeType)
+      ? incomingDischargeType
+      : '';
+    const responsibleProfessional =
+      input.responsibleUser?.fullName ?? 'Sin profesional responsable';
+    const responsibleLicense = input.responsibleUser?.professionalLicense ?? 'Sin cédula';
     const baseFormData: Record<string, unknown> = {
       ...input.incomingFormData,
       tipoRegistro: 'Egreso',
+      tipoEgresoHosp: dischargeType,
       fechaHoraEgresoHosp: dischargeAt,
       fechaIngresoReadonlyHosp: admittedAtValue,
       diasEstanciaHosp: stayDays === null ? '' : String(stayDays),
       alertaCierreEgresoHosp:
         'Al firmar esta nota de egreso, el episodio se cerrará y el expediente quedará en modo solo lectura.',
-      medicoResponsableEgresoHosp:
-        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
-      cedulaResponsableEgresoHosp:
-        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
-      medicoLegalEgresoHosp:
-        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
-      cedulaLegalEgresoHosp:
-        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      profesionalResponsableAltaVoluntariaEgresoHosp:
+        dischargeType === 'ALTA_VOLUNTARIA' ? responsibleProfessional : '',
+      profesionalDocumentaAbandonoEgresoHosp:
+        dischargeType === 'FUGA_ABANDONO' ? responsibleProfessional : '',
+      fechaHoraDocumentacionAbandonoEgresoHosp:
+        dischargeType === 'FUGA_ABANDONO'
+          ? this.readStringValue(
+              input.incomingFormData.fechaHoraDocumentacionAbandonoEgresoHosp,
+            ) || input.recordedAt.toISOString().slice(0, 16)
+          : '',
+      medicoResponsableEgresoHosp: responsibleProfessional,
+      cedulaResponsableEgresoHosp: responsibleLicense,
+      medicoLegalEgresoHosp: responsibleProfessional,
+      cedulaLegalEgresoHosp: responsibleLicense,
       especialidadLegalEgresoHosp:
         input.encounter.specialty?.name ?? 'Sin especialidad',
       lugarAtencionEgresoHosp:
@@ -8461,6 +8623,7 @@ export class EncountersService {
           .filter(Boolean)
           .join(' · ') || 'Lugar no configurado',
     };
+    this.cleanHospitalDischargeConditionalFields(baseFormData, dischargeType);
     delete baseFormData.exploracionFisicaNota;
     delete baseFormData.consentimientoInicial;
 
@@ -12762,6 +12925,27 @@ export class EncountersService {
     const stayDays = this.readRoundedNumericValue(input.formData.diasEstanciaHosp);
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
+    const dischargeType = this.readStringValue(input.formData.tipoEgresoHosp);
+    const conformitySignerCapacity = this.readStringValue(
+      input.formData.firmanteConformidadCalidadEgresoHosp,
+    );
+    const transportMethod = this.readStringValue(
+      input.formData.medioTrasladoEgresoHosp,
+    );
+    const deathCertificateCandidateId = this.readStringValue(
+      input.formData.certificadoDefuncionRelacionadoEgresoHosp,
+    );
+    const deathCertificate = deathCertificateCandidateId
+      ? await this.prisma.clinicalDocument.findFirst({
+          where: {
+            id: deathCertificateCandidateId,
+            tenantId: input.tenantId,
+            encounterId: input.encounter.id,
+          },
+          select: { id: true },
+        })
+      : null;
+    const deathCertificateId = deathCertificate?.id ?? null;
 
     await this.prisma.$executeRaw`
       INSERT INTO "HospitalDischarge" (
@@ -12769,6 +12953,12 @@ export class EncountersService {
         "versionNumber", "title", "status", "recordedAt", "dischargeType",
         "patientDestination", "receivingUnit", "dischargedAt", "admittedAt",
         "stayDays", "dischargeCondition", "admissionReason", "admissionDiagnosis",
+        "voluntaryDischargeReason", "explainedRisks", "voluntaryResponsibleProfessionalName",
+        "conformitySignerName", "conformitySignerRelationship", "conformitySignerCapacity",
+        "conformitySignedAt", "conformitySignatureReference", "receivingPhysicianName",
+        "receivingPhysicianLicense", "receivingService", "transportMethod",
+        "deathOccurredAt", "causeOfDeath", "deathCertificateId", "lastContactAt",
+        "abandonmentCircumstances", "abandonmentDocumentedByName", "abandonmentDocumentedAt",
         "finalDiagnosis", "cie10", "performedProcedures", "managementPerformed",
         "stayEvolution", "pendingClinicalProblems", "additionalNarrativeSummary",
         "dischargeMedications", "linkedPrescriptionId", "prescriptionGenerated",
@@ -12783,9 +12973,15 @@ export class EncountersService {
       )
       VALUES (
         ${randomUUID()}, ${input.tenantId}, ${input.encounter.id}, ${input.encounter.patientId}, ${input.sectionRecordId},
-        1, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.readStringValue(input.formData.tipoEgresoHosp)},
+        1, ${input.title}, ${input.status}, ${input.recordedAt}, ${this.isHospitalDischargeType(dischargeType) ? dischargeType : ''},
         ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}, ${this.readStringValue(input.formData.unidadReceptoraEgresoHosp)}, ${dischargedAt}, ${admittedAt},
         ${stayDays}, ${this.readStringValue(input.formData.estadoAlEgresoHosp)}, ${this.readStringValue(input.formData.motivoIngresoEgresoHosp)}, ${this.readStringValue(input.formData.diagnosticoIngresoEgresoHosp)},
+        ${this.readStringValue(input.formData.motivoAltaVoluntariaEgresoHosp)}, ${this.readStringValue(input.formData.riesgosExplicadosAltaVoluntariaEgresoHosp)}, ${this.readStringValue(input.formData.profesionalResponsableAltaVoluntariaEgresoHosp)},
+        ${this.readStringValue(input.formData.firmanteConformidadNombreEgresoHosp)}, ${this.readStringValue(input.formData.firmanteConformidadRelacionEgresoHosp)}, ${this.isHospitalConformitySigner(conformitySignerCapacity) ? conformitySignerCapacity : null},
+        ${this.parseOptionalDate(input.formData.fechaHoraConformidadEgresoHosp)}, ${this.readStringValue(input.formData.confirmacionConformidadEgresoHosp)}, ${this.readStringValue(input.formData.medicoReceptorEgresoHosp)},
+        ${this.readStringValue(input.formData.cedulaMedicoReceptorEgresoHosp)}, ${this.readStringValue(input.formData.servicioReceptorEgresoHosp)}, ${this.isHospitalTransportMethod(transportMethod) ? transportMethod : null},
+        ${this.parseOptionalDate(input.formData.horaDefuncionEgresoHosp)}, ${this.readStringValue(input.formData.causaDefuncionEgresoHosp)}, ${deathCertificateId || null}, ${this.parseOptionalDate(input.formData.horaUltimoContactoEgresoHosp)},
+        ${this.readStringValue(input.formData.circunstanciasAbandonoEgresoHosp)}, ${this.readStringValue(input.formData.profesionalDocumentaAbandonoEgresoHosp)}, ${this.parseOptionalDate(input.formData.fechaHoraDocumentacionAbandonoEgresoHosp)},
         ${this.readStringValue(input.formData.diagnosticoFinalEgresoHosp)}, ${this.readStringValue(input.formData.cie10EgresoHosp)}, ${this.readStringValue(input.formData.procedimientosRealizadosEstanciaHosp)}, ${this.readStringValue(input.formData.manejoRealizadoEgresoHosp)},
         ${this.readStringValue(input.formData.evolucionEstanciaEgresoHosp)}, ${this.readStringValue(input.formData.problemasPendientesEgresoHosp)}, ${this.readStringValue(input.formData.resumenNarrativoEgresoHosp)},
         ${this.readStringValue(input.formData.medicamentosEgresoHosp)}, ${this.readStringValue(input.formData.idRecetaRelacionadaEgresoHosp)}, ${this.readStringValue(input.formData.recetaGeneradaEgresoHosp)},
@@ -12811,6 +13007,25 @@ export class EncountersService {
         "dischargeCondition" = EXCLUDED."dischargeCondition",
         "admissionReason" = EXCLUDED."admissionReason",
         "admissionDiagnosis" = EXCLUDED."admissionDiagnosis",
+        "voluntaryDischargeReason" = EXCLUDED."voluntaryDischargeReason",
+        "explainedRisks" = EXCLUDED."explainedRisks",
+        "voluntaryResponsibleProfessionalName" = EXCLUDED."voluntaryResponsibleProfessionalName",
+        "conformitySignerName" = EXCLUDED."conformitySignerName",
+        "conformitySignerRelationship" = EXCLUDED."conformitySignerRelationship",
+        "conformitySignerCapacity" = EXCLUDED."conformitySignerCapacity",
+        "conformitySignedAt" = EXCLUDED."conformitySignedAt",
+        "conformitySignatureReference" = EXCLUDED."conformitySignatureReference",
+        "receivingPhysicianName" = EXCLUDED."receivingPhysicianName",
+        "receivingPhysicianLicense" = EXCLUDED."receivingPhysicianLicense",
+        "receivingService" = EXCLUDED."receivingService",
+        "transportMethod" = EXCLUDED."transportMethod",
+        "deathOccurredAt" = EXCLUDED."deathOccurredAt",
+        "causeOfDeath" = EXCLUDED."causeOfDeath",
+        "deathCertificateId" = EXCLUDED."deathCertificateId",
+        "lastContactAt" = EXCLUDED."lastContactAt",
+        "abandonmentCircumstances" = EXCLUDED."abandonmentCircumstances",
+        "abandonmentDocumentedByName" = EXCLUDED."abandonmentDocumentedByName",
+        "abandonmentDocumentedAt" = EXCLUDED."abandonmentDocumentedAt",
         "finalDiagnosis" = EXCLUDED."finalDiagnosis",
         "cie10" = EXCLUDED."cie10",
         "performedProcedures" = EXCLUDED."performedProcedures",
@@ -17667,17 +17882,70 @@ export class EncountersService {
     formData: Record<string, unknown>;
     downloadCount: number;
   }) {
-    return this.renderSimplePdf([
+    const dischargeType = this.readStringValue(input.formData.tipoEgresoHosp);
+    const optionalPdfLine = (label: string, value: unknown) =>
+      this.hasCapturedValue(value) ? `${label}: ${this.readStringValue(value)}` : null;
+    const compactPdfLine = (label: string, values: unknown[]) => {
+      const renderedValue = values
+        .map((value) => this.readStringValue(value))
+        .filter(Boolean)
+        .join(' · ');
+
+      return renderedValue ? `${label}: ${renderedValue}` : null;
+    };
+    const lines = [
       input.recordTitle,
       'Tipo: Egreso',
       `Paciente: ${input.encounter.patient.fullName}`,
       `Episodio: ${input.encounter.encounterNumber}`,
       `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
-      `Tipo/destino: ${this.readStringValue(input.formData.tipoEgresoHosp)} / ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}`,
+      `Tipo de egreso: ${this.formatHospitalDischargeTypeLabel(input.formData.tipoEgresoHosp)}`,
+      ...(this.hasCapturedValue(input.formData.destinoPacienteEgresoHosp)
+        ? [`Destino del paciente: ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}`]
+        : []),
       `Egreso: ${this.readStringValue(input.formData.fechaHoraEgresoHosp)}`,
       `Ingreso: ${this.readStringValue(input.formData.fechaIngresoReadonlyHosp)}`,
       `Días estancia: ${this.readStringValue(input.formData.diasEstanciaHosp)}`,
       `Estado al egreso: ${this.readStringValue(input.formData.estadoAlEgresoHosp)}`,
+      ...(dischargeType === 'ALTA_VOLUNTARIA'
+        ? [
+            optionalPdfLine('Motivo alta voluntaria', input.formData.motivoAltaVoluntariaEgresoHosp),
+            optionalPdfLine('Riesgos explicados', input.formData.riesgosExplicadosAltaVoluntariaEgresoHosp),
+            optionalPdfLine('Profesional responsable', input.formData.profesionalResponsableAltaVoluntariaEgresoHosp),
+            compactPdfLine('Conformidad', [
+              input.formData.firmanteConformidadNombreEgresoHosp,
+              input.formData.firmanteConformidadCalidadEgresoHosp,
+              input.formData.fechaHoraConformidadEgresoHosp,
+              input.formData.confirmacionConformidadEgresoHosp,
+            ]),
+          ].filter((line): line is string => Boolean(line))
+        : []),
+      ...(dischargeType === 'TRASLADO' || dischargeType === 'REFERENCIA'
+        ? [
+            optionalPdfLine('Unidad receptora', input.formData.unidadReceptoraEgresoHosp),
+            compactPdfLine('Médico receptor', [
+              input.formData.medicoReceptorEgresoHosp,
+              input.formData.cedulaMedicoReceptorEgresoHosp,
+            ]),
+            optionalPdfLine('Servicio receptor', input.formData.servicioReceptorEgresoHosp),
+            optionalPdfLine('Medio de traslado', input.formData.medioTrasladoEgresoHosp),
+          ].filter((line): line is string => Boolean(line))
+        : []),
+      ...(dischargeType === 'DEFUNCION'
+        ? [
+            optionalPdfLine('Hora de defunción', input.formData.horaDefuncionEgresoHosp),
+            optionalPdfLine('Causa de defunción', input.formData.causaDefuncionEgresoHosp),
+            optionalPdfLine('Certificado relacionado', input.formData.certificadoDefuncionRelacionadoEgresoHosp),
+          ].filter((line): line is string => Boolean(line))
+        : []),
+      ...(dischargeType === 'FUGA_ABANDONO'
+        ? [
+            optionalPdfLine('Último contacto', input.formData.horaUltimoContactoEgresoHosp),
+            optionalPdfLine('Circunstancias', input.formData.circunstanciasAbandonoEgresoHosp),
+            optionalPdfLine('Profesional que documenta', input.formData.profesionalDocumentaAbandonoEgresoHosp),
+            optionalPdfLine('Fecha documentación', input.formData.fechaHoraDocumentacionAbandonoEgresoHosp),
+          ].filter((line): line is string => Boolean(line))
+        : []),
       `Motivo ingreso: ${this.readStringValue(input.formData.motivoIngresoEgresoHosp)}`,
       `Diagnóstico ingreso: ${this.readStringValue(input.formData.diagnosticoIngresoEgresoHosp)}`,
       `Diagnóstico final: ${this.readStringValue(input.formData.diagnosticoFinalEgresoHosp)}`,
@@ -17701,7 +17969,9 @@ export class EncountersService {
       `Cédula: ${this.readStringValue(input.formData.cedulaResponsableEgresoHosp)}`,
       `Lugar: ${this.readStringValue(input.formData.lugarAtencionEgresoHosp)}`,
       `Descargas registradas: ${input.downloadCount}`,
-    ]);
+    ].filter((line) => !line.endsWith(': '));
+
+    return this.renderSimplePdf(lines);
   }
 
   private renderSimplePdf(lines: string[]) {
@@ -19300,6 +19570,13 @@ export class EncountersService {
   private assertHospitalDischargeReadyForSignature(formData: Record<string, unknown>) {
     const admittedAt = this.parseOptionalDate(formData.fechaIngresoReadonlyHosp);
     const dischargedAt = this.parseOptionalDate(formData.fechaHoraEgresoHosp);
+    const dischargeType = this.readStringValue(formData.tipoEgresoHosp);
+
+    if (!this.isHospitalDischargeType(dischargeType)) {
+      throw new BadRequestException(
+        'Selecciona un tipo de egreso hospitalario válido',
+      );
+    }
 
     if (admittedAt && dischargedAt && dischargedAt < admittedAt) {
       throw new BadRequestException(
@@ -19308,11 +19585,67 @@ export class EncountersService {
     }
 
     if (
-      this.readStringValue(formData.tipoEgresoHosp) === 'TRASLADO' &&
-      !this.hasCapturedValue(formData.unidadReceptoraEgresoHosp)
+      dischargeType === 'ALTA_VOLUNTARIA' &&
+      (!this.hasCapturedValue(formData.motivoAltaVoluntariaEgresoHosp) ||
+        !this.hasCapturedValue(formData.riesgosExplicadosAltaVoluntariaEgresoHosp) ||
+        !this.hasCapturedValue(formData.profesionalResponsableAltaVoluntariaEgresoHosp) ||
+        !this.hasCapturedValue(formData.firmanteConformidadNombreEgresoHosp) ||
+        !this.isHospitalConformitySigner(
+          this.readStringValue(formData.firmanteConformidadCalidadEgresoHosp),
+        ) ||
+        !this.hasCapturedValue(formData.fechaHoraConformidadEgresoHosp) ||
+        !this.isHospitalConformityConfirmation(
+          this.readStringValue(formData.confirmacionConformidadEgresoHosp),
+        ))
     ) {
       throw new BadRequestException(
-        'Captura la unidad receptora para el egreso por traslado',
+        'Completa motivo, riesgos, profesional responsable y conformidad para el alta voluntaria',
+      );
+    }
+
+    if (
+      (dischargeType === 'TRASLADO' || dischargeType === 'REFERENCIA') &&
+      (!this.hasCapturedValue(formData.unidadReceptoraEgresoHosp) ||
+        !this.hasCapturedValue(formData.medicoReceptorEgresoHosp) ||
+        !this.isHospitalTransportMethod(
+          this.readStringValue(formData.medioTrasladoEgresoHosp),
+        ))
+    ) {
+      throw new BadRequestException(
+        'Captura unidad receptora, médico receptor y medio de traslado',
+      );
+    }
+
+    if (dischargeType === 'DEFUNCION') {
+      const deathAt = this.parseOptionalDate(formData.horaDefuncionEgresoHosp);
+
+      if (!deathAt || !this.hasCapturedValue(formData.causaDefuncionEgresoHosp)) {
+        throw new BadRequestException(
+          'Captura hora y causa de defunción antes de firmar',
+        );
+      }
+
+      if (admittedAt && deathAt < admittedAt) {
+        throw new BadRequestException(
+          'La hora de defunción no puede ser anterior a la fecha de ingreso',
+        );
+      }
+
+      if (dischargedAt && deathAt > dischargedAt) {
+        throw new BadRequestException(
+          'La hora de defunción debe ser coherente con la fecha/hora de egreso',
+        );
+      }
+    }
+
+    if (
+      dischargeType === 'FUGA_ABANDONO' &&
+      (!this.hasCapturedValue(formData.horaUltimoContactoEgresoHosp) ||
+        !this.hasCapturedValue(formData.circunstanciasAbandonoEgresoHosp) ||
+        !this.hasCapturedValue(formData.profesionalDocumentaAbandonoEgresoHosp))
+    ) {
+      throw new BadRequestException(
+        'Captura último contacto, circunstancias y profesional que documenta la fuga o abandono',
       );
     }
 

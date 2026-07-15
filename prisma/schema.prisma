@@ -4069,6 +4069,25 @@ model HospitalDischarge {
   admittedAt DateTime?
   stayDays Int?
   dischargeCondition String
+  voluntaryDischargeReason String?
+  explainedRisks String?
+  voluntaryResponsibleProfessionalName String?
+  conformitySignerName String?
+  conformitySignerRelationship String?
+  conformitySignerCapacity String?
+  conformitySignedAt DateTime?
+  conformitySignatureReference String?
+  receivingPhysicianName String?
+  receivingPhysicianLicense String?
+  receivingService String?
+  transportMethod String?
+  deathOccurredAt DateTime?
+  causeOfDeath String?
+  deathCertificateId String?
+  lastContactAt DateTime?
+  abandonmentCircumstances String?
+  abandonmentDocumentedByName String?
+  abandonmentDocumentedAt DateTime?
 
   admissionReason String?
   admissionDiagnosis String?
@@ -4120,6 +4139,7 @@ model HospitalDischarge {
   patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
   sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
   signer        User?                  @relation("HospitalDischargeSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  deathCertificate ClinicalDocument? @relation("HospitalDischargeDeathCertificate", fields: [deathCertificateId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([patientId])
@@ -4127,6 +4147,9 @@ model HospitalDischarge {
   @@index([dischargedAt])
   @@index([signedAt])
   @@index([signerUserId])
+  @@index([dischargeType])
+  @@index([deathCertificateId])
+  @@index([transportMethod])
 }
 
 /// Documento complementario independiente dentro de Hospitalización.
@@ -4483,6 +4506,7 @@ model ClinicalDocument {
 
   /// Consentimientos ligados a este documento.
   consentForms ConsentForm[]
+  hospitalDischargeDeathCertificates HospitalDischarge[] @relation("HospitalDischargeDeathCertificate")
 
   @@index([tenantId])
   @@index([facilityId])

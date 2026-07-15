@@ -45,6 +45,10 @@ export type EpisodeFieldDefinition = {
   disableItemRemoval?: boolean;
   actionLabel?: string;
   required?: boolean;
+  visibleWhen?: {
+    fieldKey: string;
+    values: string[];
+  };
 };
 
 export type EpisodeSectionDefinition = {
@@ -142,6 +146,58 @@ const hospitalEvolutionClinicalStatusOptions: EpisodeFieldOption[] = [
   { value: 'EMPEORANDO', label: 'Empeorando' },
   { value: 'CRITICO', label: 'Crítico' },
   { value: 'ESTABLE', label: 'Estable' },
+];
+
+const hospitalDischargeTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ALTA_MEDICA', label: 'Alta médica' },
+  { value: 'ALTA_VOLUNTARIA', label: 'Alta voluntaria' },
+  { value: 'TRASLADO', label: 'Traslado' },
+  { value: 'REFERENCIA', label: 'Referencia' },
+  { value: 'DEFUNCION', label: 'Defunción' },
+  { value: 'FUGA_ABANDONO', label: 'Fuga / abandono' },
+];
+
+const hospitalDischargeTransferTypeValues = ['TRASLADO', 'REFERENCIA'];
+const hospitalDischargeDestinationVisibleValues = [
+  'ALTA_MEDICA',
+  'ALTA_VOLUNTARIA',
+  ...hospitalDischargeTransferTypeValues,
+];
+const hospitalDischargeVoluntaryVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: ['ALTA_VOLUNTARIA'],
+};
+const hospitalDischargeTransferVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: hospitalDischargeTransferTypeValues,
+};
+const hospitalDischargeDeathVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: ['DEFUNCION'],
+};
+const hospitalDischargeAbandonmentVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: ['FUGA_ABANDONO'],
+};
+const hospitalTransportMethodOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'AMBULANCIA_BASICA', label: 'Ambulancia básica' },
+  { value: 'AMBULANCIA_AVANZADA', label: 'Ambulancia avanzada' },
+  { value: 'TRANSPORTE_INSTITUCIONAL', label: 'Transporte institucional' },
+  { value: 'TRANSPORTE_PARTICULAR', label: 'Transporte particular' },
+  { value: 'OTRO', label: 'Otro' },
+];
+const hospitalConformitySignerOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PACIENTE', label: 'Paciente' },
+  { value: 'FAMILIAR', label: 'Familiar' },
+  { value: 'TUTOR_LEGAL', label: 'Tutor legal' },
+];
+const hospitalConformityConfirmationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'FIRMADA', label: 'Firmada / confirmada' },
+  { value: 'NO_FIRMA', label: 'No firma, se deja constancia' },
 ];
 
 const triagePriorityOptions: EpisodeFieldOption[] = [
@@ -3785,21 +3841,15 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           title: 'Tipo y destino de egreso',
           fields: [
             { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly', inheritanceMode: 'system' },
-            { key: 'tipoEgresoHosp', label: 'Tipo de egreso', type: 'select', options: [
-              { value: '', label: 'Selecciona una opción' },
-              { value: 'ALTA_MEDICA', label: 'Alta médica' },
-              { value: 'HOSPITALIZACION', label: 'Hospitalización' },
-              { value: 'TRASLADO', label: 'Traslado' },
-              { value: 'DEFUNCION', label: 'Defunción' },
-            ] },
+            { key: 'tipoEgresoHosp', label: 'Tipo de egreso', type: 'select', options: hospitalDischargeTypeOptions },
             { key: 'destinoPacienteEgresoHosp', label: 'Destino del paciente', type: 'select', options: [
               { value: '', label: 'Selecciona una opción' },
               { value: 'DOMICILIO', label: 'Domicilio' },
               { value: 'OTRA_UNIDAD', label: 'Otra unidad' },
               { value: 'REHABILITACION', label: 'Rehabilitación' },
               { value: 'MORTUORIO', label: 'Mortuorio' },
-            ] },
-            { key: 'unidadReceptoraEgresoHosp', label: 'Unidad receptora', type: 'text' },
+            ], visibleWhen: { fieldKey: 'tipoEgresoHosp', values: hospitalDischargeDestinationVisibleValues } },
+            { key: 'unidadReceptoraEgresoHosp', label: 'Unidad receptora', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
             { key: 'fechaHoraEgresoHosp', label: 'Fecha y hora de egreso', type: 'datetime-local' },
             { key: 'fechaIngresoReadonlyHosp', label: 'Fecha de ingreso', type: 'readonly', inheritanceMode: 'system' },
             { key: 'diasEstanciaHosp', label: 'Días de estancia', type: 'readonly', inheritanceMode: 'system' },
@@ -3810,6 +3860,25 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               { value: 'DETERIORADO', label: 'Deteriorado' },
               { value: 'FALLECIDO', label: 'Fallecido' },
             ] },
+            { key: 'motivoAltaVoluntariaEgresoHosp', label: 'Motivo de alta voluntaria', type: 'textarea', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'riesgosExplicadosAltaVoluntariaEgresoHosp', label: 'Riesgos explicados al paciente', type: 'textarea', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'profesionalResponsableAltaVoluntariaEgresoHosp', label: 'Profesional responsable', type: 'readonly', inheritanceMode: 'system', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'firmanteConformidadNombreEgresoHosp', label: 'Nombre de quien firma conformidad', type: 'text', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'firmanteConformidadCalidadEgresoHosp', label: 'Calidad con la que firma', type: 'select', options: hospitalConformitySignerOptions, visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'firmanteConformidadRelacionEgresoHosp', label: 'Relación con el paciente', type: 'text', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'fechaHoraConformidadEgresoHosp', label: 'Fecha y hora de conformidad', type: 'datetime-local', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'confirmacionConformidadEgresoHosp', label: 'Confirmación / firma de conformidad', type: 'select', options: hospitalConformityConfirmationOptions, visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'medicoReceptorEgresoHosp', label: 'Médico receptor', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'cedulaMedicoReceptorEgresoHosp', label: 'Identificación profesional receptor', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'servicioReceptorEgresoHosp', label: 'Servicio receptor', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'medioTrasladoEgresoHosp', label: 'Medio de traslado', type: 'select', options: hospitalTransportMethodOptions, visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'horaDefuncionEgresoHosp', label: 'Hora de defunción', type: 'datetime-local', visibleWhen: hospitalDischargeDeathVisible },
+            { key: 'causaDefuncionEgresoHosp', label: 'Causa de defunción', type: 'textarea', visibleWhen: hospitalDischargeDeathVisible },
+            { key: 'certificadoDefuncionRelacionadoEgresoHosp', label: 'Certificado de defunción relacionado', type: 'text', visibleWhen: hospitalDischargeDeathVisible },
+            { key: 'horaUltimoContactoEgresoHosp', label: 'Hora de último contacto', type: 'datetime-local', visibleWhen: hospitalDischargeAbandonmentVisible },
+            { key: 'circunstanciasAbandonoEgresoHosp', label: 'Circunstancias registradas', type: 'textarea', visibleWhen: hospitalDischargeAbandonmentVisible },
+            { key: 'profesionalDocumentaAbandonoEgresoHosp', label: 'Profesional que documenta', type: 'readonly', inheritanceMode: 'system', visibleWhen: hospitalDischargeAbandonmentVisible },
+            { key: 'fechaHoraDocumentacionAbandonoEgresoHosp', label: 'Fecha y hora de documentación', type: 'readonly', inheritanceMode: 'system', visibleWhen: hospitalDischargeAbandonmentVisible },
           ],
         },
         {

@@ -2943,6 +2943,96 @@ function buildHospitalNursingSnapshot(args: {
   };
 }
 
+const hospitalDischargeConditionalFieldKeys = [
+  'motivoAltaVoluntariaEgresoHosp',
+  'riesgosExplicadosAltaVoluntariaEgresoHosp',
+  'profesionalResponsableAltaVoluntariaEgresoHosp',
+  'firmanteConformidadNombreEgresoHosp',
+  'firmanteConformidadCalidadEgresoHosp',
+  'firmanteConformidadRelacionEgresoHosp',
+  'fechaHoraConformidadEgresoHosp',
+  'confirmacionConformidadEgresoHosp',
+  'unidadReceptoraEgresoHosp',
+  'medicoReceptorEgresoHosp',
+  'cedulaMedicoReceptorEgresoHosp',
+  'servicioReceptorEgresoHosp',
+  'medioTrasladoEgresoHosp',
+  'horaDefuncionEgresoHosp',
+  'causaDefuncionEgresoHosp',
+  'certificadoDefuncionRelacionadoEgresoHosp',
+  'horaUltimoContactoEgresoHosp',
+  'circunstanciasAbandonoEgresoHosp',
+  'profesionalDocumentaAbandonoEgresoHosp',
+  'fechaHoraDocumentacionAbandonoEgresoHosp',
+] as const;
+
+const hospitalDischargeConditionalFieldKeysByType: Record<string, string[]> = {
+  ALTA_MEDICA: [],
+  ALTA_VOLUNTARIA: [
+    'motivoAltaVoluntariaEgresoHosp',
+    'riesgosExplicadosAltaVoluntariaEgresoHosp',
+    'profesionalResponsableAltaVoluntariaEgresoHosp',
+    'firmanteConformidadNombreEgresoHosp',
+    'firmanteConformidadCalidadEgresoHosp',
+    'firmanteConformidadRelacionEgresoHosp',
+    'fechaHoraConformidadEgresoHosp',
+    'confirmacionConformidadEgresoHosp',
+  ],
+  TRASLADO: [
+    'unidadReceptoraEgresoHosp',
+    'medicoReceptorEgresoHosp',
+    'cedulaMedicoReceptorEgresoHosp',
+    'servicioReceptorEgresoHosp',
+    'medioTrasladoEgresoHosp',
+  ],
+  REFERENCIA: [
+    'unidadReceptoraEgresoHosp',
+    'medicoReceptorEgresoHosp',
+    'cedulaMedicoReceptorEgresoHosp',
+    'servicioReceptorEgresoHosp',
+    'medioTrasladoEgresoHosp',
+  ],
+  DEFUNCION: [
+    'horaDefuncionEgresoHosp',
+    'causaDefuncionEgresoHosp',
+    'certificadoDefuncionRelacionadoEgresoHosp',
+  ],
+  FUGA_ABANDONO: [
+    'horaUltimoContactoEgresoHosp',
+    'circunstanciasAbandonoEgresoHosp',
+    'profesionalDocumentaAbandonoEgresoHosp',
+    'fechaHoraDocumentacionAbandonoEgresoHosp',
+  ],
+};
+
+function buildHospitalDischargeConditionalCleanup(
+  dischargeType: string,
+): Record<string, string> {
+  const compatibleKeys =
+    hospitalDischargeConditionalFieldKeysByType[dischargeType] ?? [];
+
+  return Object.fromEntries(
+    hospitalDischargeConditionalFieldKeys
+      .filter((fieldKey) => !compatibleKeys.includes(fieldKey))
+      .map((fieldKey) => [fieldKey, '']),
+  );
+}
+
+function hasHospitalDischargeIncompatibleCapture(
+  formData: Record<string, RecordFieldValue>,
+  dischargeType: string,
+) {
+  const compatibleKeys =
+    hospitalDischargeConditionalFieldKeysByType[dischargeType] ?? [];
+
+  return hospitalDischargeConditionalFieldKeys
+    .filter((fieldKey) => !compatibleKeys.includes(fieldKey))
+    .some((fieldKey) => {
+      const value = formData[fieldKey];
+      return typeof value === 'string' ? value.trim().length > 0 : Boolean(value);
+    });
+}
+
 function buildHospitalDischargeSnapshot(args: {
   detail: EncounterDetailResponse;
   recordedAt: string;
@@ -2986,9 +3076,15 @@ function buildHospitalDischargeSnapshot(args: {
       ),
     );
   })();
+  const dischargeType =
+    typeof current.tipoEgresoHosp === 'string' ? current.tipoEgresoHosp : '';
+  const legalProfessional =
+    args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable';
+  const legalLicense = args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula';
 
   return {
     tipoRegistro: 'Egreso',
+    ...buildHospitalDischargeConditionalCleanup(dischargeType),
     fechaHoraEgresoHosp: keep('fechaHoraEgresoHosp', args.recordedAt),
     fechaIngresoReadonlyHosp: keep('fechaIngresoReadonlyHosp', admissionDate),
     diasEstanciaHosp: stayDays,
@@ -3052,14 +3148,18 @@ function buildHospitalDischargeSnapshot(args: {
       'Se explica diagnóstico, tratamiento, medicamentos, cuidados, restricciones, signos de alarma y seguimiento.',
     ),
     comprensionPacienteEgresoHosp: keep('comprensionPacienteEgresoHosp', 'ADECUADA'),
-    medicoResponsableEgresoHosp:
-      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-    cedulaResponsableEgresoHosp:
-      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
-    medicoLegalEgresoHosp:
-      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-    cedulaLegalEgresoHosp:
-      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalResponsableAltaVoluntariaEgresoHosp:
+      dischargeType === 'ALTA_VOLUNTARIA' ? legalProfessional : '',
+    profesionalDocumentaAbandonoEgresoHosp:
+      dischargeType === 'FUGA_ABANDONO' ? legalProfessional : '',
+    fechaHoraDocumentacionAbandonoEgresoHosp:
+      dischargeType === 'FUGA_ABANDONO'
+        ? keep('fechaHoraDocumentacionAbandonoEgresoHosp', args.recordedAt)
+        : '',
+    medicoResponsableEgresoHosp: legalProfessional,
+    cedulaResponsableEgresoHosp: legalLicense,
+    medicoLegalEgresoHosp: legalProfessional,
+    cedulaLegalEgresoHosp: legalLicense,
     especialidadLegalEgresoHosp: args.detail.specialty?.name ?? 'Sin especialidad',
     lugarAtencionEgresoHosp:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
@@ -7490,6 +7590,43 @@ export function EpisodeDetailPage() {
               ...currentValue.formData,
               [fieldKey]: value,
             };
+            if (
+              isHospitalDischargeSection &&
+              fieldKey === 'tipoEgresoHosp' &&
+              typeof value === 'string'
+            ) {
+              if (
+                hasHospitalDischargeIncompatibleCapture(
+                  currentValue.formData,
+                  value,
+                ) &&
+                !window.confirm(
+                  'Cambiar el tipo de egreso limpiará datos condicionales que ya no correspondan. ¿Deseas continuar?',
+                )
+              ) {
+                return currentValue;
+              }
+
+              Object.assign(
+                nextFormData,
+                buildHospitalDischargeConditionalCleanup(value),
+              );
+            }
+            if (
+              isHospitalDischargeSection &&
+              fieldKey === 'fechaHoraEgresoHosp' &&
+              typeof value === 'string'
+            ) {
+              const admittedAt =
+                typeof nextFormData.fechaIngresoReadonlyHosp === 'string'
+                  ? nextFormData.fechaIngresoReadonlyHosp
+                  : detail.openedAt.slice(0, 16);
+
+              nextFormData.diasEstanciaHosp = calculateHospitalStayDay(
+                admittedAt,
+                value,
+              );
+            }
             if (isHospitalEvolutionSection && fieldKey === 'diaEstanciaHosp') {
               nextFormData.diaEstanciaHospManual = 'SI';
             }
@@ -10868,11 +11005,11 @@ export function EpisodeDetailPage() {
                             ) : (
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
-                                if (
-                                  isEmergencyOrdersSection &&
-                                  section.key === 'ordenes_urg_transfusion' &&
-                                  field.key !== 'transfusionAplica'
-                                ) {
+	                                if (
+	                                  isEmergencyOrdersSection &&
+	                                  section.key === 'ordenes_urg_transfusion' &&
+	                                  field.key !== 'transfusionAplica'
+	                                ) {
                                   if (recordForm.formData.transfusionAplica !== true) {
                                     return null;
                                   }
@@ -10889,10 +11026,24 @@ export function EpisodeDetailPage() {
                                     recordForm.formData.transfusionReaccionAdversa !== 'SI'
                                   ) {
                                     return null;
-                                  }
+	                                  }
+	                                }
+
+                                if (
+                                  field.visibleWhen &&
+                                  !field.visibleWhen.values.includes(
+                                    typeof recordForm.formData[field.visibleWhen.fieldKey] ===
+                                      'string'
+                                      ? (recordForm.formData[
+                                          field.visibleWhen.fieldKey
+                                        ] as string)
+                                      : '',
+                                  )
+                                ) {
+                                  return null;
                                 }
 
-                                if (field.inheritanceMode === 'system') {
+	                                if (field.inheritanceMode === 'system') {
                                   if (
                                     field.type !== 'readonly' &&
                                     field.type !== 'action'
