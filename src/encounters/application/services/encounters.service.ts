@@ -17618,7 +17618,7 @@ export class EncountersService {
   }) {
     const vitalLines = this.readObjectArray(input.formData.signosVitalesSeriadosEnfHosp)
       .map((item, index) =>
-        `${index + 1}. ${this.readStringValue(item.fecha)} ${this.readStringValue(item.hora)} TA ${this.readStringValue(item.taSistolica)}/${this.readStringValue(item.taDiastolica)} FC ${this.readStringValue(item.fc)} FR ${this.readStringValue(item.fr)} T ${this.readStringValue(item.temperatura)} SpO2 ${this.readStringValue(item.spo2)}`,
+        `${index + 1}. ${this.readStringValue(item.fecha)} ${this.readStringValue(item.hora)} · TA sistólica (mmHg): ${this.readStringValue(item.taSistolica)} · TA diastólica (mmHg): ${this.readStringValue(item.taDiastolica)} · FC (lpm): ${this.readStringValue(item.fc)} · FR (rpm): ${this.readStringValue(item.fr)} · Temperatura (°C): ${this.readStringValue(item.temperatura)} · SpO₂ (%): ${this.readStringValue(item.spo2)} · Glucosa capilar (mg/dL): ${this.readStringValue(item.glucosaCapilar)} · Dolor EVA (0–10): ${this.readStringValue(item.dolorEva)}`,
       );
     const medicationLines = this.readObjectArray(input.formData.medicamentosMinistradosEnfHosp)
       .map((item, index) =>
