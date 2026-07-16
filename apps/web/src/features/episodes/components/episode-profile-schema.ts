@@ -5588,11 +5588,6 @@ export function getEpisodeDocumentTypes(encounterType: string) {
 export function getConsultationDocumentTabDefinition(
   noteType: string,
 ): EpisodeTabDefinition {
-  const sharedSections =
-    noteType === 'Solicitud de laboratorio'
-      ? [consultationLaboratoryDocumentLegalSection]
-      : consultationDocumentSharedSections;
-
   return {
     key: 'Documentos',
     title: 'Documentos',
@@ -5601,7 +5596,7 @@ export function getConsultationDocumentTabDefinition(
     sections: [
       ...(consultationDocumentSectionDefinitions[noteType] ??
         consultationDocumentSectionDefinitions['Solicitud de laboratorio']),
-      ...sharedSections,
+      consultationLaboratoryDocumentLegalSection,
     ],
   };
 }

@@ -17344,26 +17344,14 @@ export class EncountersService {
       ),
     };
     const clinicalLines = clinicalLinesByDocument[input.noteType] ?? [];
-    const legalLines = lines(
+    const documentLegalLines = lines(
       'Datos legales y firma',
-      line('Tipo de documento', input.noteType),
-      line('Fecha', documentDate),
-      line('Hora', documentTime),
       line('Folio del documento', input.formData.documentoFolio),
       line('Versión', input.formData.documentoVersion),
-      line('Estado', input.formData.documentoEstado),
-      line('Institución emisora', issuer),
-      line('RFC', input.formData.documentoRfcMedico),
-      line('Licencia sanitaria', input.formData.documentoLicenciaSanitaria),
-      line('Código de verificación', verificationCode),
-      line('Profesional responsable', professionalName),
-      line('Cédula', professionalLicense),
-      line('Especialidad', professionalSpecialty),
       line('Lugar de atención', input.formData.documentoLugarAtencion),
-      line('Firma', professionalName),
     );
-    const footerLines = lines(
-      'Pie legal',
+    const documentFooterLines = lines(
+      'Pie del documento',
       line('Nombre del médico', professionalName),
       line('Cédula profesional', professionalLicense),
       line('Fecha', documentDate),
@@ -17371,47 +17359,18 @@ export class EncountersService {
       line('Código de verificación', verificationCode),
     );
 
-    if (input.noteType === 'Solicitud de laboratorio') {
-      const laboratoryLegalLines = lines(
-        'Datos legales y firma',
-        line('Folio del documento', input.formData.documentoFolio),
-        line('Versión', input.formData.documentoVersion),
-        line('Lugar de atención', input.formData.documentoLugarAtencion),
-      );
-      const laboratoryFooterLines = lines(
-        'Pie del documento',
-        line('Nombre del médico', professionalName),
-        line('Cédula profesional', professionalLicense),
-        line('Fecha', documentDate),
-        line('Firma', professionalName),
-        line('Código de verificación', verificationCode),
-      );
-
-      return lines(
-        input.recordTitle,
-        ...headerLines,
-        line('Tipo de documento', input.noteType),
-        line('Estado', input.formData.documentoEstado),
-        line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
-        line('Título / versión', input.recordTitle),
-        line('Paciente', input.encounter.patient.fullName),
-        line('Expediente', input.formData.documentoExpediente),
-        ...(clinicalLines.length ? ['Solicitud de laboratorio', ...clinicalLines] : []),
-        ...laboratoryLegalLines,
-        ...laboratoryFooterLines,
-      );
-    }
-
     return lines(
       input.recordTitle,
       ...headerLines,
-      line('Paciente', input.encounter.patient.fullName),
+      line('Tipo de documento', input.noteType),
+      line('Estado', input.formData.documentoEstado),
       line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
-      line('Tipo de nota', input.noteTypeLabel),
-      input.noteType,
-      ...clinicalLines,
-      ...legalLines,
-      ...footerLines,
+      line('Título / versión', input.recordTitle),
+      line('Paciente', input.encounter.patient.fullName),
+      line('Expediente', input.formData.documentoExpediente),
+      ...(clinicalLines.length ? [input.noteType, ...clinicalLines] : []),
+      ...documentLegalLines,
+      ...documentFooterLines,
     );
   }
 
@@ -18419,11 +18378,19 @@ export class EncountersService {
 
     if (
       this.isConsultationDocumentRecord(input.encounterType, input.tabKey) &&
-      input.noteType === 'Solicitud de laboratorio' &&
+      !this.readPrintableDocumentValue(formData.documentoNombreProfesional)
+    ) {
+      throw new BadRequestException(
+        'El profesional responsable es obligatorio para firmar el documento',
+      );
+    }
+
+    if (
+      this.isConsultationDocumentRecord(input.encounterType, input.tabKey) &&
       !this.readPrintableDocumentValue(formData.documentoCedulaProfesional)
     ) {
       throw new BadRequestException(
-        'La cédula profesional es obligatoria para firmar la solicitud de laboratorio',
+        'La cédula profesional es obligatoria para firmar el documento',
       );
     }
 

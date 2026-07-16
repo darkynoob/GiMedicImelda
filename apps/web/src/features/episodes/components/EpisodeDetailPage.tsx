@@ -8888,10 +8888,8 @@ export function EpisodeDetailPage() {
           metaQuery.data ?? null,
         )
       : null;
-  const isOutpatientLaboratoryDocument =
-    isConsultationDocumentsSection &&
-    detail.encounterType === 'OUTPATIENT' &&
-    (recordForm?.noteType ?? selectedDocumentNoteType) === 'Solicitud de laboratorio';
+  const isOutpatientDocument =
+    isConsultationDocumentsSection && detail.encounterType === 'OUTPATIENT';
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -11263,7 +11261,8 @@ export function EpisodeDetailPage() {
                           )}
 
                           {isConsultationDocumentsSection &&
-                          detail.encounterType === 'EMERGENCY' ? (
+                          (detail.encounterType === 'EMERGENCY' ||
+                            detail.encounterType === 'OUTPATIENT') ? (
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">
                                 Tipo de documento
@@ -11463,7 +11462,7 @@ export function EpisodeDetailPage() {
                         {isConsultationDocumentsSection &&
                         detail.encounterType !== 'EMERGENCY' &&
                         detail.encounterType !== 'HOSPITALIZATION' &&
-                        !isOutpatientLaboratoryDocument &&
+                        !isOutpatientDocument &&
                         currentDocumentLegalSnapshot ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
@@ -12072,8 +12071,7 @@ export function EpisodeDetailPage() {
                                           ] as string)
                                         : '';
                                     const readonlyValue =
-                                      isOutpatientLaboratoryDocument &&
-                                      field.key === 'tipoRegistro'
+                                      isOutpatientDocument && field.key === 'tipoRegistro'
                                         ? recordForm.noteType
                                         : isConsultationDocumentsSection &&
                                             detail.encounterType === 'OUTPATIENT'
@@ -12089,7 +12087,7 @@ export function EpisodeDetailPage() {
                                     if (
                                       ((isConsultationDocumentsSection &&
                                         detail.encounterType === 'HOSPITALIZATION') ||
-                                        isOutpatientLaboratoryDocument) &&
+                                        isOutpatientDocument) &&
                                       !hasPrintableDocumentValue(readonlyValue)
                                     ) {
                                       return null;
@@ -12180,7 +12178,7 @@ export function EpisodeDetailPage() {
                                   isHospitalEvolutionSection &&
                                   section.key === 'datos_generales_evol_hosp';
 
-                                if (isOutpatientLaboratoryDocument && isRecordLocked) {
+                                if (isOutpatientDocument && isRecordLocked) {
                                   const readonlyValue =
                                     field.type === 'select'
                                       ? field.options?.find(
@@ -13259,7 +13257,7 @@ export function EpisodeDetailPage() {
                     {activeTab === 'Documentos' &&
                     detail.encounterType !== 'EMERGENCY' &&
                     detail.encounterType !== 'HOSPITALIZATION' &&
-                    !isOutpatientLaboratoryDocument ? (
+                    !isOutpatientDocument ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
