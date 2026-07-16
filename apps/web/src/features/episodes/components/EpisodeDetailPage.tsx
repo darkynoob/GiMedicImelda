@@ -75,6 +75,7 @@ import {
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  getConsultationHistoryNoteTypeLabel,
   isPresentationField,
   triageClinicalDiscriminatorFields,
   triageOtherClinicalDiscriminatorFieldKey,
@@ -402,18 +403,6 @@ const emergencyTriageObsoleteInitialStateFields = [
   'estadoMental',
   'riesgoVital',
 ];
-
-function getHistoryTypeLabel(historyType: string | null | undefined) {
-  if (historyType === 'INICIAL') {
-    return 'Inicial';
-  }
-
-  if (historyType === 'SUBSECUENTE') {
-    return 'Subsecuente';
-  }
-
-  return 'Sin clasificar';
-}
 
 function getLatestHistoryRecord(records: EncounterDetailResponse['sectionRecords']) {
   return [...records].sort((left, right) => {
@@ -6602,8 +6591,6 @@ export function EpisodeDetailPage() {
     : null;
   const nextHistoryVersionNumber =
     (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
-  const nextHistoryType =
-    nextHistoryVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
   const nextConsultationVersionNumber =
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
@@ -8819,10 +8806,10 @@ export function EpisodeDetailPage() {
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
   const currentHistoryType =
-    historyVersionNumber === 1 ? 'INICIAL' : nextHistoryType;
-  const historyTypeLabel = getHistoryTypeLabel(
-    currentHistoryType,
-  );
+    historyVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+  const historyNoteTypeLabel =
+    selectedRecord?.metadata.noteTypeLabel ??
+    getConsultationHistoryNoteTypeLabel(historyVersionNumber);
   const inheritedFromLabel =
     isConsultationHistorySection && !selectedRecord && latestHistoryRecord
       ? `Precargada desde ${latestHistoryRecord.title}`
@@ -10386,7 +10373,7 @@ export function EpisodeDetailPage() {
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Badge variant="secondary">
-                                    {historyTypeLabel}
+                                    {`Tipo de nota: ${historyNoteTypeLabel}`}
                                   </Badge>
                                   {inheritedFromLabel ? (
                                     <Badge variant="success">

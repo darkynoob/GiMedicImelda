@@ -4081,25 +4081,37 @@ export class EncountersService {
         encounterType: EncounterType.OUTPATIENT,
         tabKey: 'Historia clínica',
       });
-    const sectionRecords = encounter.sectionRecords.map((record) => ({
-      id: record.id,
-      tabKey: record.tabKey,
-      noteType: record.noteType,
-      title: record.title,
-      status: record.status,
-      recordedAt: record.recordedAt.toISOString(),
-      updatedAt: record.updatedAt.toISOString(),
-      signedAt: record.signedAt?.toISOString() ?? null,
-      authorName: record.authoredByUser?.fullName ?? null,
-      authorLicense: record.authoredByUser?.professionalLicense ?? null,
-      formData:
-        record.formDataJson &&
-        typeof record.formDataJson === 'object' &&
-        !Array.isArray(record.formDataJson)
-          ? (record.formDataJson as Record<string, unknown>)
-          : {},
-      metadata: this.extractRecordVersionMetadata(record.metadataJson),
-    }));
+    const sectionRecords = encounter.sectionRecords.map((record) => {
+      const metadata = this.extractRecordVersionMetadata(record.metadataJson);
+
+      return {
+        id: record.id,
+        tabKey: record.tabKey,
+        noteType: record.noteType,
+        title: record.title,
+        status: record.status,
+        recordedAt: record.recordedAt.toISOString(),
+        updatedAt: record.updatedAt.toISOString(),
+        signedAt: record.signedAt?.toISOString() ?? null,
+        authorName: record.authoredByUser?.fullName ?? null,
+        authorLicense: record.authoredByUser?.professionalLicense ?? null,
+        formData:
+          record.formDataJson &&
+          typeof record.formDataJson === 'object' &&
+          !Array.isArray(record.formDataJson)
+            ? (record.formDataJson as Record<string, unknown>)
+            : {},
+        metadata: {
+          ...metadata,
+          noteTypeLabel: this.isConsultationHistoryRecord(
+            record.encounterType,
+            record.tabKey,
+          )
+            ? this.buildConsultationHistoryNoteTypeLabel(metadata.versionNumber)
+            : null,
+        },
+      };
+    });
     const emergencySummary =
       encounter.encounterType === EncounterType.EMERGENCY
         ? this.buildEmergencySummaryResponse(encounter, attendingClinician)
@@ -6677,10 +6689,24 @@ export class EncountersService {
     return encounterType === EncounterType.OUTPATIENT && tabKey === 'Historia clínica';
   }
 
+  private buildConsultationHistoryNoteTypeLabel(
+    versionNumber: number | null | undefined,
+  ) {
+    if (!versionNumber || versionNumber < 1) {
+      return null;
+    }
+
+    return versionNumber === 1
+      ? 'Historia clínica inicial'
+      : 'Nota subsecuente de consulta';
+  }
+
   private omitLegacyHistorySystemFields(formData: Record<string, unknown>) {
     const {
       tipoHistoriaClinica: _legacyHistoryType,
       fechaHistoria: _legacyHistoryDate,
+      noteTypeLabel: _manualNoteTypeLabel,
+      tipoNota: _manualNoteType,
       ...editableHistoryFormData
     } = formData;
 
@@ -16556,6 +16582,12 @@ export class EncountersService {
     const pdfBuffer = this.buildClinicalDocumentPdfDocument({
       encounter: input.encounter,
       noteType: input.record.noteType,
+      noteTypeLabel: this.isConsultationHistoryRecord(
+        input.record.encounterType,
+        input.record.tabKey,
+      )
+        ? this.buildConsultationHistoryNoteTypeLabel(metadata.versionNumber)
+        : null,
       recordTitle: input.record.title,
       recordedAt: input.record.recordedAt,
       formData,
@@ -16721,6 +16753,7 @@ export class EncountersService {
   private buildClinicalDocumentPdfDocument(input: {
     encounter: TenantEncounterRecord;
     noteType: string;
+    noteTypeLabel?: string | null;
     recordTitle: string;
     recordedAt: Date;
     formData: Record<string, unknown>;
@@ -17077,6 +17110,7 @@ export class EncountersService {
   private buildConsultationDocumentPdfLines(input: {
     encounter: TenantEncounterRecord;
     noteType: string;
+    noteTypeLabel?: string | null;
     recordTitle: string;
     recordedAt: Date;
     formData: Record<string, unknown>;
@@ -17255,6 +17289,7 @@ export class EncountersService {
       ...headerLines,
       line('Paciente', input.encounter.patient.fullName),
       line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+      line('Tipo de nota', input.noteTypeLabel),
       input.noteType,
       ...clinicalLines,
       ...legalLines,
