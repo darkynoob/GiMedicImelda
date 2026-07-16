@@ -4123,7 +4123,7 @@ export class EncountersService {
       fileSizeBytes: attachment.fileSizeBytes.toString(),
       uploadedAt: attachment.uploadedAt.toISOString(),
     }));
-    const timeline = [
+      const timeline = [
       {
         id: `${encounter.id}-created`,
         label: 'Episodio abierto',
@@ -4161,8 +4161,8 @@ export class EncountersService {
         detail: diagnosis.diagnosisType ?? 'Diagnostico registrado',
         kind: 'diagnosis' as const,
       })),
-      ...(latestVitalSign
-        ? [
+        ...(latestVitalSign
+          ? [
             {
               id: latestVitalSign.id,
               label: 'Signos vitales registrados',
@@ -4171,10 +4171,18 @@ export class EncountersService {
               kind: 'vital' as const,
             },
           ]
-        : []),
-    ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+          : []),
+      ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+      const consultationSummary =
+        encounter.encounterType === EncounterType.OUTPATIENT
+          ? this.buildConsultationSummaryResponse(
+              encounter,
+              sectionRecords,
+              latestVitalSign,
+            )
+          : null;
 
-    return {
+      return {
       id: encounter.id,
       encounterNumber: encounter.encounterNumber,
       encounterType: encounter.encounterType,
@@ -4254,10 +4262,11 @@ export class EncountersService {
         imaging: encounter.imagingRequests.length,
         attachments: encounter.attachments.length,
       },
-      latestVitalSigns: latestVitalSign
-        ? this.toVitalSignsSummary(latestVitalSign)
-        : [],
-      diagnoses: encounter.diagnoses.map((diagnosis) => ({
+	      latestVitalSigns: latestVitalSign
+	        ? this.toVitalSignsSummary(latestVitalSign)
+	        : [],
+	      consultationSummary,
+	      diagnoses: encounter.diagnoses.map((diagnosis) => ({
         id: diagnosis.id,
         code: diagnosis.code,
         description: diagnosis.description,
@@ -20499,9 +20508,9 @@ export class EncountersService {
     }
   }
 
-  private toVitalSignsSummary(
-    vitalSign: TenantEncounterRecord['vitalSigns'][number],
-  ) {
+    private toVitalSignsSummary(
+      vitalSign: TenantEncounterRecord['vitalSigns'][number],
+    ) {
     return [
       {
         label: 'PA',
@@ -20539,11 +20548,205 @@ export class EncountersService {
         label: 'Peso',
         value: vitalSign.weightKg ? String(vitalSign.weightKg) : '--',
         unit: 'kg',
-      },
-    ];
-  }
+        },
+      ];
+    }
 
-  private buildAgeLabel(birthDate: Date | null, ageSnapshot: number | null) {
+    private buildConsultationSummaryResponse(
+      encounter: TenantEncounterRecord,
+      sectionRecords: EncounterDetailResponse['sectionRecords'],
+      latestVitalSign: TenantEncounterRecord['vitalSigns'][number] | null,
+    ): EncounterDetailResponse['consultationSummary'] {
+      const latestConsultationRecord = this.getLatestSummaryRecordByTab(
+        sectionRecords,
+        ['Consulta actual'],
+      );
+      const latestHistoryRecord = this.getLatestSummaryRecordByTab(sectionRecords, [
+        'Historia clínica',
+      ]);
+      const latestPrescriptionRecord = this.getLatestSummaryRecordByTab(
+        sectionRecords,
+        [consultationPrescriptionTabKey, legacyConsultationPrescriptionTabKey],
+      );
+      const consultationPrimaryDiagnosis = {
+        description: this.readSummaryFormText(
+          latestConsultationRecord?.formData,
+          'idDiagnosticoPrincipal',
+        ),
+        cie10: this.readSummaryFormText(latestConsultationRecord?.formData, 'idCie10'),
+        status: this.readSummaryFormText(latestConsultationRecord?.formData, 'idEstado'),
+      };
+      const historyPrimaryDiagnosis = {
+        description: this.readSummaryFormText(
+          latestHistoryRecord?.formData,
+          'dbiDiagnosticoPrincipal',
+        ),
+        cie10: this.readSummaryFormText(latestHistoryRecord?.formData, 'dbiCie10'),
+      };
+      const primaryEncounterDiagnosis =
+        encounter.diagnoses.find((diagnosis) => diagnosis.isPrimary) ??
+        encounter.diagnoses[0] ??
+        null;
+      const primaryDiagnosis =
+        consultationPrimaryDiagnosis.description || consultationPrimaryDiagnosis.cie10
+          ? {
+              description: consultationPrimaryDiagnosis.description,
+              cie10: consultationPrimaryDiagnosis.cie10 || null,
+            }
+          : historyPrimaryDiagnosis.description || historyPrimaryDiagnosis.cie10
+            ? {
+                description: historyPrimaryDiagnosis.description,
+                cie10: historyPrimaryDiagnosis.cie10 || null,
+              }
+            : primaryEncounterDiagnosis
+              ? {
+                  description: primaryEncounterDiagnosis.description,
+                  cie10: primaryEncounterDiagnosis.code,
+                }
+              : null;
+      const secondaryDiagnoses = this.readObjectArray(
+        latestConsultationRecord?.formData.idSecundarios,
+      )
+        .filter((item) =>
+          this.isActiveConsultationSummaryStatus(
+            this.readSummaryFormText(item, 'estado'),
+          ),
+        )
+        .map((item) =>
+          this.formatConsultationSummaryDiagnosis(
+            this.readSummaryFormText(item, 'diagnostico'),
+            this.readSummaryFormText(item, 'cie10'),
+          ),
+        )
+        .filter(Boolean);
+      const activeProblems = this.uniqueConsultationSummaryItems([
+        consultationPrimaryDiagnosis.description &&
+        this.isActiveConsultationSummaryStatus(consultationPrimaryDiagnosis.status)
+          ? this.formatConsultationSummaryDiagnosis(
+              consultationPrimaryDiagnosis.description,
+              consultationPrimaryDiagnosis.cie10,
+            )
+          : '',
+        ...secondaryDiagnoses,
+        ...encounter.problems
+          .filter((problem) =>
+            this.isActiveConsultationSummaryStatus(problem.status ?? ''),
+          )
+          .map((problem) => problem.description),
+      ]);
+      const medications = this.readObjectArray(
+        latestPrescriptionRecord?.formData.recetaMedicamentos,
+      )
+        .map((medication) =>
+          [
+            this.readSummaryFormText(medication, 'medicamento'),
+            this.readSummaryFormText(medication, 'dosis'),
+            this.readSummaryFormText(medication, 'via'),
+            this.readSummaryFormText(medication, 'frecuencia'),
+            this.readSummaryFormText(medication, 'duracion'),
+            this.readSummaryFormText(medication, 'indicaciones'),
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        )
+        .filter(Boolean);
+      const currentTreatment = this.uniqueConsultationSummaryItems([
+        ...medications,
+        this.firstSummaryFormText(latestPrescriptionRecord?.formData, [
+          'recetaIndicacionesGenerales',
+          'recetaIndicacionesNoFarmacologicas',
+        ]),
+      ]);
+
+      return {
+        motive:
+          this.firstSummaryFormText(latestConsultationRecord?.formData, [
+            'motivoConsultaPrincipal',
+            'pcDescripcion',
+            'paDescripcion',
+          ]) ||
+          this.firstSummaryFormText(latestHistoryRecord?.formData, [
+            'motivoConsultaPrincipal',
+            'motivoConsulta',
+            'pcDescripcion',
+            'paDescripcion',
+          ]) ||
+          encounter.reasonForVisit ||
+          null,
+        primaryDiagnosis,
+        activeProblems,
+        currentTreatment,
+        latestVitalSigns: {
+          values: latestVitalSign ? this.toVitalSignsSummary(latestVitalSign) : [],
+          recordedAt: latestVitalSign?.takenAt.toISOString() ?? null,
+          source: latestVitalSign ? 'Signos vitales' : null,
+        },
+      };
+    }
+
+    private getLatestSummaryRecordByTab(
+      sectionRecords: EncounterDetailResponse['sectionRecords'],
+      tabKeys: string[],
+    ) {
+      return [...sectionRecords]
+        .filter(
+          (record) =>
+            tabKeys.includes(record.tabKey) &&
+            !['CANCELLED', 'CANCELED', 'DELETED', 'ARCHIVED'].includes(
+              record.status.toUpperCase(),
+            ),
+        )
+        .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0] ?? null;
+    }
+
+    private readSummaryFormText(
+      formData: Record<string, unknown> | null | undefined,
+      fieldKey: string,
+    ) {
+      const value = formData?.[fieldKey];
+      if (typeof value === 'string') return value.trim();
+      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+      if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+      return '';
+    }
+
+    private firstSummaryFormText(
+      formData: Record<string, unknown> | null | undefined,
+      fieldKeys: string[],
+    ) {
+      for (const fieldKey of fieldKeys) {
+        const value = this.readSummaryFormText(formData, fieldKey);
+        if (value) return value;
+      }
+
+      return '';
+    }
+
+    private isActiveConsultationSummaryStatus(status: string) {
+      return !['RESUELTO', 'DESCARTADO', 'INACTIVO', 'ELIMINADO'].includes(
+        status.trim().toUpperCase(),
+      );
+    }
+
+    private formatConsultationSummaryDiagnosis(description: string, cie10: string) {
+      return [description, cie10 ? `CIE-10 ${cie10}` : ''].filter(Boolean).join(' · ');
+    }
+
+    private uniqueConsultationSummaryItems(values: string[]) {
+      const seen = new Set<string>();
+
+      return values
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .filter((value) => {
+          const key = value.toLocaleLowerCase('es-MX');
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    }
+
+    private buildAgeLabel(birthDate: Date | null, ageSnapshot: number | null) {
     if (birthDate) {
       const today = new Date();
       let age = today.getFullYear() - birthDate.getFullYear();

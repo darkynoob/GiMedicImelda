@@ -262,6 +262,24 @@ export interface EncounterDetailResponse {
     value: string;
     unit: string;
   }>;
+  consultationSummary: {
+    motive: string | null;
+    primaryDiagnosis: {
+      description: string;
+      cie10: string | null;
+    } | null;
+    activeProblems: string[];
+    currentTreatment: string[];
+    latestVitalSigns: {
+      values: Array<{
+        label: string;
+        value: string;
+        unit: string;
+      }>;
+      recordedAt: string | null;
+      source: string | null;
+    };
+  } | null;
   diagnoses: Array<{
     id: string;
     code: string | null;

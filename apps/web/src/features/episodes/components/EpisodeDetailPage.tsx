@@ -17,7 +17,6 @@ import {
   ShieldAlert,
   Stethoscope,
   Trash2,
-  FolderOpen,
   ClipboardPen,
   Pill,
   FileSignature,
@@ -1648,6 +1647,17 @@ function uniqueSummaryItems(values: string[]) {
     seen.add(key);
     return true;
   });
+}
+
+function formatConsultationSummaryDiagnosis(
+  diagnosis: NonNullable<EncounterDetailResponse['consultationSummary']>['primaryDiagnosis'],
+) {
+  if (!diagnosis) return '';
+
+  return compactSummaryList([
+    diagnosis.description,
+    diagnosis.cie10 ? `CIE-10 ${diagnosis.cie10}` : '',
+  ]).join(' · ');
 }
 
 function formatSummaryEnum(value: string) {
@@ -5407,6 +5417,7 @@ export function EpisodeDetailPage() {
   }, [detailQuery.data]);
 
   const detail = detailQuery.data;
+  const outpatientClinicalSummary = detail?.consultationSummary ?? null;
   const tabs = useMemo(
     () => getEncounterTabs(detail?.encounterType ?? 'OUTPATIENT'),
     [detail?.encounterType],
@@ -9058,13 +9069,15 @@ export function EpisodeDetailPage() {
                       {detail.facility.name}
                     </span>
                   ) : null}
-                  {!isEmergencySummaryTab && !isHospitalSummaryTab ? (
-                    <span className="text-xs text-muted-foreground/70">
-                      {detail.serviceArea?.name ??
-                        detail.specialty?.name ??
-                        'Sin area clinica'}
-                    </span>
-                  ) : detail.specialty?.name ? (
+                    {!isEmergencySummaryTab && !isHospitalSummaryTab ? (
+                      <span className="text-xs text-muted-foreground/70">
+                        {activeTab === 'Resumen'
+                          ? detail.specialty?.name ?? 'Sin especialidad'
+                          : detail.serviceArea?.name ??
+                            detail.specialty?.name ??
+                            'Sin area clinica'}
+                      </span>
+                    ) : detail.specialty?.name ? (
                     <span className="text-xs text-muted-foreground/70">
                       {detail.specialty.name}
                     </span>
@@ -9140,10 +9153,12 @@ export function EpisodeDetailPage() {
               detail.reasonForVisit ? (
                 <InfoRow label="Motivo" value={detail.reasonForVisit} />
               ) : null
-            ) : (
-              <>
+              ) : activeTab === 'Resumen' ? (
                 <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
-                <InfoRow
+              ) : (
+                <>
+                  <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
+                  <InfoRow
                   label="Origen"
                   value={admissionSourceLabels[detail.admissionSource ?? ''] ?? 'Sin origen'}
                 />
@@ -9177,11 +9192,13 @@ export function EpisodeDetailPage() {
           </div>
         </div>
 
-        <div
-          className={`grid gap-6 ${
-            isEmergencySummaryTab || isHospitalSummaryTab ? '' : 'xl:grid-cols-[1.55fr_0.95fr]'
-          }`}
-        >
+          <div
+            className={`grid gap-6 ${
+              isEmergencySummaryTab || isHospitalSummaryTab || activeTab === 'Resumen'
+                ? ''
+                : 'xl:grid-cols-[1.55fr_0.95fr]'
+            }`}
+          >
           <div className="space-y-6">
             {activeTab === 'Resumen' ? (
               isEmergencySummaryTab ? (
@@ -9881,12 +9898,12 @@ export function EpisodeDetailPage() {
               </>
               ) : (
               <>
-                <SectionCard
-                  description="Consulta y edita la información principal del episodio clínico."
-                  title="Información general"
-                  icon={LayoutDashboard}
-                >
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <SectionCard
+                    description="Información administrativa mínima del episodio."
+                    title="Datos base del episodio"
+                    icon={LayoutDashboard}
+                  >
+                    <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
                       <span className="font-medium text-slate-900">Sede</span>
                       <select
@@ -9905,29 +9922,9 @@ export function EpisodeDetailPage() {
                       </select>
                     </label>
 
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">
-                        Area de servicio
-                      </span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('serviceAreaId', event.target.value)
-                        }
-                        value={form.serviceAreaId}
-                      >
-                        <option value="">Sin area especifica</option>
-                        {availableServiceAreas.map((serviceArea) => (
-                          <option key={serviceArea.id} value={serviceArea.id}>
-                            {serviceArea.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Especialidad</span>
-                      <select
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">Especialidad</span>
+                        <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         onChange={(event) =>
                           updateFormField('specialtyId', event.target.value)
@@ -9963,25 +9960,8 @@ export function EpisodeDetailPage() {
                       </select>
                     </label>
 
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Tipo</span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('encounterType', event.target.value)
-                        }
-                        value={form.encounterType}
-                      >
-                        {(metaQuery.data?.encounterTypes ?? []).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Estado</span>
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">Estado</span>
                       <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         onChange={(event) =>
@@ -9998,30 +9978,12 @@ export function EpisodeDetailPage() {
                     </label>
                   </div>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Origen</span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('admissionSource', event.target.value)
-                        }
-                        value={form.admissionSource}
-                      >
-                        <option value="">Sin origen</option>
-                        {(metaQuery.data?.admissionSources ?? []).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">
-                        Apertura del episodio
-                      </span>
-                      <Input
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">
+                          Fecha de apertura
+                        </span>
+                        <Input
                         onChange={(event) =>
                           updateFormField('openedAt', event.target.value)
                         }
@@ -10030,9 +9992,9 @@ export function EpisodeDetailPage() {
                       />
                     </label>
 
-                    <label className="space-y-2 text-sm md:col-span-2">
-                      <span className="font-medium text-slate-900">
-                        Fecha de cierre
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">
+                          Fecha de cierre
                       </span>
                       <Input
                         onChange={(event) =>
@@ -10050,118 +10012,116 @@ export function EpisodeDetailPage() {
                       onChange={(event) =>
                         updateFormField('reasonForVisit', event.target.value)
                       }
-                      value={form.reasonForVisit}
-                    />
-                  </label>
+                        value={form.reasonForVisit}
+                      />
+                    </label>
+                  </SectionCard>
 
-                  <label className="mt-4 block space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Notas</span>
-                    <Textarea
-                      onChange={(event) =>
-                        updateFormField('notes', event.target.value)
-                      }
-                      value={form.notes}
-                    />
-                  </label>
-                </SectionCard>
+                  <SectionCard
+                    description="Lectura consolidada desde Historia clínica, Consulta actual y Receta e indicaciones."
+                    title="Resumen clínico"
+                    icon={Stethoscope}
+                    >
+                      {outpatientClinicalSummary &&
+                      (outpatientClinicalSummary.motive ||
+                        outpatientClinicalSummary.primaryDiagnosis ||
+                        outpatientClinicalSummary.activeProblems.length > 0 ||
+                        outpatientClinicalSummary.currentTreatment.length > 0) ? (
+                        <div className="space-y-4">
+                          {outpatientClinicalSummary.motive ? (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Motivo de consulta
+                              </p>
+                              <p className="mt-1 text-sm leading-relaxed text-slate-900">
+                                {outpatientClinicalSummary.motive}
+                              </p>
+                            </div>
+                          ) : null}
 
-                <SectionCard
-                  description="Resumen clínico y operativo del episodio según el contexto actual."
-                  title="Vista general"
-                  icon={FolderOpen}
-                >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Paciente
-                        </p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {detail.patient.fullName}
-                        </p>
-                        <p className="text-sm leading-relaxed text-slate-500">
-                          {detail.patient.phone ?? 'Sin teléfono'} ·{' '}
-                          {detail.patient.email ?? 'Sin correo'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Episodio
-                        </p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {typeConfig?.label ?? detail.encounterType}
-                        </p>
-                        <p className="text-sm leading-relaxed text-slate-500">
-                          {detail.facility?.name ?? 'Sin sede'} ·{' '}
-                          {detail.serviceArea?.name ??
-                            detail.specialty?.name ??
-                            'Sin área'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </SectionCard>
+                        {outpatientClinicalSummary.primaryDiagnosis ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Diagnóstico principal
+                              </p>
+                              <p className="mt-1 text-sm leading-relaxed text-slate-900">
+                                {formatConsultationSummaryDiagnosis(
+                                  outpatientClinicalSummary.primaryDiagnosis,
+                                )}
+                              </p>
+                            </div>
+                          ) : null}
 
-                <SectionCard
-                  description="Contadores e indicadores vinculados al episodio clínico."
-                  title="Actividad relacionada"
-                  icon={Activity}
-                >
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      ['Documentos', detail.metrics.documents],
-                      ['Diagnósticos', detail.metrics.diagnoses],
-                      ['Labs', detail.metrics.labs],
-                      ['Imágenes', detail.metrics.imaging],
-                    ].map(([label, value]) => (
-                      <div
-                        className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-5 py-4 transition-colors hover:border-slate-300 hover:bg-white shadow-sm"
-                        key={label}
-                      >
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            {label}
-                          </p>
-
-                          <p className="text-2xl font-bold tracking-tight text-slate-900">
-                            {value}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-
-                <SectionCard
-                  description="Información más reciente de monitoreo clínico del episodio."
-                  title="Signos vitales"
-                  icon={HeartPulse}
-                >
-                  {detail.latestVitalSigns.length > 0 ? (
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {detail.latestVitalSigns.map((item) => (
-                        <div
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
-                          key={item.label}
-                        >
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            {item.label}
-                          </p>
-                          <div className="flex items-end gap-1.5">
-                            <p className="mt-2 text-xl font-semibold text-slate-900">
-                              {item.value}
+                        {outpatientClinicalSummary.activeProblems.length > 0 ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Problemas activos
                             </p>
-                            <span className="pb-1 text-xs font-medium text-slate-500">
-                              {item.unit}
-                            </span>
+                            <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
+                              {outpatientClinicalSummary.activeProblems.map((problem) => (
+                                <li key={problem}>{problem}</li>
+                              ))}
+                            </ul>
                           </div>
+                        ) : null}
+
+                          {outpatientClinicalSummary.currentTreatment.length > 0 ? (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Tratamiento actual
+                              </p>
+                              <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
+                                {outpatientClinicalSummary.currentTreatment.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Sin información clínica consolidada todavía.
+                      </p>
+                    )}
+                  </SectionCard>
+
+                  <SectionCard
+                    description="Último registro clínico disponible para el episodio."
+                    title="Signos vitales"
+                    icon={HeartPulse}
+                    >
+                        {outpatientClinicalSummary &&
+                        outpatientClinicalSummary.latestVitalSigns.values.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {outpatientClinicalSummary.latestVitalSigns.values.map((item) => (
+                              <div
+                              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
+                              key={item.label}
+                            >
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                {item.label}
+                              </p>
+                              <div className="flex items-end gap-1.5">
+                                <p className="mt-2 text-xl font-semibold text-slate-900">
+                                  {item.value}
+                                </p>
+                                <span className="pb-1 text-xs font-medium text-slate-500">
+                                  {item.unit}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
+                          {outpatientClinicalSummary.latestVitalSigns.recordedAt ? (
+                            <p className="text-xs text-muted-foreground">
+                              {outpatientClinicalSummary.latestVitalSigns.source} ·{' '}
+                              {formatDateTime(outpatientClinicalSummary.latestVitalSigns.recordedAt)}
+                            </p>
+                          ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
                       No hay signos vitales asociados a este episodio todavia.
                     </p>
                   )}
@@ -13370,7 +13330,7 @@ export function EpisodeDetailPage() {
             ) : null}
           </div>
 
-          {!isEmergencySummaryTab && !isHospitalSummaryTab ? (
+            {!isEmergencySummaryTab && !isHospitalSummaryTab && activeTab !== 'Resumen' ? (
           <div className="space-y-6">
             <SectionCard
               description="Resumen rápido e información clave para el seguimiento del episodio."

@@ -140,6 +140,25 @@ export interface EmergencySummaryResponse {
   } | null;
 }
 
+export interface ConsultationSummaryResponse {
+  motive: string | null;
+  primaryDiagnosis: {
+    description: string;
+    cie10: string | null;
+  } | null;
+  activeProblems: string[];
+  currentTreatment: string[];
+  latestVitalSigns: {
+    values: Array<{
+      label: string;
+      value: string;
+      unit: string;
+    }>;
+    recordedAt: string | null;
+    source: string | null;
+  };
+}
+
 export interface EncounterDetailResponse {
   id: string;
   encounterNumber: string;
@@ -215,6 +234,7 @@ export interface EncounterDetailResponse {
     value: string;
     unit: string;
   }>;
+  consultationSummary: ConsultationSummaryResponse | null;
   diagnoses: Array<{
     id: string;
     code: string | null;
