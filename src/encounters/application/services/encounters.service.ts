@@ -17371,6 +17371,22 @@ export class EncountersService {
       line('Código de verificación', verificationCode),
     );
 
+    if (input.noteType === 'Solicitud de laboratorio') {
+      return lines(
+        input.recordTitle,
+        ...headerLines,
+        line('Tipo de documento', input.noteType),
+        line('Estado', input.formData.documentoEstado),
+        line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+        line('Título / versión', input.recordTitle),
+        line('Paciente', input.encounter.patient.fullName),
+        line('Expediente', input.formData.documentoExpediente),
+        ...(clinicalLines.length ? ['Solicitud de laboratorio', ...clinicalLines] : []),
+        ...legalLines,
+        ...footerLines,
+      );
+    }
+
     return lines(
       input.recordTitle,
       ...headerLines,

@@ -5537,6 +5537,34 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
   },
 ];
 
+const consultationLaboratoryDocumentLegalSection: EpisodeSectionDefinition = {
+  key: 'documento_legales',
+  title: 'Datos legales y firma',
+  fields: [
+    { key: 'tipoRegistro', label: 'Tipo de documento', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoFecha', label: 'Fecha', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoHora', label: 'Hora', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoFolio', label: 'Folio del documento', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoVersion', label: 'Versión', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoEstado', label: 'Estado', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoInstitucionEmisora', label: 'Institución emisora', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoRfcMedico', label: 'RFC', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoLicenciaSanitaria', label: 'Licencia sanitaria', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoCodigoVerificacion', label: 'Código de verificación', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoNombreProfesional', label: 'Profesional responsable', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoCedulaProfesional', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoEspecialidadProfesional', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoLugarAtencion', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+    {
+      key: 'firmarDocumentoClinico',
+      label: 'Firma',
+      type: 'action',
+      actionLabel: 'Firmar documento',
+      inheritanceMode: 'system',
+    },
+  ],
+};
+
 export function getConsultationDocumentTypes() {
   return Object.keys(consultationDocumentSectionDefinitions);
 }
@@ -5560,6 +5588,11 @@ export function getEpisodeDocumentTypes(encounterType: string) {
 export function getConsultationDocumentTabDefinition(
   noteType: string,
 ): EpisodeTabDefinition {
+  const sharedSections =
+    noteType === 'Solicitud de laboratorio'
+      ? [consultationLaboratoryDocumentLegalSection]
+      : consultationDocumentSharedSections;
+
   return {
     key: 'Documentos',
     title: 'Documentos',
@@ -5568,7 +5601,7 @@ export function getConsultationDocumentTabDefinition(
     sections: [
       ...(consultationDocumentSectionDefinitions[noteType] ??
         consultationDocumentSectionDefinitions['Solicitud de laboratorio']),
-      ...consultationDocumentSharedSections,
+      ...sharedSections,
     ],
   };
 }

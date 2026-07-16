@@ -4905,6 +4905,8 @@ function hasPrintableDocumentValue(value: string) {
       'Sin profesional responsable',
       'Sin cédula',
       'Sin especialidad',
+      'RFC no configurado',
+      'Licencia no configurada',
     ].includes(normalizedValue) &&
     !normalizedValue.startsWith('Se generará')
   );
@@ -8882,6 +8884,10 @@ export function EpisodeDetailPage() {
           metaQuery.data ?? null,
         )
       : null;
+  const isOutpatientLaboratoryDocument =
+    isConsultationDocumentsSection &&
+    detail.encounterType === 'OUTPATIENT' &&
+    (recordForm?.noteType ?? selectedDocumentNoteType) === 'Solicitud de laboratorio';
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -11453,6 +11459,7 @@ export function EpisodeDetailPage() {
                         {isConsultationDocumentsSection &&
                         detail.encounterType !== 'EMERGENCY' &&
                         detail.encounterType !== 'HOSPITALIZATION' &&
+                        !isOutpatientLaboratoryDocument &&
                         currentDocumentLegalSnapshot ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
@@ -12049,20 +12056,36 @@ export function EpisodeDetailPage() {
                                   }
 
                                   if (field.type === 'readonly') {
+                                    const formFieldValue =
+                                      typeof recordForm.formData[field.key] === 'string'
+                                        ? (recordForm.formData[field.key] as string)
+                                        : '';
+                                    const documentSnapshotValue =
+                                      currentDocumentLegalSnapshot &&
+                                      field.key in currentDocumentLegalSnapshot
+                                        ? (currentDocumentLegalSnapshot[
+                                            field.key as keyof typeof currentDocumentLegalSnapshot
+                                          ] as string)
+                                        : '';
                                     const readonlyValue =
-                                      isConsultationPrescriptionSection &&
-                                      currentPrescriptionLegalSnapshot &&
-                                      field.key in currentPrescriptionLegalSnapshot
+                                      isOutpatientLaboratoryDocument &&
+                                      field.key === 'tipoRegistro'
+                                        ? recordForm.noteType
+                                        : isConsultationDocumentsSection &&
+                                            detail.encounterType === 'OUTPATIENT'
+                                          ? formFieldValue || documentSnapshotValue
+                                          : isConsultationPrescriptionSection &&
+                                              currentPrescriptionLegalSnapshot &&
+                                              field.key in currentPrescriptionLegalSnapshot
                                         ? (currentPrescriptionLegalSnapshot[
                                             field.key as keyof typeof currentPrescriptionLegalSnapshot
                                           ] as string)
-                                        : typeof recordForm.formData[field.key] === 'string'
-                                          ? (recordForm.formData[field.key] as string)
-                                          : '';
+                                        : formFieldValue;
 
                                     if (
-                                      isConsultationDocumentsSection &&
-                                      detail.encounterType === 'HOSPITALIZATION' &&
+                                      ((isConsultationDocumentsSection &&
+                                        detail.encounterType === 'HOSPITALIZATION') ||
+                                        isOutpatientLaboratoryDocument) &&
                                       !hasPrintableDocumentValue(readonlyValue)
                                     ) {
                                       return null;
@@ -13207,7 +13230,8 @@ export function EpisodeDetailPage() {
 
                     {activeTab === 'Documentos' &&
                     detail.encounterType !== 'EMERGENCY' &&
-                    detail.encounterType !== 'HOSPITALIZATION' ? (
+                    detail.encounterType !== 'HOSPITALIZATION' &&
+                    !isOutpatientLaboratoryDocument ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
