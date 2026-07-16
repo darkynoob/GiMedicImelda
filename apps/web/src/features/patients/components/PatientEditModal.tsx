@@ -2306,7 +2306,7 @@ export function PatientEditModal({
                   <CollectionCard
                     key={`document-${index}`}
                     onRemove={() => removeCollectionItem('documents', index)}
-                    subtitle="Aqui vive el metadato del documento para referencia rapida desde el perfil."
+                    subtitle="Información clave del documento disponible para consulta rápida."
                     title={`Documento ${index + 1}`}
                   >
                     <SelectField

@@ -10,10 +10,18 @@ const pendingDocs: Array<{ title: string; patient: string | null; type: string |
 const auditRecent: Array<{ action: string; user: string | null; entity: string | null; time: string | null }> = [];
 const clinicalAlerts: Array<{ title: string; body: string; variant: 'alert' | 'warning' | 'info' }> = [];
 
+const statusLabels: Record<string, string> = {
+  OPEN: 'Abierto',
+  CLOSED: 'Cerrado',
+  PENDING: 'Pendiente',
+};
+
 function StatusBadge({ status }: { status: string }) {
   const variant =
     status === 'OPEN' ? 'success' : status === 'CLOSED' ? 'secondary' : 'warning';
-  return <Badge variant={variant}>{status}</Badge>;
+  return (
+    <Badge variant={variant}>{statusLabels[status] ?? status}</Badge>
+  );
 }
 
 function DocStatusBadge({ status }: { status: string }) {

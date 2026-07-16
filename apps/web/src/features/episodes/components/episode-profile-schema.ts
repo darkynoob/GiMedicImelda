@@ -969,7 +969,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'exploracion_baseline',
-          title: 'Exploración física baseline',
+          title: 'Exploración física de referencia',
           historyVisibility: 'initial_only',
           fields: [
             { key: 'efbSignosVitales', label: 'Signos vitales', type: 'textarea', inheritanceMode: 'fresh_capture' },
@@ -978,7 +978,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'diagnosticos_baseline',
-          title: 'Diagnósticos baseline inicial',
+          title: 'Diagnósticos iniciales del paciente',
           historyVisibility: 'initial_only',
           fields: [
             { key: 'dbiDiagnosticoPrincipal', label: 'Diagnóstico principal', type: 'text', inheritanceMode: 'fresh_capture' },
@@ -1279,7 +1279,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
         },
         {
           key: 'red_flags',
-          title: 'Red flags',
+          title: 'Hallazgos de riesgo',
           fields: [
             { key: 'rfCefaleaIntensaSubita', label: 'Cefalea intensa súbita', type: 'checkbox', inheritanceMode: 'fresh_capture' },
             { key: 'rfDeficitNeurologicoFocal', label: 'Déficit neurológico focal', type: 'checkbox', inheritanceMode: 'fresh_capture' },
