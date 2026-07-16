@@ -453,7 +453,11 @@ function isConsultationEvolutionTab(encounterType: string, tabTitle: string) {
 }
 
 function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) {
-  return encounterType === 'OUTPATIENT' && tabTitle === 'Receta / Indicaciones';
+  return (
+    encounterType === 'OUTPATIENT' &&
+    (tabTitle === 'Receta e indicaciones' ||
+      tabTitle === 'Receta / Indicaciones')
+  );
 }
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
@@ -6961,8 +6965,8 @@ export function EpisodeDetailPage() {
       setRecordForm(
         buildRecordFormState({
           tabDefinition: activeTabDefinition,
-          noteType: 'Receta médica',
-          title: `Receta B${nextPrescriptionVersionNumber}`,
+          noteType: 'Receta e indicaciones',
+          title: `Receta V${nextPrescriptionVersionNumber}`,
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: buildPrescriptionVersionPrefill({
@@ -8468,9 +8472,13 @@ export function EpisodeDetailPage() {
       : null;
     const payload = {
       tabKey: activeRecordTabKey,
-      noteType: emergencyOrdersPayloadDocumentType ?? recordForm.noteType.trim(),
+      noteType: isConsultationPrescriptionSection
+        ? 'Receta e indicaciones'
+        : emergencyOrdersPayloadDocumentType ?? recordForm.noteType.trim(),
       title:
-        emergencyOrdersPayloadDocumentType
+        isConsultationPrescriptionSection
+          ? undefined
+          : emergencyOrdersPayloadDocumentType
           ? buildEmergencyOrdersTitle(
               selectedRecord?.metadata.versionNumber ??
                 nextEmergencyOrdersVersionNumberForCurrentType,
@@ -10463,7 +10471,7 @@ export function EpisodeDetailPage() {
                                       <Pill className="h-4 w-4 text-violet-600" />
                                     </div>
                                     <p className="text-sm font-semibold text-slate-900">
-                                      {`Receta · versión ${prescriptionVersionNumber}`}
+                                      {recordForm.title || `Receta V${prescriptionVersionNumber}`}
                                     </p>
                                   </div>
                                   <p className="max-w-2xl text-sm leading-relaxed text-violet-800">
@@ -10472,6 +10480,12 @@ export function EpisodeDetailPage() {
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Tipo de registro: Receta e indicaciones
+                                  </Badge>
+                                  <Badge variant="success">
+                                    {`Versión ${prescriptionVersionNumber}`}
+                                  </Badge>
                                   <Badge variant="secondary">
                                     {typeof recordForm.formData.recetaFolio === 'string'
                                       ? recordForm.formData.recetaFolio
@@ -11203,6 +11217,13 @@ export function EpisodeDetailPage() {
                                       encounterRecordStatusConfig.DRAFT).label
                                   }
                                 </Badge>
+                              </div>
+                            </div>
+                          ) : isConsultationPrescriptionSection ? (
+                            <div className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">Tipo de registro</span>
+                              <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
+                                Receta e indicaciones
                               </div>
                             </div>
                           ) : isConsultationDocumentsSection ? null : (

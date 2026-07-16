@@ -4495,7 +4495,12 @@ export class EncountersService {
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
         encounterId: input.encounterId,
-        tabKey: input.tabKey,
+        tabKey: {
+          in: [
+            consultationPrescriptionTabKey,
+            legacyConsultationPrescriptionTabKey,
+          ],
+        },
         ...(input.currentRecordId
           ? {
               NOT: {
