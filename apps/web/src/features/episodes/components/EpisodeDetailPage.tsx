@@ -120,6 +120,15 @@ type RecordFormState = {
   formData: Record<string, RecordFieldValue>;
 };
 
+function getTodayDateInputValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
 const emergencyEvolutionDiagnosisFieldKey = 'diagnosticosEvolucionUrg';
 const emergencyEvolutionDiagnosisTypeValues = [
   'PRESUNTIVO',
@@ -12453,6 +12462,8 @@ export function EpisodeDetailPage() {
                                     field.key === emergencyEvolutionDiagnosisFieldKey;
                                   const isEmergencyEvolutionDiagnosticResultsList =
                                     field.key === emergencyEvolutionDiagnosticResultsFieldKey;
+                                  const isConsultationHistoryPriorStudiesList =
+                                    field.key === 'estudiosPreviosRegistrados';
                                   const items: Record<string, unknown>[] =
                                     isEmergencyEvolutionDiagnosisList
                                       ? normalizeEmergencyEvolutionDiagnoses(fieldValue)
@@ -12835,11 +12846,22 @@ export function EpisodeDetailPage() {
                                       isEmergencyEvolutionDiagnosisList &&
                                       (hasEmergencyEvolutionDiagnosisValue(item) ||
                                         Boolean(selectedRecord));
+                                    const shouldConfirmPriorStudyRemoval =
+                                      isConsultationHistoryPriorStudiesList;
 
                                     if (
                                       shouldConfirm &&
                                       !window.confirm(
                                         'Eliminar diagnóstico puede descartar información capturada. ¿Deseas continuar?',
+                                      )
+                                    ) {
+                                      return;
+                                    }
+
+                                    if (
+                                      shouldConfirmPriorStudyRemoval &&
+                                      !window.confirm(
+                                        'Eliminar estudio puede descartar información capturada. ¿Deseas continuar?',
                                       )
                                     ) {
                                       return;
@@ -12863,15 +12885,18 @@ export function EpisodeDetailPage() {
                                         <span className="font-medium text-slate-900">
                                           {field.label}
                                         </span>
-                                        <Button
-                                          disabled={isRecordLocked}
-                                          onClick={addObjectArrayItem}
-                                          size="sm"
-                                          type="button"
-                                          variant="outline"
-                                        >
-                                          {field.itemAddLabel ?? 'Agregar'}
-                                        </Button>
+                                        {isRecordLocked &&
+                                        isConsultationHistoryPriorStudiesList ? null : (
+                                          <Button
+                                            disabled={isRecordLocked}
+                                            onClick={addObjectArrayItem}
+                                            size="sm"
+                                            type="button"
+                                            variant="outline"
+                                          >
+                                            {field.itemAddLabel ?? 'Agregar'}
+                                          </Button>
+                                        )}
                                       </div>
                                       <div className="space-y-3">
                                         {items.length > 0 ? (
@@ -12888,25 +12913,28 @@ export function EpisodeDetailPage() {
                                                 <p className="text-sm font-semibold text-slate-900">
                                                   {`${field.label} ${itemIndex + 1}`}
                                                 </p>
-                                                <Button
-                                                  disabled={isRecordLocked}
-                                                  className={
-                                                    field.disableItemRemoval
-                                                      ? 'hidden'
-                                                      : undefined
-                                                  }
-                                                  onClick={() =>
-                                                    removeObjectArrayItem(
-                                                      item,
-                                                      itemIndex,
-                                                    )
-                                                  }
-                                                  size="sm"
-                                                  type="button"
-                                                  variant="outline"
-                                                >
-                                                  {field.itemRemoveLabel ?? 'Eliminar'}
-                                                </Button>
+                                                {isRecordLocked &&
+                                                isConsultationHistoryPriorStudiesList ? null : (
+                                                  <Button
+                                                    disabled={isRecordLocked}
+                                                    className={
+                                                      field.disableItemRemoval
+                                                        ? 'hidden'
+                                                        : undefined
+                                                    }
+                                                    onClick={() =>
+                                                      removeObjectArrayItem(
+                                                        item,
+                                                        itemIndex,
+                                                      )
+                                                    }
+                                                    size="sm"
+                                                    type="button"
+                                                    variant="outline"
+                                                  >
+                                                    {field.itemRemoveLabel ?? 'Eliminar'}
+                                                  </Button>
+                                                )}
                                               </div>
                                               <div className="grid gap-3 md:grid-cols-2">
                                                 {(field.itemFields ?? []).map((itemField) => {
@@ -12954,6 +12982,38 @@ export function EpisodeDetailPage() {
                                                     );
                                                   }
 
+                                                  if (itemField.type === 'textarea') {
+                                                    return (
+                                                      <label
+                                                        className="space-y-2 text-sm md:col-span-2"
+                                                        key={`${field.key}-${itemIndex}-${itemField.key}`}
+                                                      >
+                                                        <span className="font-medium text-slate-900">
+                                                          {itemField.label}
+                                                        </span>
+                                                        <Textarea
+                                                          disabled={isRecordLocked}
+                                                          onChange={(event) => {
+                                                            const nextItems = [...items];
+                                                            nextItems[itemIndex] = {
+                                                              ...nextItems[itemIndex],
+                                                              [itemField.key]: event.target.value,
+                                                            };
+                                                            updateRecordFormDataField(
+                                                              field.key,
+                                                              nextItems,
+                                                            );
+                                                          }}
+                                                          value={
+                                                            typeof itemFieldValue === 'string'
+                                                              ? itemFieldValue
+                                                              : ''
+                                                          }
+                                                        />
+                                                      </label>
+                                                    );
+                                                  }
+
                                                   return (
                                                     <label
                                                       className="space-y-2 text-sm"
@@ -12986,6 +13046,12 @@ export function EpisodeDetailPage() {
                                                           itemField.type === 'date'
                                                             ? 'date'
                                                             : itemField.type
+                                                        }
+                                                        max={
+                                                          itemField.type === 'date' &&
+                                                          itemField.maxDate === 'today'
+                                                            ? getTodayDateInputValue()
+                                                            : undefined
                                                         }
                                                         value={
                                                           typeof itemFieldValue === 'string'

@@ -44,6 +44,7 @@ export type EpisodeFieldDefinition = {
   itemAddLabel?: string;
   itemRemoveLabel?: string;
   disableItemRemoval?: boolean;
+  maxDate?: 'today';
   actionLabel?: string;
   required?: boolean;
   visibleWhen?: {
@@ -992,7 +993,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           fields: [
             {
               key: 'estudiosPreviosRegistrados',
-              label: 'Estudios previos registrados',
+              label: 'Estudios previos',
               type: 'object-array',
               itemAddLabel: '+ Agregar estudio',
               itemRemoveLabel: 'Eliminar estudio',
@@ -1013,6 +1014,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
                   key: 'fechaEstudio',
                   label: 'Fecha del estudio',
                   type: 'date',
+                  maxDate: 'today',
                 },
                 {
                   key: 'resultado',

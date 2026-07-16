@@ -6715,17 +6715,50 @@ export class EncountersService {
 
   private normalizeConsultationHistoryPriorStudiesFormData(value: unknown) {
     return this.readObjectArray(value)
-      .map((study) => ({
-        tipoEstudio: this.normalizeConsultationPriorStudyType(study.tipoEstudio),
-        nombreEstudio: this.readStringValue(study.nombreEstudio).trim(),
-        fechaEstudio: this.readStringValue(study.fechaEstudio).trim(),
-        resultado: this.readStringValue(study.resultado).trim(),
-        interpretacionHallazgo: this.readStringValue(
-          study.interpretacionHallazgo,
-        ).trim(),
-        sourceModule: this.readStringValue(study.sourceModule).trim(),
-        sourceReferenceId: this.readStringValue(study.sourceReferenceId).trim(),
-      }))
+      .map((study, index) => {
+        const rawStudyType = this.readStringValue(study.tipoEstudio)
+          .trim()
+          .toUpperCase();
+        const normalizedStudyType =
+          this.normalizeConsultationPriorStudyType(rawStudyType);
+        const studyDate = this.readStringValue(study.fechaEstudio).trim();
+
+        if (rawStudyType && !normalizedStudyType) {
+          throw new BadRequestException(
+            `Selecciona un tipo válido para el estudio previo ${index + 1}.`,
+          );
+        }
+
+        if (studyDate) {
+          const parsedStudyDate = this.parseOptionalDate(studyDate);
+          const todayEnd = new Date();
+          todayEnd.setHours(23, 59, 59, 999);
+
+          if (!parsedStudyDate) {
+            throw new BadRequestException(
+              `Captura una fecha válida para el estudio previo ${index + 1}.`,
+            );
+          }
+
+          if (parsedStudyDate > todayEnd) {
+            throw new BadRequestException(
+              `La fecha del estudio previo ${index + 1} no puede ser futura.`,
+            );
+          }
+        }
+
+        return {
+          tipoEstudio: normalizedStudyType,
+          nombreEstudio: this.readStringValue(study.nombreEstudio).trim(),
+          fechaEstudio: studyDate,
+          resultado: this.readStringValue(study.resultado).trim(),
+          interpretacionHallazgo: this.readStringValue(
+            study.interpretacionHallazgo,
+          ).trim(),
+          sourceModule: this.readStringValue(study.sourceModule).trim(),
+          sourceReferenceId: this.readStringValue(study.sourceReferenceId).trim(),
+        };
+      })
       .filter((study) =>
         [
           study.tipoEstudio,
@@ -6734,7 +6767,13 @@ export class EncountersService {
           study.resultado,
           study.interpretacionHallazgo,
         ].some((fieldValue) => fieldValue.length > 0),
-      );
+      )
+      .sort((leftStudy, rightStudy) => {
+        const leftDate = this.parseOptionalDate(leftStudy.fechaEstudio);
+        const rightDate = this.parseOptionalDate(rightStudy.fechaEstudio);
+
+        return (rightDate?.getTime() ?? 0) - (leftDate?.getTime() ?? 0);
+      });
   }
 
   private normalizeConsultationPriorStudyType(value: unknown) {
@@ -17123,6 +17162,41 @@ export class EncountersService {
       this.buildPrintableDocumentLine(label, rawValue);
     const lines = (...rawLines: Array<string | null>) =>
       rawLines.filter((item): item is string => Boolean(item));
+    const priorStudyTypeLabel = (rawValue: unknown) => {
+      const studyType = value(rawValue);
+      const labels: Record<string, string> = {
+        LABORATORY: 'Laboratorio',
+        IMAGING: 'Imagen',
+        CABINET: 'Gabinete',
+        OTHER: 'Otro',
+      };
+
+      return labels[studyType] ?? studyType;
+    };
+    const priorStudyLines = this.readObjectArray(
+      input.formData.estudiosPreviosRegistrados,
+    ).flatMap((study, index) => {
+      const headline = [
+        priorStudyTypeLabel(study.tipoEstudio),
+        value(study.nombreEstudio),
+        value(study.fechaEstudio),
+      ].filter(Boolean);
+      const detailLines = lines(
+        line('Resultado', study.resultado),
+        line('Interpretación', study.interpretacionHallazgo),
+      ).map((itemLine) => `   ${itemLine}`);
+
+      if (!headline.length && !detailLines.length) {
+        return [];
+      }
+
+      return [
+        headline.length
+          ? `${index + 1}. ${headline.join(' · ')}`
+          : `${index + 1}. Estudio previo`,
+        ...detailLines,
+      ];
+    });
     const documentDate =
       value(input.formData.documentoFecha) ||
       input.recordedAt.toISOString().slice(0, 10);
@@ -17189,6 +17263,14 @@ export class EncountersService {
       .map((itemLine) => itemLine.replace(/^[^:]+:\s*/, ''))
       .join(' al ');
     const clinicalLinesByDocument: Record<string, string[]> = {
+      'Historia clínica': lines(
+        ...(priorStudyLines.length ? ['Estudios previos:', ...priorStudyLines] : []),
+        line(
+          'Resumen de estudios relevantes',
+          value(input.formData.resultadosPreviosResumen) ||
+            value(input.formData.consultaResultadosPreviosResumen),
+        ),
+      ),
       'Solicitud de laboratorio': lines(
         line('Motivo de solicitud', input.formData.documentoMotivoSolicitud),
         line('Estudios solicitados', input.formData.documentoEstudiosSolicitados),
