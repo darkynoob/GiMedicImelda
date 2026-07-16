@@ -4907,6 +4907,10 @@ function hasPrintableDocumentValue(value: string) {
       'Sin especialidad',
       'RFC no configurado',
       'Licencia no configurada',
+      'No registrado',
+      'null',
+      'undefined',
+      '-',
     ].includes(normalizedValue) &&
     !normalizedValue.startsWith('Se generará')
   );
@@ -12175,6 +12179,30 @@ export function EpisodeDetailPage() {
                                 const isHospitalEvolutionGeneralDataSection =
                                   isHospitalEvolutionSection &&
                                   section.key === 'datos_generales_evol_hosp';
+
+                                if (isOutpatientLaboratoryDocument && isRecordLocked) {
+                                  const readonlyValue =
+                                    field.type === 'select'
+                                      ? field.options?.find(
+                                          (option) => option.value === fieldValue,
+                                        )?.label ?? ''
+                                      : typeof fieldValue === 'string' ||
+                                          typeof fieldValue === 'number'
+                                        ? String(fieldValue)
+                                        : '';
+
+                                  if (!hasPrintableDocumentValue(readonlyValue)) {
+                                    return null;
+                                  }
+
+                                  return (
+                                    <ReadOnlyField
+                                      key={field.key}
+                                      label={field.label}
+                                      value={readonlyValue}
+                                    />
+                                  );
+                                }
 
                                 if (
                                   isRecordLocked &&

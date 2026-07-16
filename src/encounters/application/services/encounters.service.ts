@@ -17372,6 +17372,21 @@ export class EncountersService {
     );
 
     if (input.noteType === 'Solicitud de laboratorio') {
+      const laboratoryLegalLines = lines(
+        'Datos legales y firma',
+        line('Folio del documento', input.formData.documentoFolio),
+        line('Versión', input.formData.documentoVersion),
+        line('Lugar de atención', input.formData.documentoLugarAtencion),
+      );
+      const laboratoryFooterLines = lines(
+        'Pie del documento',
+        line('Nombre del médico', professionalName),
+        line('Cédula profesional', professionalLicense),
+        line('Fecha', documentDate),
+        line('Firma', professionalName),
+        line('Código de verificación', verificationCode),
+      );
+
       return lines(
         input.recordTitle,
         ...headerLines,
@@ -17382,8 +17397,8 @@ export class EncountersService {
         line('Paciente', input.encounter.patient.fullName),
         line('Expediente', input.formData.documentoExpediente),
         ...(clinicalLines.length ? ['Solicitud de laboratorio', ...clinicalLines] : []),
-        ...legalLines,
-        ...footerLines,
+        ...laboratoryLegalLines,
+        ...laboratoryFooterLines,
       );
     }
 
@@ -17413,6 +17428,10 @@ export class EncountersService {
         'Sin especialidad',
         'RFC no configurado',
         'Licencia no configurada',
+        'No registrado',
+        'null',
+        'undefined',
+        '-',
       ].includes(printableValue) ||
       printableValue.startsWith('Se generará')
     ) {
