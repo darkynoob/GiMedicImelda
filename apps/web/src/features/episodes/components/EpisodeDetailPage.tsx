@@ -6463,6 +6463,14 @@ export function EpisodeDetailPage() {
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
+  const latestPatientHistoryFormData =
+    isConsultationHistorySection
+      ? detail.historyVersionContext.latestRecordFormData
+      : null;
+  const latestPatientHistoryTitle =
+    isConsultationHistorySection
+      ? detail.historyVersionContext.latestRecordTitle
+      : null;
   const latestConsultationRecord = isConsultationCurrentSection
     ? [...activeTabRecords].sort((left, right) => {
         const leftVersion = left.metadata.versionNumber ?? 0;
@@ -6598,8 +6606,9 @@ export function EpisodeDetailPage() {
           return right.recordedAt.localeCompare(left.recordedAt);
         })[0] ?? null
     : null;
-  const nextHistoryVersionNumber =
-    (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
+  const nextHistoryVersionNumber = isConsultationHistorySection
+    ? detail.historyVersionContext.nextVersionNumber
+    : (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationVersionNumber =
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
@@ -6877,7 +6886,8 @@ export function EpisodeDetailPage() {
           rawFormData: mergeHistoryReadOnlyFields(
             buildHistoryVersionPrefill(
               activeTabDefinition,
-              latestHistoryRecord?.formData,
+              latestPatientHistoryFormData ??
+                latestHistoryRecord?.formData,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -8820,8 +8830,12 @@ export function EpisodeDetailPage() {
     selectedRecord?.metadata.noteTypeLabel ??
     getConsultationHistoryNoteTypeLabel(historyVersionNumber);
   const inheritedFromLabel =
-    isConsultationHistorySection && !selectedRecord && latestHistoryRecord
-      ? `Precargada desde ${latestHistoryRecord.title}`
+    isConsultationHistorySection &&
+    !selectedRecord &&
+    (latestPatientHistoryTitle ?? latestHistoryRecord?.title)
+      ? `Precargada desde ${
+          latestPatientHistoryTitle ?? latestHistoryRecord?.title
+        }`
       : selectedRecord?.metadata.inheritedFromRecordId
         ? `Heredada de una versión previa`
         : null;
