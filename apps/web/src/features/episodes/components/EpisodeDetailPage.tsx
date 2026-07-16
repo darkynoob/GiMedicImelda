@@ -17,7 +17,6 @@ import {
   ShieldAlert,
   Stethoscope,
   Trash2,
-  FolderOpen,
   ClipboardPen,
   Pill,
   FileSignature,
@@ -75,6 +74,8 @@ import {
   buildHistoryVersionPrefill,
   buildInitialStructuredSections,
   getEpisodeTabDefinition,
+  getConsultationHistoryNoteTypeLabel,
+  isPresentationField,
   triageClinicalDiscriminatorFields,
   triageOtherClinicalDiscriminatorFieldKey,
   type EpisodeFieldDefinition,
@@ -117,6 +118,15 @@ type RecordFormState = {
   recordedAt: string;
   formData: Record<string, RecordFieldValue>;
 };
+
+function getTodayDateInputValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
 
 const emergencyEvolutionDiagnosisFieldKey = 'diagnosticosEvolucionUrg';
 const emergencyEvolutionDiagnosisTypeValues = [
@@ -401,23 +411,6 @@ const emergencyTriageObsoleteInitialStateFields = [
   'estadoMental',
   'riesgoVital',
 ];
-const sexLabels: Record<string, string> = {
-  MALE: 'Masculino',
-  FEMALE: 'Femenino',
-  OTHER: 'Otro',
-};
-
-function getHistoryTypeLabel(historyType: string | null | undefined) {
-  if (historyType === 'INICIAL') {
-    return 'Inicial';
-  }
-
-  if (historyType === 'SUBSECUENTE') {
-    return 'Subsecuente';
-  }
-
-  return 'Sin clasificar';
-}
 
 function getLatestHistoryRecord(records: EncounterDetailResponse['sectionRecords']) {
   return [...records].sort((left, right) => {
@@ -459,7 +452,11 @@ function isConsultationEvolutionTab(encounterType: string, tabTitle: string) {
 }
 
 function isConsultationPrescriptionTab(encounterType: string, tabTitle: string) {
-  return encounterType === 'OUTPATIENT' && tabTitle === 'Receta / Indicaciones';
+  return (
+    encounterType === 'OUTPATIENT' &&
+    (tabTitle === 'Receta e indicaciones' ||
+      tabTitle === 'Receta / Indicaciones')
+  );
 }
 
 function isConsultationDocumentsTab(encounterType: string, tabTitle: string) {
@@ -1612,6 +1609,545 @@ function getLatestRecordByTab(
     })[0] ?? null;
 }
 
+function readSummaryText(
+  formData: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = formData?.[key];
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+  return '';
+}
+
+function readSummaryArray(
+  formData: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = formData?.[key];
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          item !== null && typeof item === 'object' && !Array.isArray(item),
+      )
+    : [];
+}
+
+function compactSummaryList(values: Array<string | null | undefined>) {
+  return values
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter(Boolean);
+}
+
+function uniqueSummaryItems(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = value.toLocaleLowerCase('es-MX');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatConsultationSummaryDiagnosis(
+  diagnosis: NonNullable<EncounterDetailResponse['consultationSummary']>['primaryDiagnosis'],
+) {
+  if (!diagnosis) return '';
+
+  return compactSummaryList([
+    diagnosis.description,
+    diagnosis.cie10 ? `CIE-10 ${diagnosis.cie10}` : '',
+  ]).join(' · ');
+}
+
+function formatSummaryEnum(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .toLocaleLowerCase('es-MX')
+    .replace(/(^|\s)\S/g, (match) => match.toLocaleUpperCase('es-MX'));
+}
+
+function formatSummaryDateTime(dateValue?: string, timeValue?: string) {
+  if (dateValue && timeValue) return formatDateTime(`${dateValue}T${timeValue}`);
+  if (dateValue) return formatDate(dateValue);
+  return '';
+}
+
+function resolveHospitalSummaryDate(record: EncounterDetailResponse['sectionRecords'][number]) {
+  const formData = record.formData;
+  return (
+    readSummaryText(formData, 'fechaHoraEvolucionHosp') ||
+    readSummaryText(formData, 'fechaHoraDocumentoQuirurgico') ||
+    formatSummaryDateTime(
+      readSummaryText(formData, 'fechaSolicitudInterHosp'),
+      readSummaryText(formData, 'horaSolicitudInterHosp'),
+    ) ||
+    record.recordedAt
+  );
+}
+
+function calculateHospitalSummaryStayDays(admittedAt: string, endedAt: string) {
+  const admissionDate = admittedAt ? new Date(admittedAt) : null;
+  const endDate = endedAt ? new Date(endedAt) : new Date();
+
+  if (!admissionDate || Number.isNaN(admissionDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return '';
+  }
+
+  const diffMs = endDate.getTime() - admissionDate.getTime();
+  if (diffMs < 0) return '';
+
+  return String(Math.max(1, Math.ceil(diffMs / 86_400_000)));
+}
+
+function buildSummaryMedicationLine(item: Record<string, unknown>) {
+  return compactSummaryList([
+    readSummaryText(item, 'medicamento'),
+    readSummaryText(item, 'dosis'),
+    readSummaryText(item, 'via'),
+    readSummaryText(item, 'frecuencia'),
+    readSummaryText(item, 'indicacion'),
+  ]).join(' · ');
+}
+
+function buildHospitalClinicalSummary(detail: EncounterDetailResponse) {
+  const records = detail.sectionRecords;
+  const admission = getLatestRecordByTab(records, 'Ingreso');
+  const evolution = getLatestRecordByTab(records, 'Evolución');
+  const orders = getLatestRecordByTab(records, 'Indicaciones médicas');
+  const nursing = getLatestRecordByTab(records, 'Enfermería');
+  const consultation = getLatestRecordByTab(records, 'Interconsultas');
+  const surgery = getLatestRecordByTab(records, 'Procedimientos / Cirugía');
+  const discharge = getLatestRecordByTab(records, 'Egreso');
+  const latestSignedDocument =
+    [...records]
+      .filter((record) => record.tabKey === 'Documentos' && record.status === 'SIGNED')
+      .sort((left, right) => (right.signedAt ?? right.recordedAt).localeCompare(left.signedAt ?? left.recordedAt))[0] ??
+    null;
+  const admissionForm = admission?.formData ?? {};
+  const evolutionForm = evolution?.formData ?? {};
+  const ordersForm = orders?.formData ?? {};
+  const nursingForm = nursing?.formData ?? {};
+  const consultationForm = consultation?.formData ?? {};
+  const surgeryForm = surgery?.formData ?? {};
+  const dischargeForm = discharge?.formData ?? {};
+  const admissionAt =
+    readSummaryText(admissionForm, 'fechaIngresoHosp') &&
+    readSummaryText(admissionForm, 'horaIngresoHosp')
+      ? `${readSummaryText(admissionForm, 'fechaIngresoHosp')}T${readSummaryText(admissionForm, 'horaIngresoHosp')}`
+      : detail.openedAt;
+  const dischargeAt =
+    readSummaryText(dischargeForm, 'fechaHoraEgresoHosp') ||
+    detail.closedAt ||
+    new Date().toISOString();
+  const locationParts = compactSummaryList([
+    readSummaryText(admissionForm, 'pisoIngresoHosp')
+      ? `Piso ${readSummaryText(admissionForm, 'pisoIngresoHosp')}`
+      : '',
+    readSummaryText(admissionForm, 'habitacionIngresoHosp')
+      ? `Hab. ${readSummaryText(admissionForm, 'habitacionIngresoHosp')}`
+      : '',
+    readSummaryText(admissionForm, 'camaIngresoHosp')
+      ? `Cama ${readSummaryText(admissionForm, 'camaIngresoHosp')}`
+      : '',
+  ]);
+  const evolutionDiagnoses = readSummaryArray(evolutionForm, 'diagnosticosActivosEvolHosp');
+  const primaryEvolutionDiagnosis =
+    evolutionDiagnoses.find((item) => readSummaryText(item, 'estado') === 'ACTIVO') ??
+    evolutionDiagnoses.find((item) => readSummaryText(item, 'diagnostico')) ??
+    null;
+  const primaryDiagnosis = {
+    label:
+      readSummaryText(primaryEvolutionDiagnosis ?? {}, 'diagnostico') ||
+      readSummaryText(evolutionForm, 'diagnosticoPrincipalEvolHosp') ||
+      readSummaryText(admissionForm, 'diagnosticoPrincipalHosp') ||
+      detail.diagnoses.find((diagnosis) => diagnosis.isPrimary)?.description ||
+      '',
+    code:
+      readSummaryText(primaryEvolutionDiagnosis ?? {}, 'cie10') ||
+      readSummaryText(evolutionForm, 'cie10EvolHosp') ||
+      readSummaryText(admissionForm, 'cie10Hosp') ||
+      detail.diagnoses.find((diagnosis) => diagnosis.isPrimary)?.code ||
+      '',
+  };
+  const activeProblems = uniqueSummaryItems([
+    ...evolutionDiagnoses
+      .filter((item) => !['RESUELTO', 'DESCARTADO', 'INACTIVO'].includes(readSummaryText(item, 'estado')))
+      .map((item) =>
+        compactSummaryList([
+          readSummaryText(item, 'diagnostico'),
+          readSummaryText(item, 'cie10'),
+        ]).join(' · '),
+      ),
+    ...readSummaryArray(admissionForm, 'diagnosticosSecundariosHosp')
+      .filter((item) => !['RESUELTO', 'DESCARTADO', 'INACTIVO'].includes(readSummaryText(item, 'estado')))
+      .map((item) =>
+        compactSummaryList([
+          readSummaryText(item, 'diagnostico'),
+          readSummaryText(item, 'cie10'),
+        ]).join(' · '),
+      ),
+    ...readSummaryArray(admissionForm, 'comorbilidadesHosp')
+      .filter((item) => readSummaryText(item, 'estado') !== 'INACTIVO')
+      .map((item) => readSummaryText(item, 'comorbilidad')),
+    ...detail.problems
+      .filter((problem) => !['RESUELTO', 'DESCARTADO', 'INACTIVO'].includes(problem.status ?? ''))
+      .map((problem) => problem.description),
+  ].filter(Boolean));
+  const medicationLines = readSummaryArray(ordersForm, 'medicamentosIndicacionesHosp')
+    .map(buildSummaryMedicationLine)
+    .filter(Boolean)
+    .slice(0, 4);
+  const solutionLines = readSummaryArray(ordersForm, 'solucionesIvIndicacionesHosp')
+    .map((item) =>
+      compactSummaryList([
+        readSummaryText(item, 'tipoSolucion'),
+        readSummaryText(item, 'volumenMl') ? `${readSummaryText(item, 'volumenMl')} ml` : '',
+        readSummaryText(item, 'velocidadMlHora') ? `${readSummaryText(item, 'velocidadMlHora')} ml/h` : '',
+        readSummaryText(item, 'duracion'),
+      ]).join(' · '),
+    )
+    .filter(Boolean)
+    .slice(0, 3);
+  const activeIndications = [
+    ...medicationLines.map((value) => `Medicamento: ${value}`),
+    ...solutionLines.map((value) => `Solución IV: ${value}`),
+    readSummaryText(ordersForm, 'oxigenoIndicacionesHosp')
+      ? `Oxígeno: ${formatSummaryEnum(readSummaryText(ordersForm, 'oxigenoIndicacionesHosp'))}`
+      : '',
+    readSummaryText(ordersForm, 'dietaIndicacionesHosp')
+      ? `Dieta: ${formatSummaryEnum(readSummaryText(ordersForm, 'dietaIndicacionesHosp'))}`
+      : '',
+    readSummaryText(ordersForm, 'reposoActividadIndicacionesHosp')
+      ? `Reposo/actividad: ${formatSummaryEnum(readSummaryText(ordersForm, 'reposoActividadIndicacionesHosp'))}`
+      : '',
+    readSummaryText(ordersForm, 'monitoreoEnfermeriaIndicacionesHosp')
+      ? `Monitoreo: ${readSummaryText(ordersForm, 'monitoreoEnfermeriaIndicacionesHosp')}`
+      : '',
+    readSummaryText(ordersForm, 'cuidadosGeneralesIndicacionesHosp')
+      ? `Cuidados: ${readSummaryText(ordersForm, 'cuidadosGeneralesIndicacionesHosp')}`
+      : '',
+  ].filter(Boolean);
+  const pendingProcedures = uniqueSummaryItems([
+    readSummaryText(admissionForm, 'procedimientosPlanHosp'),
+    readSummaryText(surgeryForm, 'cirugiaPropuestaQuirHosp'),
+    readSummaryText(surgeryForm, 'procedimientoRealizadoPostopHosp') &&
+    !['SIGNED', 'CLOSED'].includes(surgery?.status ?? '')
+      ? readSummaryText(surgeryForm, 'procedimientoRealizadoPostopHosp')
+      : '',
+  ].filter(Boolean));
+  const activeConsultations = [
+    consultation
+      ? compactSummaryList([
+          readSummaryText(consultationForm, 'servicioInterconsultadoHosp'),
+          readSummaryText(consultationForm, 'estatusInterconsultaHosp') ||
+            (readSummaryText(consultationForm, 'fechaRespuestaInterHosp') ? 'Respondida' : 'Pendiente'),
+          readSummaryText(consultationForm, 'prioridadInterHosp'),
+          formatSummaryDateTime(
+            readSummaryText(consultationForm, 'fechaSolicitudInterHosp'),
+            readSummaryText(consultationForm, 'horaSolicitudInterHosp'),
+          ),
+        ]).join(' · ')
+      : '',
+    ...readSummaryArray(ordersForm, 'interconsultasSolicitadasIndicacionesHosp').map((item) =>
+      compactSummaryList([
+        readSummaryText(item, 'servicio'),
+        readSummaryText(item, 'prioridad'),
+        readSummaryText(item, 'motivo'),
+      ]).join(' · '),
+    ),
+  ].filter(Boolean);
+  const pendingStudies = readSummaryArray(ordersForm, 'estudiosSolicitadosIndicacionesHosp')
+    .map((item) =>
+      compactSummaryList([
+        readSummaryText(item, 'tipoEstudio'),
+        readSummaryText(item, 'prioridad'),
+        readSummaryText(item, 'indicacion'),
+      ]).join(' · '),
+    )
+    .filter(Boolean);
+  const nursingVitals = readSummaryArray(nursingForm, 'signosVitalesSeriadosEnfHosp')
+    .map((item) => ({
+      source: 'Enfermería',
+      recordedAt:
+        readSummaryText(item, 'fecha') && readSummaryText(item, 'hora')
+          ? `${readSummaryText(item, 'fecha')}T${readSummaryText(item, 'hora')}`
+          : nursing?.recordedAt ?? '',
+      formData: {
+        taSistolica: readSummaryText(item, 'taSistolica'),
+        taDiastolica: readSummaryText(item, 'taDiastolica'),
+        fc: readSummaryText(item, 'fc'),
+        fr: readSummaryText(item, 'fr'),
+        temperatura: readSummaryText(item, 'temperatura'),
+        spo2: readSummaryText(item, 'spo2'),
+        dolorEva: readSummaryText(item, 'dolorEva'),
+        glucosa: readSummaryText(item, 'glucosaCapilar'),
+      },
+      responsible: readSummaryText(nursingForm, 'profesionalEnfermeriaLegal') || nursing?.authorName || '',
+    }))
+    .filter((item) => item.recordedAt);
+  const vitalCandidates = [
+    evolution
+      ? {
+          source: 'Evolución hospitalaria',
+          recordedAt:
+            readSummaryText(evolutionForm, 'fechaHoraEvolucionHosp') || evolution.recordedAt,
+          formData: {
+            taSistolica: readSummaryText(evolutionForm, 'taSistolicaEvolHosp'),
+            taDiastolica: readSummaryText(evolutionForm, 'taDiastolicaEvolHosp'),
+            fc: readSummaryText(evolutionForm, 'fcEvolHosp'),
+            fr: readSummaryText(evolutionForm, 'frEvolHosp'),
+            temperatura: readSummaryText(evolutionForm, 'temperaturaEvolHosp'),
+            spo2: readSummaryText(evolutionForm, 'spo2EvolHosp'),
+            dolorEva: readSummaryText(evolutionForm, 'dolorEvaEvolHosp'),
+            glucosa: readSummaryText(evolutionForm, 'glucosaCapilarEvolHosp'),
+          },
+          responsible: readSummaryText(evolutionForm, 'medicoEvolHospLegal') || evolution.authorName || '',
+        }
+      : null,
+    ...nursingVitals,
+    admission
+      ? {
+          source: 'Ingreso hospitalario',
+          recordedAt: admissionAt,
+          formData: {
+            taSistolica: readSummaryText(admissionForm, 'taSistolicaHosp'),
+            taDiastolica: readSummaryText(admissionForm, 'taDiastolicaHosp'),
+            fc: readSummaryText(admissionForm, 'fcHosp'),
+            fr: readSummaryText(admissionForm, 'frHosp'),
+            temperatura: readSummaryText(admissionForm, 'temperaturaHosp'),
+            spo2: readSummaryText(admissionForm, 'spo2Hosp'),
+            dolorEva: readSummaryText(admissionForm, 'dolorEvaHosp'),
+            glucosa: readSummaryText(admissionForm, 'glucosaHosp'),
+          },
+          responsible: readSummaryText(admissionForm, 'medicoIngresoLegal') || admission.authorName || '',
+        }
+      : null,
+  ]
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
+  const latestVitals = vitalCandidates[0] ?? null;
+  const safetyAlerts = uniqueSummaryItems([
+    ...detail.allergies
+      .filter((allergy) => !['INACTIVA', 'RESUELTA', 'DESCARTADA'].includes(allergy.status ?? ''))
+      .map((allergy) =>
+        compactSummaryList([
+          `Alergia: ${allergy.substance}`,
+          allergy.reaction ?? '',
+          allergy.severity ?? '',
+        ]).join(' · '),
+      ),
+    readSummaryText(nursingForm, 'riesgoCaidaMorseEnfHosp')
+      ? `Riesgo de caída: ${formatSummaryEnum(readSummaryText(nursingForm, 'riesgoCaidaMorseEnfHosp'))}`
+      : readSummaryText(admissionForm, 'riesgoCaidasMorseHosp')
+        ? `Riesgo de caída: ${formatSummaryEnum(readSummaryText(admissionForm, 'riesgoCaidasMorseHosp'))}`
+        : '',
+    readSummaryText(admissionForm, 'aislamientoRequeridoHosp') === 'SI'
+      ? 'Aislamiento requerido'
+      : '',
+    readSummaryText(admissionForm, 'riesgoTromboticoHosp')
+      ? `Riesgo trombótico: ${formatSummaryEnum(readSummaryText(admissionForm, 'riesgoTromboticoHosp'))}`
+      : '',
+    readSummaryText(ordersForm, 'dietaIndicacionesHosp') === 'AYUNO' ||
+    readSummaryText(admissionForm, 'dietaInicialHosp') === 'AYUNO'
+      ? 'Ayuno'
+      : '',
+    readSummaryText(nursingForm, 'eventoAdversoEnfHosp') === 'SI'
+      ? compactSummaryList([
+          'Evento adverso activo',
+          readSummaryText(nursingForm, 'tipoEventoAdversoEnfHosp'),
+        ]).join(' · ')
+      : '',
+  ].filter(Boolean));
+  const medicationAdministration = readSummaryArray(nursingForm, 'medicamentosMinistradosEnfHosp')
+    .filter((item) => readSummaryText(item, 'estado') === 'ADMINISTRADO')
+    .sort((left, right) => readSummaryText(right, 'horaAdministrada').localeCompare(readSummaryText(left, 'horaAdministrada')))[0] ?? null;
+  const balanceLine =
+    readSummaryText(nursingForm, 'ingresosMlEnfHosp') ||
+    readSummaryText(nursingForm, 'egresosMlEnfHosp') ||
+    readSummaryText(nursingForm, 'balanceTotalEnfHosp')
+      ? compactSummaryList([
+          readSummaryText(nursingForm, 'ingresosMlEnfHosp')
+            ? `Ingresos ${readSummaryText(nursingForm, 'ingresosMlEnfHosp')} ml`
+            : '',
+          readSummaryText(nursingForm, 'egresosMlEnfHosp')
+            ? `Egresos ${readSummaryText(nursingForm, 'egresosMlEnfHosp')} ml`
+            : '',
+          readSummaryText(nursingForm, 'balanceTotalEnfHosp')
+            ? `Balance ${readSummaryText(nursingForm, 'balanceTotalEnfHosp')}`
+            : '',
+        ]).join(' · ')
+      : '';
+  const activityItems = [
+    evolution
+      ? {
+          type: 'Última evolución hospitalaria',
+          date: resolveHospitalSummaryDate(evolution),
+          professional: readSummaryText(evolutionForm, 'medicoEvolHospLegal') || evolution.authorName || '',
+          status: evolution.status,
+          recordId: evolution.id,
+        }
+      : null,
+    orders
+      ? {
+          type: 'Última indicación médica',
+          date: orders.recordedAt,
+          professional: readSummaryText(ordersForm, 'medicoIndicacionesLegal') || orders.authorName || '',
+          status: orders.status,
+          recordId: orders.id,
+        }
+      : null,
+    surgery
+      ? {
+          type: 'Último procedimiento',
+          date: resolveHospitalSummaryDate(surgery),
+          professional: readSummaryText(surgeryForm, 'medicoQuirLegal') || surgery.authorName || '',
+          status: surgery.status,
+          recordId: surgery.id,
+        }
+      : null,
+    latestSignedDocument
+      ? {
+          type: 'Último documento firmado',
+          date: latestSignedDocument.signedAt ?? latestSignedDocument.recordedAt,
+          professional: latestSignedDocument.authorName || '',
+          status: latestSignedDocument.noteType,
+          recordId: latestSignedDocument.id,
+        }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return {
+    admission,
+    evolution,
+    orders,
+    nursing,
+    consultation,
+    surgery,
+    discharge,
+    admissionAt,
+    location: locationParts.join(' · '),
+    stayDays: calculateHospitalSummaryStayDays(admissionAt, dischargeAt),
+    primaryDiagnosis,
+    activeProblems,
+    currentStatus:
+      readSummaryText(evolutionForm, 'estadoClinicoEvolHosp') ||
+      readSummaryText(admissionForm, 'estadoClinicoIngresoHosp'),
+    currentLocation: locationParts[0] || readSummaryText(admissionForm, 'servicioIngresoHosp') || detail.facility?.name || '',
+    relevantBadges: uniqueSummaryItems([
+      readSummaryText(surgeryForm, 'estadoInmediatoPostop') ? 'Postoperatorio' : '',
+      readSummaryText(ordersForm, 'oxigenoIndicacionesHosp')
+        ? `Oxígeno ${formatSummaryEnum(readSummaryText(ordersForm, 'oxigenoIndicacionesHosp'))}`
+        : '',
+      readSummaryText(admissionForm, 'aislamientoRequeridoHosp') === 'SI' ? 'Aislamiento' : '',
+      readSummaryText(ordersForm, 'dietaIndicacionesHosp') === 'AYUNO' ? 'Ayuno' : '',
+      readSummaryText(nursingForm, 'riesgoCaidaMorseEnfHosp')
+        ? `Riesgo caída ${formatSummaryEnum(readSummaryText(nursingForm, 'riesgoCaidaMorseEnfHosp'))}`
+        : '',
+    ].filter(Boolean)).slice(0, 6),
+    baseData: [
+      { label: 'Fecha y hora de ingreso', value: formatDateTime(admissionAt) },
+      { label: 'Servicio', value: readSummaryText(admissionForm, 'servicioIngresoHosp') },
+      { label: 'Piso / habitación / cama', value: locationParts.join(' · ') },
+      { label: 'Médico tratante', value: readSummaryText(admissionForm, 'medicoAdscritoHosp') || detail.attendingClinician?.fullName || '' },
+      { label: 'Diagnóstico de ingreso', value: compactSummaryList([readSummaryText(admissionForm, 'diagnosticoPrincipalHosp'), readSummaryText(admissionForm, 'cie10Hosp')]).join(' · ') },
+      { label: 'Motivo de hospitalización', value: readSummaryText(admissionForm, 'motivoIngresoClinicoHosp') || detail.reasonForVisit || '' },
+      { label: 'Días de estancia', value: calculateHospitalSummaryStayDays(admissionAt, dischargeAt) },
+      { label: 'Vía de ingreso', value: readSummaryText(admissionForm, 'origenIngresoHosp') ? formatSummaryEnum(readSummaryText(admissionForm, 'origenIngresoHosp')) : '' },
+      { label: 'Tipo de ingreso', value: readSummaryText(admissionForm, 'tipoIngresoHosp') ? formatSummaryEnum(readSummaryText(admissionForm, 'tipoIngresoHosp')) : '' },
+      { label: 'Especialidad', value: detail.specialty?.name || readSummaryText(evolutionForm, 'especialidadGuardiaEvolHosp') },
+    ].filter((item) => item.value),
+    treatmentPlan: readSummaryText(evolutionForm, 'tratamientoEvolHosp') || readSummaryText(evolutionForm, 'seguimientoEvolHosp') || readSummaryText(admissionForm, 'planAdicionalHosp'),
+    treatmentPlanDate: evolution ? resolveHospitalSummaryDate(evolution) : '',
+    activeIndications,
+    pendingProcedures,
+    activeConsultations,
+    pendingStudies,
+    probableDischargeDate:
+      readSummaryText(dischargeForm, 'fechaProximaCitaEgresoHosp') ||
+      readSummaryText(evolutionForm, 'fechaProbableEgresoHosp') ||
+      '',
+    latestVitals,
+    safetyAlerts,
+    nursingSummary: nursing
+      ? {
+          date: nursing.recordedAt,
+          responsible: readSummaryText(nursingForm, 'profesionalEnfermeriaLegal') || nursing.authorName || '',
+          lastAdministration: medicationAdministration
+            ? compactSummaryList([
+                readSummaryText(medicationAdministration, 'medicamento'),
+                readSummaryText(medicationAdministration, 'horaAdministrada'),
+                readSummaryText(medicationAdministration, 'enfermeria'),
+              ]).join(' · ')
+            : '',
+          balance: balanceLine,
+          observations: readSummaryText(nursingForm, 'observacionesGeneralesEnfHosp'),
+          fallRisk: readSummaryText(nursingForm, 'riesgoCaidaMorseEnfHosp'),
+          painEva: nursingVitals[0]?.formData.dolorEva ?? '',
+          status: nursing.status,
+        }
+      : null,
+    activityItems,
+  };
+}
+
+function getLatestRecordByTabExcluding(
+  records: EncounterDetailResponse['sectionRecords'],
+  tabKey: string,
+  excludedRecordId: string | null,
+) {
+  return getLatestRecordByTab(
+    excludedRecordId
+      ? records.filter((record) => record.id !== excludedRecordId)
+      : records,
+    tabKey,
+  );
+}
+
+function resolveHospitalShiftValue(dateTimeValue: string) {
+  const date = dateTimeValue ? new Date(dateTimeValue) : new Date();
+  const hour = Number.isNaN(date.getTime()) ? new Date().getHours() : date.getHours();
+
+  if (hour >= 6 && hour < 14) return 'MATUTINO';
+  if (hour >= 14 && hour < 22) return 'VESPERTINO';
+  return 'NOCTURNO';
+}
+
+function formatHospitalEvolutionPreviousReference(
+  record: EncounterDetailResponse['sectionRecords'][number] | null,
+) {
+  if (!record) {
+    return 'Sin evolución hospitalaria previa';
+  }
+
+  return `Evolución hospitalaria previa — ${formatDateTime(record.recordedAt)}`;
+}
+
+function calculateHospitalStayDay(admittedAtValue: string, evolutionAtValue: string) {
+  const admittedAt = new Date(admittedAtValue);
+  const evolutionAt = new Date(evolutionAtValue);
+
+  if (Number.isNaN(admittedAt.getTime()) || Number.isNaN(evolutionAt.getTime())) {
+    return '';
+  }
+
+  const admissionDay = new Date(
+    admittedAt.getFullYear(),
+    admittedAt.getMonth(),
+    admittedAt.getDate(),
+  );
+  const evolutionDay = new Date(
+    evolutionAt.getFullYear(),
+    evolutionAt.getMonth(),
+    evolutionAt.getDate(),
+  );
+  const dayDifference = Math.floor(
+    (evolutionDay.getTime() - admissionDay.getTime()) / 86_400_000,
+  );
+
+  return String(Math.max(dayDifference + 1, 1));
+}
+
 function buildEmergencyInitialNoteSnapshot(args: {
   detail: EncounterDetailResponse;
   triageRecord: EncounterDetailResponse['sectionRecords'][number] | null;
@@ -2526,6 +3062,7 @@ function buildHospitalEvolutionSnapshot(args: {
   detail: EncounterDetailResponse;
   admissionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
   previousEvolutionRecord: EncounterDetailResponse['sectionRecords'][number] | null;
+  recordedAt: string;
   currentFormData?: Record<string, RecordFieldValue>;
 }) {
   const current = args.currentFormData ?? {};
@@ -2573,9 +3110,32 @@ function buildHospitalEvolutionSnapshot(args: {
     estado: 'ACTIVO',
     sourceDiagnosisId: diagnosis.id,
   }));
+  const admissionDate = read(admission.fechaIngresoHosp);
+  const admissionTime = read(admission.horaIngresoHosp);
+  const admittedAt =
+    admissionDate && admissionTime
+      ? `${admissionDate}T${admissionTime}`
+      : args.detail.openedAt.slice(0, 16);
+  const responsibleSpecialty =
+    [args.detail.specialty?.name, args.detail.serviceArea?.name]
+      .filter(Boolean)
+      .join(' — ') || 'Sin especialidad / guardia responsable';
+  const stayDaySuggestion = calculateHospitalStayDay(admittedAt, args.recordedAt);
+  const hasManualStayDay = current.diaEstanciaHospManual === 'SI';
 
   return {
     tipoRegistro: 'Evolución hospitalaria',
+    fechaHoraEvolucionHosp: args.recordedAt,
+    diaEstanciaHosp: hasManualStayDay
+      ? keep('diaEstanciaHosp', stayDaySuggestion)
+      : stayDaySuggestion,
+    diaEstanciaHospManual: hasManualStayDay ? 'SI' : 'NO',
+    estadoClinicoEvolHosp: keep('estadoClinicoEvolHosp', ''),
+    turnoEvolHosp: keep('turnoEvolHosp', resolveHospitalShiftValue(args.recordedAt)),
+    especialidadGuardiaEvolHosp: responsibleSpecialty,
+    referenciaEvolucionPreviaHosp: formatHospitalEvolutionPreviousReference(
+      args.previousEvolutionRecord,
+    ),
     diagnosticosActivosEvolHosp: keep(
       'diagnosticosActivosEvolHosp',
       previousDiagnoses.length > 0
@@ -2867,6 +3427,96 @@ function buildHospitalNursingSnapshot(args: {
   };
 }
 
+const hospitalDischargeConditionalFieldKeys = [
+  'motivoAltaVoluntariaEgresoHosp',
+  'riesgosExplicadosAltaVoluntariaEgresoHosp',
+  'profesionalResponsableAltaVoluntariaEgresoHosp',
+  'firmanteConformidadNombreEgresoHosp',
+  'firmanteConformidadCalidadEgresoHosp',
+  'firmanteConformidadRelacionEgresoHosp',
+  'fechaHoraConformidadEgresoHosp',
+  'confirmacionConformidadEgresoHosp',
+  'unidadReceptoraEgresoHosp',
+  'medicoReceptorEgresoHosp',
+  'cedulaMedicoReceptorEgresoHosp',
+  'servicioReceptorEgresoHosp',
+  'medioTrasladoEgresoHosp',
+  'horaDefuncionEgresoHosp',
+  'causaDefuncionEgresoHosp',
+  'certificadoDefuncionRelacionadoEgresoHosp',
+  'horaUltimoContactoEgresoHosp',
+  'circunstanciasAbandonoEgresoHosp',
+  'profesionalDocumentaAbandonoEgresoHosp',
+  'fechaHoraDocumentacionAbandonoEgresoHosp',
+] as const;
+
+const hospitalDischargeConditionalFieldKeysByType: Record<string, string[]> = {
+  ALTA_MEDICA: [],
+  ALTA_VOLUNTARIA: [
+    'motivoAltaVoluntariaEgresoHosp',
+    'riesgosExplicadosAltaVoluntariaEgresoHosp',
+    'profesionalResponsableAltaVoluntariaEgresoHosp',
+    'firmanteConformidadNombreEgresoHosp',
+    'firmanteConformidadCalidadEgresoHosp',
+    'firmanteConformidadRelacionEgresoHosp',
+    'fechaHoraConformidadEgresoHosp',
+    'confirmacionConformidadEgresoHosp',
+  ],
+  TRASLADO: [
+    'unidadReceptoraEgresoHosp',
+    'medicoReceptorEgresoHosp',
+    'cedulaMedicoReceptorEgresoHosp',
+    'servicioReceptorEgresoHosp',
+    'medioTrasladoEgresoHosp',
+  ],
+  REFERENCIA: [
+    'unidadReceptoraEgresoHosp',
+    'medicoReceptorEgresoHosp',
+    'cedulaMedicoReceptorEgresoHosp',
+    'servicioReceptorEgresoHosp',
+    'medioTrasladoEgresoHosp',
+  ],
+  DEFUNCION: [
+    'horaDefuncionEgresoHosp',
+    'causaDefuncionEgresoHosp',
+    'certificadoDefuncionRelacionadoEgresoHosp',
+  ],
+  FUGA_ABANDONO: [
+    'horaUltimoContactoEgresoHosp',
+    'circunstanciasAbandonoEgresoHosp',
+    'profesionalDocumentaAbandonoEgresoHosp',
+    'fechaHoraDocumentacionAbandonoEgresoHosp',
+  ],
+};
+
+function buildHospitalDischargeConditionalCleanup(
+  dischargeType: string,
+): Record<string, string> {
+  const compatibleKeys =
+    hospitalDischargeConditionalFieldKeysByType[dischargeType] ?? [];
+
+  return Object.fromEntries(
+    hospitalDischargeConditionalFieldKeys
+      .filter((fieldKey) => !compatibleKeys.includes(fieldKey))
+      .map((fieldKey) => [fieldKey, '']),
+  );
+}
+
+function hasHospitalDischargeIncompatibleCapture(
+  formData: Record<string, RecordFieldValue>,
+  dischargeType: string,
+) {
+  const compatibleKeys =
+    hospitalDischargeConditionalFieldKeysByType[dischargeType] ?? [];
+
+  return hospitalDischargeConditionalFieldKeys
+    .filter((fieldKey) => !compatibleKeys.includes(fieldKey))
+    .some((fieldKey) => {
+      const value = formData[fieldKey];
+      return typeof value === 'string' ? value.trim().length > 0 : Boolean(value);
+    });
+}
+
 function buildHospitalDischargeSnapshot(args: {
   detail: EncounterDetailResponse;
   recordedAt: string;
@@ -2910,9 +3560,15 @@ function buildHospitalDischargeSnapshot(args: {
       ),
     );
   })();
+  const dischargeType =
+    typeof current.tipoEgresoHosp === 'string' ? current.tipoEgresoHosp : '';
+  const legalProfessional =
+    args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable';
+  const legalLicense = args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula';
 
   return {
     tipoRegistro: 'Egreso',
+    ...buildHospitalDischargeConditionalCleanup(dischargeType),
     fechaHoraEgresoHosp: keep('fechaHoraEgresoHosp', args.recordedAt),
     fechaIngresoReadonlyHosp: keep('fechaIngresoReadonlyHosp', admissionDate),
     diasEstanciaHosp: stayDays,
@@ -2976,14 +3632,18 @@ function buildHospitalDischargeSnapshot(args: {
       'Se explica diagnóstico, tratamiento, medicamentos, cuidados, restricciones, signos de alarma y seguimiento.',
     ),
     comprensionPacienteEgresoHosp: keep('comprensionPacienteEgresoHosp', 'ADECUADA'),
-    medicoResponsableEgresoHosp:
-      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-    cedulaResponsableEgresoHosp:
-      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
-    medicoLegalEgresoHosp:
-      args.detail.attendingClinician?.fullName ?? 'Sin profesional responsable',
-    cedulaLegalEgresoHosp:
-      args.detail.attendingClinician?.professionalLicense ?? 'Sin cédula',
+    profesionalResponsableAltaVoluntariaEgresoHosp:
+      dischargeType === 'ALTA_VOLUNTARIA' ? legalProfessional : '',
+    profesionalDocumentaAbandonoEgresoHosp:
+      dischargeType === 'FUGA_ABANDONO' ? legalProfessional : '',
+    fechaHoraDocumentacionAbandonoEgresoHosp:
+      dischargeType === 'FUGA_ABANDONO'
+        ? keep('fechaHoraDocumentacionAbandonoEgresoHosp', args.recordedAt)
+        : '',
+    medicoResponsableEgresoHosp: legalProfessional,
+    cedulaResponsableEgresoHosp: legalLicense,
+    medicoLegalEgresoHosp: legalProfessional,
+    cedulaLegalEgresoHosp: legalLicense,
     especialidadLegalEgresoHosp: args.detail.specialty?.name ?? 'Sin especialidad',
     lugarAtencionEgresoHosp:
       [args.detail.facility?.name, args.detail.serviceArea?.name]
@@ -3779,12 +4439,6 @@ function buildHospitalDocumentSuggestionSnapshot(
   if (noteType === 'Defunción') {
     return {
       documentoDatosPacienteDefuncion: `${detail.patient.fullName} · Exp. ${detail.medicalRecord.recordNumber}`,
-      documentoMedicoCertificante:
-        (latestDischarge?.formData.medicoResponsableEgresoHosp as string | undefined) ??
-        '',
-      documentoCedulaCertificante:
-        (latestDischarge?.formData.cedulaResponsableEgresoHosp as string | undefined) ??
-        '',
     };
   }
 
@@ -4189,6 +4843,50 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SummaryDataCard({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 whitespace-pre-line text-sm font-semibold leading-relaxed text-slate-900">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SummaryList({
+  items,
+  emptyText,
+}: {
+  items: string[];
+  emptyText?: string;
+}) {
+  if (items.length === 0) {
+    return emptyText ? (
+      <p className="text-sm text-muted-foreground">{emptyText}</p>
+    ) : null;
+  }
+
+  return (
+    <ul className="space-y-2 text-sm leading-relaxed text-slate-800">
+      {items.slice(0, 6).map((item) => (
+        <li className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2" key={item}>
+          {item}
+        </li>
+      ))}
+      {items.length > 6 ? (
+        <li className="text-xs font-medium text-slate-500">
+          +{items.length - 6} elementos adicionales
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
 function ReadOnlyField({
   label,
   value,
@@ -4203,6 +4901,28 @@ function ReadOnlyField({
         {value || 'Sin dato disponible'}
       </div>
     </div>
+  );
+}
+
+function hasPrintableDocumentValue(value: string) {
+  const normalizedValue = value.trim();
+
+  return (
+    normalizedValue.length > 0 &&
+    ![
+      'N/A',
+      'Sin dato disponible',
+      'Sin profesional responsable',
+      'Sin cédula',
+      'Sin especialidad',
+      'RFC no configurado',
+      'Licencia no configurada',
+      'No registrado',
+      'null',
+      'undefined',
+      '-',
+    ].includes(normalizedValue) &&
+    !normalizedValue.startsWith('Se generará')
   );
 }
 
@@ -4456,6 +5176,10 @@ function normalizeRecordFormData(
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
+      if (isPresentationField(field)) {
+        continue;
+      }
+
       const rawFieldValue = rawFormData?.[field.key];
 
       if (field.type === 'checkbox') {
@@ -4504,6 +5228,34 @@ function normalizeRecordFormData(
     }
   }
 
+  for (const [fieldKey, rawFieldValue] of Object.entries(rawFormData ?? {})) {
+    if (fieldKey in normalizedFormData) {
+      continue;
+    }
+
+    if (
+      typeof rawFieldValue === 'string' ||
+      typeof rawFieldValue === 'number' ||
+      typeof rawFieldValue === 'boolean' ||
+      rawFieldValue === null
+    ) {
+      normalizedFormData[fieldKey] = rawFieldValue;
+      continue;
+    }
+
+    if (Array.isArray(rawFieldValue)) {
+      if (rawFieldValue.every((item) => typeof item === 'string')) {
+        normalizedFormData[fieldKey] = rawFieldValue as string[];
+        continue;
+      }
+
+      normalizedFormData[fieldKey] = rawFieldValue.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      );
+    }
+  }
+
   return normalizedFormData;
 }
 
@@ -4537,6 +5289,10 @@ function buildConsultationVersionPrefill(args: {
 
   for (const section of args.tabDefinition.sections) {
     for (const field of section.fields) {
+      if (isPresentationField(field)) {
+        continue;
+      }
+
       const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
 
       if (field.key === 'tipoConsultaActual') {
@@ -4661,6 +5417,7 @@ export function EpisodeDetailPage() {
   }, [detailQuery.data]);
 
   const detail = detailQuery.data;
+  const outpatientClinicalSummary = detail?.consultationSummary ?? null;
   const tabs = useMemo(
     () => getEncounterTabs(detail?.encounterType ?? 'OUTPATIENT'),
     [detail?.encounterType],
@@ -5727,6 +6484,14 @@ export function EpisodeDetailPage() {
   const latestHistoryRecord = isConsultationHistorySection
     ? getLatestHistoryRecord(activeTabRecords)
     : null;
+  const latestPatientHistoryFormData =
+    isConsultationHistorySection
+      ? detail.historyVersionContext.latestRecordFormData
+      : null;
+  const latestPatientHistoryTitle =
+    isConsultationHistorySection
+      ? detail.historyVersionContext.latestRecordTitle
+      : null;
   const latestConsultationRecord = isConsultationCurrentSection
     ? [...activeTabRecords].sort((left, right) => {
         const leftVersion = left.metadata.versionNumber ?? 0;
@@ -5788,12 +6553,27 @@ export function EpisodeDetailPage() {
     ? getLatestRecordByTab(activeTabRecords, 'Ingreso')
     : getLatestRecordByTab(detail.sectionRecords, 'Ingreso');
   const latestHospitalEvolutionRecord = isHospitalEvolutionSection
-    ? getLatestRecordByTab(activeTabRecords, 'Evolución')
+    ? getLatestRecordByTabExcluding(activeTabRecords, 'Evolución', activeRecordId)
     : getLatestRecordByTab(detail.sectionRecords, 'Evolución');
   const selectedRecord =
     activeRecordId === null
       ? null
       : activeTabRecords.find((record) => record.id === activeRecordId) ?? null;
+  const resolveHospitalEvolutionStayDay = (
+    recordedAt: string,
+    formData: Record<string, RecordFieldValue>,
+  ) => {
+    const admissionFormData = latestHospitalAdmissionRecord?.formData ?? {};
+    const read = (value: unknown) => (typeof value === 'string' ? value : '');
+    const admissionDate = read(admissionFormData.fechaIngresoHosp);
+    const admissionTime = read(admissionFormData.horaIngresoHosp);
+    const admittedAt =
+      admissionDate && admissionTime
+        ? `${admissionDate}T${admissionTime}`
+        : detail.openedAt.slice(0, 16);
+
+    return calculateHospitalStayDay(admittedAt, recordedAt) || read(formData.diaEstanciaHosp);
+  };
   const selectedDocumentNoteType =
     selectedRecord?.noteType ??
     recordForm?.noteType ??
@@ -5847,10 +6627,9 @@ export function EpisodeDetailPage() {
           return right.recordedAt.localeCompare(left.recordedAt);
         })[0] ?? null
     : null;
-  const nextHistoryVersionNumber =
-    (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
-  const nextHistoryType =
-    nextHistoryVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+  const nextHistoryVersionNumber = isConsultationHistorySection
+    ? detail.historyVersionContext.nextVersionNumber
+    : (latestHistoryRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationVersionNumber =
     (latestConsultationRecord?.metadata.versionNumber ?? 0) + 1;
   const nextConsultationType =
@@ -5898,6 +6677,12 @@ export function EpisodeDetailPage() {
   const latestHospitalDischargeRecord = isHospitalDischargeSection
     ? getLatestRecordByTab(activeTabRecords, 'Egreso')
     : getLatestRecordByTab(detail.sectionRecords, 'Egreso');
+  const hospitalSummary =
+    detail.encounterType === 'HOSPITALIZATION'
+      ? buildHospitalClinicalSummary(detail)
+      : null;
+  const isHospitalSummaryTab =
+    detail.encounterType === 'HOSPITALIZATION' && activeTab === 'Resumen';
   const latestAmbulatoryPreprocedureRecord = isAmbulatoryPreprocedureSection
     ? getLatestRecordByTab(activeTabRecords, 'Valoración preprocedimiento')
     : getLatestRecordByTab(detail.sectionRecords, 'Valoración preprocedimiento');
@@ -6122,7 +6907,8 @@ export function EpisodeDetailPage() {
           rawFormData: mergeHistoryReadOnlyFields(
             buildHistoryVersionPrefill(
               activeTabDefinition,
-              latestHistoryRecord?.formData,
+              latestPatientHistoryFormData ??
+                latestHistoryRecord?.formData,
             ) as Record<string, RecordFieldValue>,
             detail,
           ),
@@ -6196,8 +6982,8 @@ export function EpisodeDetailPage() {
       setRecordForm(
         buildRecordFormState({
           tabDefinition: activeTabDefinition,
-          noteType: 'Receta médica',
-          title: `Receta B${nextPrescriptionVersionNumber}`,
+          noteType: 'Receta e indicaciones',
+          title: `Receta V${nextPrescriptionVersionNumber}`,
           status: 'DRAFT',
           recordedAt: nextRecordedAt,
           rawFormData: buildPrescriptionVersionPrefill({
@@ -6554,6 +7340,7 @@ export function EpisodeDetailPage() {
               detail,
               admissionRecord: latestHospitalAdmissionRecord,
               previousEvolutionRecord: latestHospitalEvolutionRecord,
+              recordedAt: nextRecordedAt,
             }),
           },
         }),
@@ -6911,6 +7698,7 @@ export function EpisodeDetailPage() {
                                                 left.recordedAt,
                                               ),
                                             )[0] ?? null,
+                                        recordedAt: record.recordedAt.slice(0, 16),
                                         currentFormData:
                                           record.formData as Record<
                                             string,
@@ -7137,6 +7925,40 @@ export function EpisodeDetailPage() {
     );
   };
 
+  const openHospitalSummaryRecord = (recordId: string) => {
+    const record = detail.sectionRecords.find((item) => item.id === recordId);
+
+    if (!record) {
+      setFeedback('No se encontró el registro clínico seleccionado.');
+      return;
+    }
+
+    const tabDefinition =
+      record.tabKey === 'Documentos'
+        ? getHospitalDocumentTabDefinition(record.noteType)
+        : getEpisodeTabDefinition(detail.encounterType, record.tabKey);
+
+    if (!tabDefinition) {
+      setFeedback('No se encontró la configuración del tab de origen.');
+      return;
+    }
+
+    setFeedback(null);
+    setIsCreatingRecord(false);
+    setActiveTab(record.tabKey);
+    setActiveRecordId(record.id);
+    setRecordForm(
+      buildRecordFormState({
+        tabDefinition,
+        noteType: record.noteType,
+        title: record.title,
+        status: record.status,
+        recordedAt: record.recordedAt.slice(0, 16),
+        rawFormData: record.formData,
+      }),
+    );
+  };
+
   const closeRecordWorkspace = () => {
     setIsCreatingRecord(false);
     setActiveRecordId(null);
@@ -7248,10 +8070,37 @@ export function EpisodeDetailPage() {
   ) => {
     setRecordForm((currentValue) =>
       currentValue
-        ? {
-            ...currentValue,
-            [field]: value,
-          }
+        ? (() => {
+            if (field === 'recordedAt' && isHospitalEvolutionSection) {
+              const recordedAt = value as string;
+
+              return {
+                ...currentValue,
+                recordedAt,
+                formData: {
+                  ...currentValue.formData,
+                  fechaHoraEvolucionHosp: recordedAt,
+                  diaEstanciaHosp:
+                    currentValue.formData.diaEstanciaHospManual === 'SI'
+                      ? currentValue.formData.diaEstanciaHosp
+                      : resolveHospitalEvolutionStayDay(
+                          recordedAt,
+                          currentValue.formData,
+                        ),
+                  turnoEvolHosp:
+                    typeof currentValue.formData.turnoEvolHosp === 'string' &&
+                    currentValue.formData.turnoEvolHosp.trim().length > 0
+                      ? currentValue.formData.turnoEvolHosp
+                      : resolveHospitalShiftValue(recordedAt),
+                },
+              };
+            }
+
+            return {
+              ...currentValue,
+              [field]: value,
+            };
+          })()
         : currentValue,
     );
   };
@@ -7314,10 +8163,74 @@ export function EpisodeDetailPage() {
     setRecordForm((currentValue) =>
       currentValue
         ? (() => {
+            if (
+              isHospitalEvolutionSection &&
+              fieldKey === 'fechaHoraEvolucionHosp' &&
+              typeof value === 'string'
+            ) {
+              return {
+                ...currentValue,
+                recordedAt: value,
+                formData: {
+                  ...currentValue.formData,
+                  fechaHoraEvolucionHosp: value,
+                  diaEstanciaHosp:
+                    currentValue.formData.diaEstanciaHospManual === 'SI'
+                      ? currentValue.formData.diaEstanciaHosp
+                      : resolveHospitalEvolutionStayDay(value, currentValue.formData),
+                  turnoEvolHosp:
+                    typeof currentValue.formData.turnoEvolHosp === 'string' &&
+                    currentValue.formData.turnoEvolHosp.trim().length > 0
+                      ? currentValue.formData.turnoEvolHosp
+                      : resolveHospitalShiftValue(value),
+                },
+              };
+            }
+
             const nextFormData = {
               ...currentValue.formData,
               [fieldKey]: value,
             };
+            if (
+              isHospitalDischargeSection &&
+              fieldKey === 'tipoEgresoHosp' &&
+              typeof value === 'string'
+            ) {
+              if (
+                hasHospitalDischargeIncompatibleCapture(
+                  currentValue.formData,
+                  value,
+                ) &&
+                !window.confirm(
+                  'Cambiar el tipo de egreso limpiará datos condicionales que ya no correspondan. ¿Deseas continuar?',
+                )
+              ) {
+                return currentValue;
+              }
+
+              Object.assign(
+                nextFormData,
+                buildHospitalDischargeConditionalCleanup(value),
+              );
+            }
+            if (
+              isHospitalDischargeSection &&
+              fieldKey === 'fechaHoraEgresoHosp' &&
+              typeof value === 'string'
+            ) {
+              const admittedAt =
+                typeof nextFormData.fechaIngresoReadonlyHosp === 'string'
+                  ? nextFormData.fechaIngresoReadonlyHosp
+                  : detail.openedAt.slice(0, 16);
+
+              nextFormData.diasEstanciaHosp = calculateHospitalStayDay(
+                admittedAt,
+                value,
+              );
+            }
+            if (isHospitalEvolutionSection && fieldKey === 'diaEstanciaHosp') {
+              nextFormData.diaEstanciaHospManual = 'SI';
+            }
             if (
               isEmergencyTriageSection &&
               fieldKey === 'discOtro' &&
@@ -7576,9 +8489,13 @@ export function EpisodeDetailPage() {
       : null;
     const payload = {
       tabKey: activeRecordTabKey,
-      noteType: emergencyOrdersPayloadDocumentType ?? recordForm.noteType.trim(),
+      noteType: isConsultationPrescriptionSection
+        ? 'Receta e indicaciones'
+        : emergencyOrdersPayloadDocumentType ?? recordForm.noteType.trim(),
       title:
-        emergencyOrdersPayloadDocumentType
+        isConsultationPrescriptionSection
+          ? undefined
+          : emergencyOrdersPayloadDocumentType
           ? buildEmergencyOrdersTitle(
               selectedRecord?.metadata.versionNumber ??
                 nextEmergencyOrdersVersionNumberForCurrentType,
@@ -7707,6 +8624,7 @@ export function EpisodeDetailPage() {
                                       admissionRecord: latestHospitalAdmissionRecord,
                                       previousEvolutionRecord:
                                         latestHospitalEvolutionRecord,
+                                      recordedAt: recordForm.recordedAt,
                                       currentFormData: recordForm.formData,
                                     }),
                                   }
@@ -7932,13 +8850,17 @@ export function EpisodeDetailPage() {
   const historyVersionNumber =
     selectedRecord?.metadata.versionNumber ?? nextHistoryVersionNumber;
   const currentHistoryType =
-    historyVersionNumber === 1 ? 'INICIAL' : nextHistoryType;
-  const historyTypeLabel = getHistoryTypeLabel(
-    currentHistoryType,
-  );
+    historyVersionNumber === 1 ? 'INICIAL' : 'SUBSECUENTE';
+  const historyNoteTypeLabel =
+    selectedRecord?.metadata.noteTypeLabel ??
+    getConsultationHistoryNoteTypeLabel(historyVersionNumber);
   const inheritedFromLabel =
-    isConsultationHistorySection && !selectedRecord && latestHistoryRecord
-      ? `Precargada desde ${latestHistoryRecord.title}`
+    isConsultationHistorySection &&
+    !selectedRecord &&
+    (latestPatientHistoryTitle ?? latestHistoryRecord?.title)
+      ? `Precargada desde ${
+          latestPatientHistoryTitle ?? latestHistoryRecord?.title
+        }`
       : selectedRecord?.metadata.inheritedFromRecordId
         ? `Heredada de una versión previa`
         : null;
@@ -7977,6 +8899,8 @@ export function EpisodeDetailPage() {
           metaQuery.data ?? null,
         )
       : null;
+  const isOutpatientDocument =
+    isConsultationDocumentsSection && detail.encounterType === 'OUTPATIENT';
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -8109,7 +9033,9 @@ export function EpisodeDetailPage() {
                     }`}
                   >
                     <TypeIcon className="h-3.5 w-3.5" />
-                    {typeConfig?.label ?? detail.encounterType}
+                    {detail.encounterType === 'HOSPITALIZATION'
+                      ? 'Hospitalización'
+                      : typeConfig?.label ?? detail.encounterType}
                   </div>
                   <Badge variant={statusConfig.badgeVariant}>
                     {statusConfig.label}
@@ -8121,43 +9047,51 @@ export function EpisodeDetailPage() {
                     {detail.encounterNumber}
                   </span>
                   <span className="text-xs text-muted-foreground/70">
-                    {sexLabels[detail.patient.sexAtBirth] ?? detail.patient.sexAtBirth} ·{' '}
-                    {detail.patient.ageLabel ?? 'Edad no disponible'}
+                    {[detail.patient.sexAtBirth, detail.patient.ageLabel]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
-                  {!isEmergencySummaryTab || detail.patient.curp ? (
+                  {!isEmergencySummaryTab && !isHospitalSummaryTab ? (
                     <span className="text-xs text-muted-foreground/70">
                       {detail.patient.curp ?? 'Sin CURP'}
                     </span>
                   ) : null}
-                  <span className="text-xs text-muted-foreground/70">
-                    Exp: {detail.medicalRecord.recordNumber}
-                  </span>
+                  {!isHospitalSummaryTab ? (
+                    <span className="text-xs text-muted-foreground/70">
+                      Exp: {detail.medicalRecord.recordNumber}
+                    </span>
+                  ) : null}
                 </div>
 
                 <div className="mt-1 mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                  {!isEmergencySummaryTab || detail.facility?.name ? (
+                  {detail.facility?.name ? (
                     <span className="text-xs text-muted-foreground/70">
-                      {detail.facility?.name ?? 'Sin sede'}
+                      {detail.facility.name}
                     </span>
                   ) : null}
-                  {!isEmergencySummaryTab ? (
-                    <span className="text-xs text-muted-foreground/70">
-                      {detail.serviceArea?.name ??
-                        detail.specialty?.name ??
-                        'Sin area clinica'}
-                    </span>
-                  ) : detail.specialty?.name ? (
+                    {!isEmergencySummaryTab && !isHospitalSummaryTab ? (
+                      <span className="text-xs text-muted-foreground/70">
+                        {activeTab === 'Resumen'
+                          ? detail.specialty?.name ?? 'Sin especialidad'
+                          : detail.serviceArea?.name ??
+                            detail.specialty?.name ??
+                            'Sin area clinica'}
+                      </span>
+                    ) : detail.specialty?.name ? (
                     <span className="text-xs text-muted-foreground/70">
                       {detail.specialty.name}
                     </span>
                   ) : null}
-                  {!isEmergencySummaryTab || detail.attendingClinician?.fullName ? (
+                  {detail.attendingClinician?.fullName ? (
                     <span className="text-xs text-muted-foreground/70">
-                      {detail.attendingClinician?.fullName ?? 'Sin responsable'}
+                      {detail.attendingClinician.fullName}
                     </span>
                   ) : null}
                   <span className="text-xs text-muted-foreground/70">
-                    {formatDateTime(detail.openedAt)}
+                    Ingreso {formatDateTime(hospitalSummary?.admissionAt ?? detail.openedAt)}
+                  </span>
+                  <span className="text-xs text-muted-foreground/70">
+                    Actualizado {formatDateTime(detail.updatedAt)}
                   </span>
                 </div>
 
@@ -8173,7 +9107,7 @@ export function EpisodeDetailPage() {
               </div>
             </div>
 
-            {!isEmergencySummaryTab ? (
+            {!isEmergencySummaryTab && !isHospitalSummaryTab ? (
             <div className="flex gap-2">
               <Button
                 className="gap-1.5"
@@ -8198,21 +9132,42 @@ export function EpisodeDetailPage() {
           </div>
 
           <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 md:grid-cols-4">
-            {isEmergencySummaryTab ? (
+            {isHospitalSummaryTab ? (
+              <>
+                {detail.facility?.name ? (
+                  <InfoRow label="Hospital / sede" value={detail.facility.name} />
+                ) : null}
+                {detail.attendingClinician?.fullName ? (
+                  <InfoRow
+                    label="Responsable clínico"
+                    value={detail.attendingClinician.fullName}
+                  />
+                ) : null}
+                <InfoRow
+                  label="Fecha de ingreso"
+                  value={formatDateTime(hospitalSummary?.admissionAt ?? detail.openedAt)}
+                />
+                <InfoRow label="Última actualización" value={formatDateTime(detail.updatedAt)} />
+              </>
+            ) : isEmergencySummaryTab ? (
               detail.reasonForVisit ? (
                 <InfoRow label="Motivo" value={detail.reasonForVisit} />
               ) : null
-            ) : (
-              <>
+              ) : activeTab === 'Resumen' ? (
                 <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
-                <InfoRow
+              ) : (
+                <>
+                  <InfoRow label="Motivo" value={detail.reasonForVisit ?? 'Sin motivo'} />
+                  <InfoRow
                   label="Origen"
                   value={admissionSourceLabels[detail.admissionSource ?? ''] ?? 'Sin origen'}
                 />
               </>
             )}
-            <InfoRow label="Actualizado" value={formatDateTime(detail.updatedAt)} />
-            {detail.closedAt || !isEmergencySummaryTab ? (
+            {!isHospitalSummaryTab ? (
+              <InfoRow label="Actualizado" value={formatDateTime(detail.updatedAt)} />
+            ) : null}
+            {!isHospitalSummaryTab && (detail.closedAt || !isEmergencySummaryTab) ? (
               <InfoRow label="Cierre" value={formatDateTime(detail.closedAt)} />
             ) : null}
           </div>
@@ -8237,11 +9192,13 @@ export function EpisodeDetailPage() {
           </div>
         </div>
 
-        <div
-          className={`grid gap-6 ${
-            isEmergencySummaryTab ? '' : 'xl:grid-cols-[1.55fr_0.95fr]'
-          }`}
-        >
+          <div
+            className={`grid gap-6 ${
+              isEmergencySummaryTab || isHospitalSummaryTab || activeTab === 'Resumen'
+                ? ''
+                : 'xl:grid-cols-[1.55fr_0.95fr]'
+            }`}
+          >
           <div className="space-y-6">
             {activeTab === 'Resumen' ? (
               isEmergencySummaryTab ? (
@@ -8575,14 +9532,378 @@ export function EpisodeDetailPage() {
                     </p>
                   </SectionCard>
                 )
-              ) : (
+              ) : hospitalSummary ? (
               <>
                 <SectionCard
-                  description="Consulta y edita la información principal del episodio clínico."
-                  title="Información general"
-                  icon={LayoutDashboard}
+                  description="Datos clínicos mínimos para ubicar al paciente hospitalizado."
+                  title="Datos base de hospitalización"
+                  icon={BedDouble}
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {hospitalSummary.baseData.map((item) => (
+                      <SummaryDataCard
+                        key={item.label}
+                        label={item.label}
+                        value={item.value}
+                      />
+                    ))}
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  description="Señales vigentes del estado clínico y ubicación hospitalaria."
+                  title="Estado actual del paciente"
+                  icon={Activity}
+                >
+                  <div className="flex flex-wrap gap-2">
+                    {hospitalSummary.currentStatus ? (
+                      <Badge
+                        variant={
+                          ['CRITICO', 'GRAVE'].includes(hospitalSummary.currentStatus)
+                            ? 'alert'
+                            : hospitalSummary.currentStatus === 'DELICADO'
+                              ? 'warning'
+                              : 'success'
+                        }
+                      >
+                        {formatSummaryEnum(hospitalSummary.currentStatus)}
+                      </Badge>
+                    ) : null}
+                    {hospitalSummary.currentLocation ? (
+                      <Badge variant="secondary">{hospitalSummary.currentLocation}</Badge>
+                    ) : null}
+                    {hospitalSummary.relevantBadges.map((badge) => (
+                      <Badge
+                        key={badge}
+                        variant={
+                          badge.toLocaleLowerCase('es-MX').includes('riesgo')
+                            ? 'warning'
+                            : 'secondary'
+                        }
+                      >
+                        {badge}
+                      </Badge>
+                    ))}
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  description="Consolidado read-only de ingreso, evolución, indicaciones y registros relacionados."
+                  title="Resumen clínico"
+                  icon={Stethoscope}
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Diagnóstico principal
+                      </p>
+                      {hospitalSummary.primaryDiagnosis.label ? (
+                        <div className="mt-2 space-y-2">
+                          <p className="text-sm font-semibold text-slate-900">
+                            {hospitalSummary.primaryDiagnosis.label}
+                          </p>
+                          {hospitalSummary.primaryDiagnosis.code ? (
+                            <Badge variant="secondary">
+                              CIE-10 {hospitalSummary.primaryDiagnosis.code}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Sin diagnóstico principal documentado
+                        </p>
+                      )}
+                    </div>
+                    {hospitalSummary.currentStatus ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Estado clínico actual
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">
+                          {formatSummaryEnum(hospitalSummary.currentStatus)}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 lg:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Problemas activos
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {hospitalSummary.activeProblems.length > 0 ? (
+                          hospitalSummary.activeProblems.slice(0, 8).map((problem) => (
+                            <Badge key={problem} variant="secondary">
+                              {problem}
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Sin problemas activos documentados
+                          </p>
+                        )}
+                        {hospitalSummary.activeProblems.length > 8 ? (
+                          <Badge variant="default">
+                            +{hospitalSummary.activeProblems.length - 8}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Último plan terapéutico
+                      </p>
+                      {hospitalSummary.treatmentPlan ? (
+                        <>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-900">
+                            {hospitalSummary.treatmentPlan}
+                          </p>
+                          {hospitalSummary.treatmentPlanDate ? (
+                            <p className="mt-2 text-xs text-slate-500">
+                              Origen: {formatDateTime(hospitalSummary.treatmentPlanDate)}
+                            </p>
+                          ) : null}
+                        </>
+                      ) : (
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Sin plan terapéutico vigente documentado
+                        </p>
+                      )}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Indicaciones activas
+                      </p>
+                      <div className="mt-3">
+                        <SummaryList
+                          items={hospitalSummary.activeIndications}
+                          emptyText="Sin indicaciones activas documentadas"
+                        />
+                      </div>
+                    </div>
+                    {hospitalSummary.pendingProcedures.length > 0 ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Procedimientos pendientes
+                        </p>
+                        <div className="mt-3">
+                          <SummaryList items={hospitalSummary.pendingProcedures} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {hospitalSummary.activeConsultations.length > 0 ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Interconsultas activas
+                        </p>
+                        <div className="mt-3">
+                          <SummaryList items={hospitalSummary.activeConsultations} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {hospitalSummary.pendingStudies.length > 0 ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Estudios pendientes
+                        </p>
+                        <div className="mt-3">
+                          <SummaryList items={hospitalSummary.pendingStudies} />
+                        </div>
+                      </div>
+                    ) : null}
+                    {hospitalSummary.probableDischargeDate ? (
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                          Fecha probable de egreso
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-emerald-900">
+                          {formatDate(hospitalSummary.probableDischargeDate)}
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  description="Registro más reciente por fecha y hora clínica de toma."
+                  title="Últimos signos vitales"
+                  icon={HeartPulse}
+                >
+                  {hospitalSummary.latestVitals ? (
+                    <>
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="secondary">{hospitalSummary.latestVitals.source}</Badge>
+                        <span>{formatDateTime(hospitalSummary.latestVitals.recordedAt)}</span>
+                        {hospitalSummary.latestVitals.responsible ? (
+                          <span>{hospitalSummary.latestVitals.responsible}</span>
+                        ) : null}
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                          [
+                            'TA (mmHg)',
+                            hospitalSummary.latestVitals.formData.taSistolica &&
+                            hospitalSummary.latestVitals.formData.taDiastolica
+                              ? `${hospitalSummary.latestVitals.formData.taSistolica}/${hospitalSummary.latestVitals.formData.taDiastolica} mmHg`
+                              : '',
+                          ],
+                          ['FC (lpm)', hospitalSummary.latestVitals.formData.fc],
+                          ['FR (rpm)', hospitalSummary.latestVitals.formData.fr],
+                          ['Temperatura (°C)', hospitalSummary.latestVitals.formData.temperatura],
+                          ['SpO₂ (%)', hospitalSummary.latestVitals.formData.spo2],
+                          ['Dolor EVA (0-10)', hospitalSummary.latestVitals.formData.dolorEva],
+                          ['Glucosa capilar (mg/dL)', hospitalSummary.latestVitals.formData.glucosa],
+                        ]
+                          .filter(([, value]) => value)
+                          .map(([label, value]) => (
+                            <SummaryDataCard key={label} label={label} value={value} />
+                          ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Sin signos vitales registrados
+                    </p>
+                  )}
+                </SectionCard>
+
+                <SectionCard
+                  description="Alertas y riesgos activos del paciente."
+                  title="Seguridad del paciente"
+                  icon={ShieldAlert}
+                >
+                  {hospitalSummary.safetyAlerts.length > 0 ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {hospitalSummary.safetyAlerts.map((alert) => {
+                        const lowerAlert = alert.toLocaleLowerCase('es-MX');
+                        const severityClass =
+                          lowerAlert.includes('alergia') ||
+                          lowerAlert.includes('alto') ||
+                          lowerAlert.includes('evento')
+                            ? 'border-red-200 bg-red-50 text-red-900'
+                            : lowerAlert.includes('riesgo') ||
+                                lowerAlert.includes('ayuno') ||
+                                lowerAlert.includes('aislamiento')
+                              ? 'border-amber-200 bg-amber-50 text-amber-900'
+                              : 'border-slate-200 bg-slate-50 text-slate-800';
+
+                        return (
+                          <div className={`rounded-2xl border px-4 py-3 ${severityClass}`} key={alert}>
+                            <p className="text-sm font-semibold">{alert}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Sin alertas activas de seguridad
+                    </p>
+                  )}
+                </SectionCard>
+
+                <SectionCard
+                  description="Última nota o turno de enfermería con información clínica relevante."
+                  title="Último registro de enfermería"
+                  icon={HeartPulse}
+                >
+                  {hospitalSummary.nursingSummary ? (
+                    <div className="space-y-4">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <SummaryDataCard
+                          label="Fecha y hora"
+                          value={formatDateTime(hospitalSummary.nursingSummary.date)}
+                        />
+                        <SummaryDataCard
+                          label="Responsable"
+                          value={hospitalSummary.nursingSummary.responsible}
+                        />
+                        <SummaryDataCard
+                          label="Última administración relevante"
+                          value={hospitalSummary.nursingSummary.lastAdministration}
+                        />
+                        <SummaryDataCard
+                          label="Balance hídrico resumido"
+                          value={hospitalSummary.nursingSummary.balance}
+                        />
+                        <SummaryDataCard
+                          label="Riesgo de caídas"
+                          value={
+                            hospitalSummary.nursingSummary.fallRisk
+                              ? formatSummaryEnum(hospitalSummary.nursingSummary.fallRisk)
+                              : ''
+                          }
+                        />
+                        <SummaryDataCard
+                          label="Dolor EVA"
+                          value={hospitalSummary.nursingSummary.painEva}
+                        />
+                        <SummaryDataCard
+                          label="Estado de la nota"
+                          value={hospitalSummary.nursingSummary.status}
+                        />
+                      </div>
+                      {hospitalSummary.nursingSummary.observations ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Observaciones relevantes
+                          </p>
+                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-900">
+                            {hospitalSummary.nursingSummary.observations}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Sin registro de enfermería disponible
+                    </p>
+                  )}
+                </SectionCard>
+
+                <SectionCard
+                  description="Solo el registro más reciente por categoría clínica."
+                  title="Última actividad clínica"
+                  icon={History}
+                >
+                  {hospitalSummary.activityItems.length > 0 ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {hospitalSummary.activityItems.map((item) => (
+                        <button
+                          className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:border-primary/30 hover:bg-white"
+                          key={`${item.type}-${item.recordId}`}
+                          onClick={() => openHospitalSummaryRecord(item.recordId)}
+                          type="button"
+                        >
+                          <p className="text-sm font-semibold text-slate-900">
+                            {item.type}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatDateTime(item.date)}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {item.professional ? (
+                              <Badge variant="secondary">{item.professional}</Badge>
+                            ) : null}
+                            {item.status ? (
+                              <Badge variant="draft">{item.status}</Badge>
+                            ) : null}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Sin actividad clínica reciente
+                    </p>
+                  )}
+                </SectionCard>
+              </>
+              ) : (
+              <>
+                  <SectionCard
+                    description="Información administrativa mínima del episodio."
+                    title="Datos base del episodio"
+                    icon={LayoutDashboard}
+                  >
+                    <div className="grid gap-4 md:grid-cols-2">
                     <label className="space-y-2 text-sm">
                       <span className="font-medium text-slate-900">Sede</span>
                       <select
@@ -8601,29 +9922,9 @@ export function EpisodeDetailPage() {
                       </select>
                     </label>
 
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">
-                        Area de servicio
-                      </span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('serviceAreaId', event.target.value)
-                        }
-                        value={form.serviceAreaId}
-                      >
-                        <option value="">Sin area especifica</option>
-                        {availableServiceAreas.map((serviceArea) => (
-                          <option key={serviceArea.id} value={serviceArea.id}>
-                            {serviceArea.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Especialidad</span>
-                      <select
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">Especialidad</span>
+                        <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         onChange={(event) =>
                           updateFormField('specialtyId', event.target.value)
@@ -8659,25 +9960,8 @@ export function EpisodeDetailPage() {
                       </select>
                     </label>
 
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Tipo</span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('encounterType', event.target.value)
-                        }
-                        value={form.encounterType}
-                      >
-                        {(metaQuery.data?.encounterTypes ?? []).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Estado</span>
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">Estado</span>
                       <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         onChange={(event) =>
@@ -8694,30 +9978,12 @@ export function EpisodeDetailPage() {
                     </label>
                   </div>
 
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">Origen</span>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                        onChange={(event) =>
-                          updateFormField('admissionSource', event.target.value)
-                        }
-                        value={form.admissionSource}
-                      >
-                        <option value="">Sin origen</option>
-                        {(metaQuery.data?.admissionSources ?? []).map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="space-y-2 text-sm">
-                      <span className="font-medium text-slate-900">
-                        Apertura del episodio
-                      </span>
-                      <Input
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">
+                          Fecha de apertura
+                        </span>
+                        <Input
                         onChange={(event) =>
                           updateFormField('openedAt', event.target.value)
                         }
@@ -8726,9 +9992,9 @@ export function EpisodeDetailPage() {
                       />
                     </label>
 
-                    <label className="space-y-2 text-sm md:col-span-2">
-                      <span className="font-medium text-slate-900">
-                        Fecha de cierre
+                      <label className="space-y-2 text-sm">
+                        <span className="font-medium text-slate-900">
+                          Fecha de cierre
                       </span>
                       <Input
                         onChange={(event) =>
@@ -8746,118 +10012,116 @@ export function EpisodeDetailPage() {
                       onChange={(event) =>
                         updateFormField('reasonForVisit', event.target.value)
                       }
-                      value={form.reasonForVisit}
-                    />
-                  </label>
+                        value={form.reasonForVisit}
+                      />
+                    </label>
+                  </SectionCard>
 
-                  <label className="mt-4 block space-y-2 text-sm">
-                    <span className="font-medium text-slate-900">Notas</span>
-                    <Textarea
-                      onChange={(event) =>
-                        updateFormField('notes', event.target.value)
-                      }
-                      value={form.notes}
-                    />
-                  </label>
-                </SectionCard>
+                  <SectionCard
+                    description="Lectura consolidada desde Historia clínica, Consulta actual y Receta e indicaciones."
+                    title="Resumen clínico"
+                    icon={Stethoscope}
+                    >
+                      {outpatientClinicalSummary &&
+                      (outpatientClinicalSummary.motive ||
+                        outpatientClinicalSummary.primaryDiagnosis ||
+                        outpatientClinicalSummary.activeProblems.length > 0 ||
+                        outpatientClinicalSummary.currentTreatment.length > 0) ? (
+                        <div className="space-y-4">
+                          {outpatientClinicalSummary.motive ? (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Motivo de consulta
+                              </p>
+                              <p className="mt-1 text-sm leading-relaxed text-slate-900">
+                                {outpatientClinicalSummary.motive}
+                              </p>
+                            </div>
+                          ) : null}
 
-                <SectionCard
-                  description="Resumen clínico y operativo del episodio según el contexto actual."
-                  title="Vista general"
-                  icon={FolderOpen}
-                >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Paciente
-                        </p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {detail.patient.fullName}
-                        </p>
-                        <p className="text-sm leading-relaxed text-slate-500">
-                          {detail.patient.phone ?? 'Sin teléfono'} ·{' '}
-                          {detail.patient.email ?? 'Sin correo'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-5 shadow-sm">
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Episodio
-                        </p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {typeConfig?.label ?? detail.encounterType}
-                        </p>
-                        <p className="text-sm leading-relaxed text-slate-500">
-                          {detail.facility?.name ?? 'Sin sede'} ·{' '}
-                          {detail.serviceArea?.name ??
-                            detail.specialty?.name ??
-                            'Sin área'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </SectionCard>
+                        {outpatientClinicalSummary.primaryDiagnosis ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Diagnóstico principal
+                              </p>
+                              <p className="mt-1 text-sm leading-relaxed text-slate-900">
+                                {formatConsultationSummaryDiagnosis(
+                                  outpatientClinicalSummary.primaryDiagnosis,
+                                )}
+                              </p>
+                            </div>
+                          ) : null}
 
-                <SectionCard
-                  description="Contadores e indicadores vinculados al episodio clínico."
-                  title="Actividad relacionada"
-                  icon={Activity}
-                >
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      ['Documentos', detail.metrics.documents],
-                      ['Diagnósticos', detail.metrics.diagnoses],
-                      ['Labs', detail.metrics.labs],
-                      ['Imágenes', detail.metrics.imaging],
-                    ].map(([label, value]) => (
-                      <div
-                        className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-5 py-4 transition-colors hover:border-slate-300 hover:bg-white shadow-sm"
-                        key={label}
-                      >
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            {label}
-                          </p>
-
-                          <p className="text-2xl font-bold tracking-tight text-slate-900">
-                            {value}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-
-                <SectionCard
-                  description="Información más reciente de monitoreo clínico del episodio."
-                  title="Signos vitales"
-                  icon={HeartPulse}
-                >
-                  {detail.latestVitalSigns.length > 0 ? (
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {detail.latestVitalSigns.map((item) => (
-                        <div
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
-                          key={item.label}
-                        >
-                          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                            {item.label}
-                          </p>
-                          <div className="flex items-end gap-1.5">
-                            <p className="mt-2 text-xl font-semibold text-slate-900">
-                              {item.value}
+                        {outpatientClinicalSummary.activeProblems.length > 0 ? (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                              Problemas activos
                             </p>
-                            <span className="pb-1 text-xs font-medium text-slate-500">
-                              {item.unit}
-                            </span>
+                            <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
+                              {outpatientClinicalSummary.activeProblems.map((problem) => (
+                                <li key={problem}>{problem}</li>
+                              ))}
+                            </ul>
                           </div>
+                        ) : null}
+
+                          {outpatientClinicalSummary.currentTreatment.length > 0 ? (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Tratamiento actual
+                              </p>
+                              <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
+                                {outpatientClinicalSummary.currentTreatment.map((item) => (
+                                  <li key={item}>{item}</li>
+                                ))}
+                              </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Sin información clínica consolidada todavía.
+                      </p>
+                    )}
+                  </SectionCard>
+
+                  <SectionCard
+                    description="Último registro clínico disponible para el episodio."
+                    title="Signos vitales"
+                    icon={HeartPulse}
+                    >
+                        {outpatientClinicalSummary &&
+                        outpatientClinicalSummary.latestVitalSigns.values.length > 0 ? (
+                        <div className="space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {outpatientClinicalSummary.latestVitalSigns.values.map((item) => (
+                              <div
+                              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
+                              key={item.label}
+                            >
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                {item.label}
+                              </p>
+                              <div className="flex items-end gap-1.5">
+                                <p className="mt-2 text-xl font-semibold text-slate-900">
+                                  {item.value}
+                                </p>
+                                <span className="pb-1 text-xs font-medium text-slate-500">
+                                  {item.unit}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
+                          {outpatientClinicalSummary.latestVitalSigns.recordedAt ? (
+                            <p className="text-xs text-muted-foreground">
+                              {outpatientClinicalSummary.latestVitalSigns.source} ·{' '}
+                              {formatDateTime(outpatientClinicalSummary.latestVitalSigns.recordedAt)}
+                            </p>
+                          ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
                       No hay signos vitales asociados a este episodio todavia.
                     </p>
                   )}
@@ -9108,7 +10372,7 @@ export function EpisodeDetailPage() {
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <Badge variant="secondary">
-                                    {historyTypeLabel}
+                                    {`Tipo de nota: ${historyNoteTypeLabel}`}
                                   </Badge>
                                   {inheritedFromLabel ? (
                                     <Badge variant="success">
@@ -9175,7 +10439,7 @@ export function EpisodeDetailPage() {
                                       <Pill className="h-4 w-4 text-violet-600" />
                                     </div>
                                     <p className="text-sm font-semibold text-slate-900">
-                                      {`Receta · versión ${prescriptionVersionNumber}`}
+                                      {recordForm.title || `Receta V${prescriptionVersionNumber}`}
                                     </p>
                                   </div>
                                   <p className="max-w-2xl text-sm leading-relaxed text-violet-800">
@@ -9184,6 +10448,12 @@ export function EpisodeDetailPage() {
                                   </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
+                                  <Badge variant="secondary">
+                                    Tipo de registro: Receta e indicaciones
+                                  </Badge>
+                                  <Badge variant="success">
+                                    {`Versión ${prescriptionVersionNumber}`}
+                                  </Badge>
                                   <Badge variant="secondary">
                                     {typeof recordForm.formData.recetaFolio === 'string'
                                       ? recordForm.formData.recetaFolio
@@ -9917,6 +11187,13 @@ export function EpisodeDetailPage() {
                                 </Badge>
                               </div>
                             </div>
+                          ) : isConsultationPrescriptionSection ? (
+                            <div className="space-y-2 text-sm">
+                              <span className="font-medium text-slate-900">Tipo de registro</span>
+                              <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm text-slate-700">
+                                Receta e indicaciones
+                              </div>
+                            </div>
                           ) : isConsultationDocumentsSection ? null : (
                             <label className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">Tipo de registro</span>
@@ -9944,7 +11221,8 @@ export function EpisodeDetailPage() {
                           )}
 
                           {isConsultationDocumentsSection &&
-                          detail.encounterType === 'EMERGENCY' ? (
+                          (detail.encounterType === 'EMERGENCY' ||
+                            detail.encounterType === 'OUTPATIENT') ? (
                             <div className="space-y-2 text-sm">
                               <span className="font-medium text-slate-900">
                                 Tipo de documento
@@ -10143,6 +11421,8 @@ export function EpisodeDetailPage() {
 
                         {isConsultationDocumentsSection &&
                         detail.encounterType !== 'EMERGENCY' &&
+                        detail.encounterType !== 'HOSPITALIZATION' &&
+                        !isOutpatientDocument &&
                         currentDocumentLegalSnapshot ? (
                           <div className="rounded-2xl border border-slate-200 bg-white p-4">
                             <div className="mb-3">
@@ -10692,11 +11972,11 @@ export function EpisodeDetailPage() {
                             ) : (
                             <div className="grid gap-4 md:grid-cols-2">
                               {section.fields.map((field) => {
-                                if (
-                                  isEmergencyOrdersSection &&
-                                  section.key === 'ordenes_urg_transfusion' &&
-                                  field.key !== 'transfusionAplica'
-                                ) {
+	                                if (
+	                                  isEmergencyOrdersSection &&
+	                                  section.key === 'ordenes_urg_transfusion' &&
+	                                  field.key !== 'transfusionAplica'
+	                                ) {
                                   if (recordForm.formData.transfusionAplica !== true) {
                                     return null;
                                   }
@@ -10713,10 +11993,24 @@ export function EpisodeDetailPage() {
                                     recordForm.formData.transfusionReaccionAdversa !== 'SI'
                                   ) {
                                     return null;
-                                  }
+	                                  }
+	                                }
+
+                                if (
+                                  field.visibleWhen &&
+                                  !field.visibleWhen.values.includes(
+                                    typeof recordForm.formData[field.visibleWhen.fieldKey] ===
+                                      'string'
+                                      ? (recordForm.formData[
+                                          field.visibleWhen.fieldKey
+                                        ] as string)
+                                      : '',
+                                  )
+                                ) {
+                                  return null;
                                 }
 
-                                if (field.inheritanceMode === 'system') {
+	                                if (field.inheritanceMode === 'system') {
                                   if (
                                     field.type !== 'readonly' &&
                                     field.type !== 'action'
@@ -10725,16 +12019,39 @@ export function EpisodeDetailPage() {
                                   }
 
                                   if (field.type === 'readonly') {
+                                    const formFieldValue =
+                                      typeof recordForm.formData[field.key] === 'string'
+                                        ? (recordForm.formData[field.key] as string)
+                                        : '';
+                                    const documentSnapshotValue =
+                                      currentDocumentLegalSnapshot &&
+                                      field.key in currentDocumentLegalSnapshot
+                                        ? (currentDocumentLegalSnapshot[
+                                            field.key as keyof typeof currentDocumentLegalSnapshot
+                                          ] as string)
+                                        : '';
                                     const readonlyValue =
-                                      isConsultationPrescriptionSection &&
-                                      currentPrescriptionLegalSnapshot &&
-                                      field.key in currentPrescriptionLegalSnapshot
+                                      isOutpatientDocument && field.key === 'tipoRegistro'
+                                        ? recordForm.noteType
+                                        : isConsultationDocumentsSection &&
+                                            detail.encounterType === 'OUTPATIENT'
+                                          ? formFieldValue || documentSnapshotValue
+                                          : isConsultationPrescriptionSection &&
+                                              currentPrescriptionLegalSnapshot &&
+                                              field.key in currentPrescriptionLegalSnapshot
                                         ? (currentPrescriptionLegalSnapshot[
                                             field.key as keyof typeof currentPrescriptionLegalSnapshot
                                           ] as string)
-                                        : typeof recordForm.formData[field.key] === 'string'
-                                          ? (recordForm.formData[field.key] as string)
-                                          : '';
+                                        : formFieldValue;
+
+                                    if (
+                                      ((isConsultationDocumentsSection &&
+                                        detail.encounterType === 'HOSPITALIZATION') ||
+                                        isOutpatientDocument) &&
+                                      !hasPrintableDocumentValue(readonlyValue)
+                                    ) {
+                                      return null;
+                                    }
 
                                     return (
                                       <ReadOnlyField
@@ -10803,7 +12120,76 @@ export function EpisodeDetailPage() {
                                   return null;
                                 }
 
+                                if (field.type === 'subtitle') {
+                                  return (
+                                    <div
+                                      className="pt-2 text-sm md:col-span-2"
+                                      key={field.key}
+                                    >
+                                      <span className="font-medium text-slate-900">
+                                        {field.label}
+                                      </span>
+                                    </div>
+                                  );
+                                }
+
                                 const fieldValue = recordForm.formData[field.key];
+                                const isHospitalEvolutionGeneralDataSection =
+                                  isHospitalEvolutionSection &&
+                                  section.key === 'datos_generales_evol_hosp';
+
+                                if (isOutpatientDocument && isRecordLocked) {
+                                  const readonlyValue =
+                                    field.type === 'select'
+                                      ? field.options?.find(
+                                          (option) => option.value === fieldValue,
+                                        )?.label ?? ''
+                                      : typeof fieldValue === 'string' ||
+                                          typeof fieldValue === 'number'
+                                        ? String(fieldValue)
+                                        : '';
+
+                                  if (!hasPrintableDocumentValue(readonlyValue)) {
+                                    return null;
+                                  }
+
+                                  return (
+                                    <ReadOnlyField
+                                      key={field.key}
+                                      label={field.label}
+                                      value={readonlyValue}
+                                    />
+                                  );
+                                }
+
+                                if (
+                                  isRecordLocked &&
+                                  isHospitalEvolutionGeneralDataSection &&
+                                  field.type !== 'readonly' &&
+                                  field.type !== 'action'
+                                ) {
+                                  const readonlyValue =
+                                    field.type === 'select'
+                                      ? field.options?.find(
+                                          (option) => option.value === fieldValue,
+                                        )?.label ?? ''
+                                      : field.type === 'datetime-local' &&
+                                          typeof fieldValue === 'string' &&
+                                          fieldValue
+                                        ? formatDateTime(fieldValue)
+                                        : typeof fieldValue === 'string' ||
+                                            typeof fieldValue === 'number'
+                                          ? String(fieldValue)
+                                          : '';
+
+                                  return (
+                                    <ReadOnlyField
+                                      key={field.key}
+                                      label={field.label}
+                                      value={readonlyValue}
+                                    />
+                                  );
+                                }
 
                                 if (field.type === 'action') {
                                   return (
@@ -11120,6 +12506,8 @@ export function EpisodeDetailPage() {
                                     field.key === emergencyEvolutionDiagnosisFieldKey;
                                   const isEmergencyEvolutionDiagnosticResultsList =
                                     field.key === emergencyEvolutionDiagnosticResultsFieldKey;
+                                  const isConsultationHistoryPriorStudiesList =
+                                    field.key === 'estudiosPreviosRegistrados';
                                   const items: Record<string, unknown>[] =
                                     isEmergencyEvolutionDiagnosisList
                                       ? normalizeEmergencyEvolutionDiagnoses(fieldValue)
@@ -11502,11 +12890,22 @@ export function EpisodeDetailPage() {
                                       isEmergencyEvolutionDiagnosisList &&
                                       (hasEmergencyEvolutionDiagnosisValue(item) ||
                                         Boolean(selectedRecord));
+                                    const shouldConfirmPriorStudyRemoval =
+                                      isConsultationHistoryPriorStudiesList;
 
                                     if (
                                       shouldConfirm &&
                                       !window.confirm(
                                         'Eliminar diagnóstico puede descartar información capturada. ¿Deseas continuar?',
+                                      )
+                                    ) {
+                                      return;
+                                    }
+
+                                    if (
+                                      shouldConfirmPriorStudyRemoval &&
+                                      !window.confirm(
+                                        'Eliminar estudio puede descartar información capturada. ¿Deseas continuar?',
                                       )
                                     ) {
                                       return;
@@ -11530,15 +12929,18 @@ export function EpisodeDetailPage() {
                                         <span className="font-medium text-slate-900">
                                           {field.label}
                                         </span>
-                                        <Button
-                                          disabled={isRecordLocked}
-                                          onClick={addObjectArrayItem}
-                                          size="sm"
-                                          type="button"
-                                          variant="outline"
-                                        >
-                                          {field.itemAddLabel ?? 'Agregar'}
-                                        </Button>
+                                        {isRecordLocked &&
+                                        isConsultationHistoryPriorStudiesList ? null : (
+                                          <Button
+                                            disabled={isRecordLocked}
+                                            onClick={addObjectArrayItem}
+                                            size="sm"
+                                            type="button"
+                                            variant="outline"
+                                          >
+                                            {field.itemAddLabel ?? 'Agregar'}
+                                          </Button>
+                                        )}
                                       </div>
                                       <div className="space-y-3">
                                         {items.length > 0 ? (
@@ -11555,25 +12957,28 @@ export function EpisodeDetailPage() {
                                                 <p className="text-sm font-semibold text-slate-900">
                                                   {`${field.label} ${itemIndex + 1}`}
                                                 </p>
-                                                <Button
-                                                  disabled={isRecordLocked}
-                                                  className={
-                                                    field.disableItemRemoval
-                                                      ? 'hidden'
-                                                      : undefined
-                                                  }
-                                                  onClick={() =>
-                                                    removeObjectArrayItem(
-                                                      item,
-                                                      itemIndex,
-                                                    )
-                                                  }
-                                                  size="sm"
-                                                  type="button"
-                                                  variant="outline"
-                                                >
-                                                  {field.itemRemoveLabel ?? 'Eliminar'}
-                                                </Button>
+                                                {isRecordLocked &&
+                                                isConsultationHistoryPriorStudiesList ? null : (
+                                                  <Button
+                                                    disabled={isRecordLocked}
+                                                    className={
+                                                      field.disableItemRemoval
+                                                        ? 'hidden'
+                                                        : undefined
+                                                    }
+                                                    onClick={() =>
+                                                      removeObjectArrayItem(
+                                                        item,
+                                                        itemIndex,
+                                                      )
+                                                    }
+                                                    size="sm"
+                                                    type="button"
+                                                    variant="outline"
+                                                  >
+                                                    {field.itemRemoveLabel ?? 'Eliminar'}
+                                                  </Button>
+                                                )}
                                               </div>
                                               <div className="grid gap-3 md:grid-cols-2">
                                                 {(field.itemFields ?? []).map((itemField) => {
@@ -11621,6 +13026,38 @@ export function EpisodeDetailPage() {
                                                     );
                                                   }
 
+                                                  if (itemField.type === 'textarea') {
+                                                    return (
+                                                      <label
+                                                        className="space-y-2 text-sm md:col-span-2"
+                                                        key={`${field.key}-${itemIndex}-${itemField.key}`}
+                                                      >
+                                                        <span className="font-medium text-slate-900">
+                                                          {itemField.label}
+                                                        </span>
+                                                        <Textarea
+                                                          disabled={isRecordLocked}
+                                                          onChange={(event) => {
+                                                            const nextItems = [...items];
+                                                            nextItems[itemIndex] = {
+                                                              ...nextItems[itemIndex],
+                                                              [itemField.key]: event.target.value,
+                                                            };
+                                                            updateRecordFormDataField(
+                                                              field.key,
+                                                              nextItems,
+                                                            );
+                                                          }}
+                                                          value={
+                                                            typeof itemFieldValue === 'string'
+                                                              ? itemFieldValue
+                                                              : ''
+                                                          }
+                                                        />
+                                                      </label>
+                                                    );
+                                                  }
+
                                                   return (
                                                     <label
                                                       className="space-y-2 text-sm"
@@ -11653,6 +13090,12 @@ export function EpisodeDetailPage() {
                                                           itemField.type === 'date'
                                                             ? 'date'
                                                             : itemField.type
+                                                        }
+                                                        max={
+                                                          itemField.type === 'date' &&
+                                                          itemField.maxDate === 'today'
+                                                            ? getTodayDateInputValue()
+                                                            : undefined
                                                         }
                                                         value={
                                                           typeof itemFieldValue === 'string'
@@ -11688,13 +13131,17 @@ export function EpisodeDetailPage() {
                                     </span>
                                     <Input
                                       disabled={isRecordLocked}
-                                      onChange={(event) =>
-                                        updateRecordFormDataField(
-                                          field.key,
-                                          event.target.value,
-                                        )
-                                      }
+                                      min={field.key === 'diaEstanciaHosp' ? '1' : undefined}
+                                      onChange={(event) => {
+                                        const nextValue =
+                                          field.key === 'diaEstanciaHosp'
+                                            ? event.target.value.replace(/\D/g, '')
+                                            : event.target.value;
+
+                                        updateRecordFormDataField(field.key, nextValue);
+                                      }}
                                       placeholder={field.placeholder}
+                                      step={field.key === 'diaEstanciaHosp' ? '1' : undefined}
                                       type={field.type === 'date' ? 'date' : field.type}
                                       value={typeof fieldValue === 'string' ? fieldValue : ''}
                                     />
@@ -11767,7 +13214,10 @@ export function EpisodeDetailPage() {
                       </div>
                     ) : null}
 
-                    {activeTab === 'Documentos' && detail.encounterType !== 'EMERGENCY' ? (
+                    {activeTab === 'Documentos' &&
+                    detail.encounterType !== 'EMERGENCY' &&
+                    detail.encounterType !== 'HOSPITALIZATION' &&
+                    !isOutpatientDocument ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                           <div>
@@ -11880,7 +13330,7 @@ export function EpisodeDetailPage() {
             ) : null}
           </div>
 
-          {!isEmergencySummaryTab ? (
+            {!isEmergencySummaryTab && !isHospitalSummaryTab && activeTab !== 'Resumen' ? (
           <div className="space-y-6">
             <SectionCard
               description="Resumen rápido e información clave para el seguimiento del episodio."
@@ -11947,7 +13397,7 @@ export function EpisodeDetailPage() {
 
             <SectionCard
               description="Actividad reciente relacionada con la atención y evolución del episodio."
-              title="Línea del tiempo"
+              title="Timeline"
               icon={History}
             >
               <div className="space-y-5">

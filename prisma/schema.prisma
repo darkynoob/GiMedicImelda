@@ -307,6 +307,7 @@ model Specialty {
   encounters        Encounter[]
   documentTypes     DocumentType[]
   clinicalDocuments ClinicalDocument[]
+  responsibleHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionResponsibleSpecialty")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -430,6 +431,7 @@ model ServiceArea {
   facility   Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   specialty  Specialty?  @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
   encounters Encounter[]
+  responsibleHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionResponsibleServiceArea")
 
   @@unique([facilityId, code])
   @@index([tenantId])
@@ -1392,6 +1394,7 @@ model EncounterSectionRecord {
   encounter      Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   patient        Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
   authoredByUser User?     @relation(fields: [authoredByUserId], references: [id], onDelete: SetNull)
+  previousForHospitalEvolutions HospitalEvolution[] @relation("HospitalEvolutionPreviousSectionRecord")
   emergencyEvolution EmergencyEvolution?
   emergencyOrderSet EmergencyOrderSet?
   emergencyDischarge EmergencyDischarge?
@@ -3295,6 +3298,16 @@ model HospitalEvolution {
   status EncounterRecordStatus @default(DRAFT)
   recordedAt DateTime
 
+  hospitalStayDay Int?
+  hospitalStayDayManuallyAdjusted Boolean @default(false)
+  clinicalStatus String?
+  shift String?
+  previousEvolutionRecordedAt DateTime?
+  previousEvolutionLabel String?
+  responsibleSpecialtyId String?
+  responsibleServiceAreaId String?
+  responsibleSpecialtySnapshot String?
+
   subjective String?
   systolicBp Decimal? @db.Decimal(10, 2)
   diastolicBp Decimal? @db.Decimal(10, 2)
@@ -3341,6 +3354,9 @@ model HospitalEvolution {
   encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
   patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
   sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
+  previousEvolutionRecord EncounterSectionRecord? @relation("HospitalEvolutionPreviousSectionRecord", fields: [previousEvolutionRecordId], references: [id], onDelete: SetNull)
+  responsibleSpecialty Specialty? @relation("HospitalEvolutionResponsibleSpecialty", fields: [responsibleSpecialtyId], references: [id], onDelete: SetNull)
+  responsibleServiceArea ServiceArea? @relation("HospitalEvolutionResponsibleServiceArea", fields: [responsibleServiceAreaId], references: [id], onDelete: SetNull)
   signer        User?                  @relation("HospitalEvolutionSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
   results       HospitalEvolutionResult[]
   diagnoses     HospitalEvolutionDiagnosis[]
@@ -3353,6 +3369,10 @@ model HospitalEvolution {
   @@index([recordedAt])
   @@index([signerUserId])
   @@index([previousEvolutionRecordId])
+  @@index([responsibleSpecialtyId])
+  @@index([responsibleServiceAreaId])
+  @@index([clinicalStatus])
+  @@index([shift])
 }
 
 model HospitalEvolutionResult {
@@ -4049,6 +4069,25 @@ model HospitalDischarge {
   admittedAt DateTime?
   stayDays Int?
   dischargeCondition String
+  voluntaryDischargeReason String?
+  explainedRisks String?
+  voluntaryResponsibleProfessionalName String?
+  conformitySignerName String?
+  conformitySignerRelationship String?
+  conformitySignerCapacity String?
+  conformitySignedAt DateTime?
+  conformitySignatureReference String?
+  receivingPhysicianName String?
+  receivingPhysicianLicense String?
+  receivingService String?
+  transportMethod String?
+  deathOccurredAt DateTime?
+  causeOfDeath String?
+  deathCertificateId String?
+  lastContactAt DateTime?
+  abandonmentCircumstances String?
+  abandonmentDocumentedByName String?
+  abandonmentDocumentedAt DateTime?
 
   admissionReason String?
   admissionDiagnosis String?
@@ -4100,6 +4139,7 @@ model HospitalDischarge {
   patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
   sectionRecord EncounterSectionRecord @relation(fields: [sectionRecordId], references: [id], onDelete: Cascade)
   signer        User?                  @relation("HospitalDischargeSigner", fields: [signerUserId], references: [id], onDelete: SetNull)
+  deathCertificate ClinicalDocument? @relation("HospitalDischargeDeathCertificate", fields: [deathCertificateId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([patientId])
@@ -4107,6 +4147,9 @@ model HospitalDischarge {
   @@index([dischargedAt])
   @@index([signedAt])
   @@index([signerUserId])
+  @@index([dischargeType])
+  @@index([deathCertificateId])
+  @@index([transportMethod])
 }
 
 /// Documento complementario independiente dentro de Hospitalización.
@@ -4463,6 +4506,7 @@ model ClinicalDocument {
 
   /// Consentimientos ligados a este documento.
   consentForms ConsentForm[]
+  hospitalDischargeDeathCertificates HospitalDischarge[] @relation("HospitalDischargeDeathCertificate")
 
   @@index([tenantId])
   @@index([facilityId])

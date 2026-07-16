@@ -35,7 +35,8 @@ export type EpisodeFieldDefinition = {
     | 'string-array'
     | 'object-array'
     | 'readonly'
-    | 'action';
+    | 'action'
+    | 'subtitle';
   placeholder?: string;
   options?: EpisodeFieldOption[];
   inheritanceMode?: 'carry_forward' | 'fresh_capture' | 'system';
@@ -43,9 +44,18 @@ export type EpisodeFieldDefinition = {
   itemAddLabel?: string;
   itemRemoveLabel?: string;
   disableItemRemoval?: boolean;
+  maxDate?: 'today';
   actionLabel?: string;
   required?: boolean;
+  visibleWhen?: {
+    fieldKey: string;
+    values: string[];
+  };
 };
+
+export function isPresentationField(field: EpisodeFieldDefinition) {
+  return field.type === 'subtitle';
+}
 
 export type EpisodeSectionDefinition = {
   key: string;
@@ -126,6 +136,74 @@ const priorityOptions: EpisodeFieldOption[] = [
   { value: 'ALTA', label: 'Alta' },
   { value: 'MEDIA', label: 'Media' },
   { value: 'BAJA', label: 'Baja' },
+];
+
+const hospitalShiftOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'MATUTINO', label: 'Matutino' },
+  { value: 'VESPERTINO', label: 'Vespertino' },
+  { value: 'NOCTURNO', label: 'Nocturno' },
+];
+
+const hospitalEvolutionClinicalStatusOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'MEJORANDO', label: 'Mejorando' },
+  { value: 'SIN_CAMBIOS', label: 'Sin cambios' },
+  { value: 'EMPEORANDO', label: 'Empeorando' },
+  { value: 'CRITICO', label: 'Crítico' },
+  { value: 'ESTABLE', label: 'Estable' },
+];
+
+const hospitalDischargeTypeOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'ALTA_MEDICA', label: 'Alta médica' },
+  { value: 'ALTA_VOLUNTARIA', label: 'Alta voluntaria' },
+  { value: 'TRASLADO', label: 'Traslado' },
+  { value: 'REFERENCIA', label: 'Referencia' },
+  { value: 'DEFUNCION', label: 'Defunción' },
+  { value: 'FUGA_ABANDONO', label: 'Fuga / abandono' },
+];
+
+const hospitalDischargeTransferTypeValues = ['TRASLADO', 'REFERENCIA'];
+const hospitalDischargeDestinationVisibleValues = [
+  'ALTA_MEDICA',
+  'ALTA_VOLUNTARIA',
+  ...hospitalDischargeTransferTypeValues,
+];
+const hospitalDischargeVoluntaryVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: ['ALTA_VOLUNTARIA'],
+};
+const hospitalDischargeTransferVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: hospitalDischargeTransferTypeValues,
+};
+const hospitalDischargeDeathVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: ['DEFUNCION'],
+};
+const hospitalDischargeAbandonmentVisible = {
+  fieldKey: 'tipoEgresoHosp',
+  values: ['FUGA_ABANDONO'],
+};
+const hospitalTransportMethodOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'AMBULANCIA_BASICA', label: 'Ambulancia básica' },
+  { value: 'AMBULANCIA_AVANZADA', label: 'Ambulancia avanzada' },
+  { value: 'TRANSPORTE_INSTITUCIONAL', label: 'Transporte institucional' },
+  { value: 'TRANSPORTE_PARTICULAR', label: 'Transporte particular' },
+  { value: 'OTRO', label: 'Otro' },
+];
+const hospitalConformitySignerOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'PACIENTE', label: 'Paciente' },
+  { value: 'FAMILIAR', label: 'Familiar' },
+  { value: 'TUTOR_LEGAL', label: 'Tutor legal' },
+];
+const hospitalConformityConfirmationOptions: EpisodeFieldOption[] = [
+  { value: '', label: 'Selecciona una opción' },
+  { value: 'FIRMADA', label: 'Firmada / confirmada' },
+  { value: 'NO_FIRMA', label: 'No firma, se deja constancia' },
 ];
 
 const triagePriorityOptions: EpisodeFieldOption[] = [
@@ -915,7 +993,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           fields: [
             {
               key: 'estudiosPreviosRegistrados',
-              label: 'Estudios previos registrados',
+              label: 'Estudios previos',
               type: 'object-array',
               itemAddLabel: '+ Agregar estudio',
               itemRemoveLabel: 'Eliminar estudio',
@@ -936,6 +1014,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
                   key: 'fechaEstudio',
                   label: 'Fecha del estudio',
                   type: 'date',
+                  maxDate: 'today',
                 },
                 {
                   key: 'resultado',
@@ -2782,12 +2861,7 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               { value: 'TERAPIA_INTENSIVA', label: 'Terapia intensiva' },
             ] },
             { key: 'medicoAdscritoHosp', label: 'Médico adscrito', type: 'text' },
-            { key: 'turnoIngresoHosp', label: 'Turno de ingreso', type: 'select', options: [
-              { value: '', label: 'Sin especificar' },
-              { value: 'MATUTINO', label: 'Matutino' },
-              { value: 'VESPERTINO', label: 'Vespertino' },
-              { value: 'NOCTURNO', label: 'Nocturno' },
-            ] },
+            { key: 'turnoIngresoHosp', label: 'Turno de ingreso', type: 'select', options: hospitalShiftOptions },
             { key: 'enfermeriaAsignadaHosp', label: 'Enfermería asignada', type: 'text' },
             { key: 'responsableAdmisionHosp', label: 'Responsable de admisión', type: 'text' },
             { key: 'episodioOrigenHosp', label: 'Episodio origen', type: 'readonly' },
@@ -2829,16 +2903,16 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           key: 'objetivo_ingreso',
           title: 'Objetivo: signos vitales y exploración',
           fields: [
-            { key: 'taSistolicaHosp', label: 'TA sistólica', type: 'number' },
-            { key: 'taDiastolicaHosp', label: 'TA diastólica', type: 'number' },
-            { key: 'fcHosp', label: 'FC', type: 'number' },
-            { key: 'frHosp', label: 'FR', type: 'number' },
-            { key: 'temperaturaHosp', label: 'Temperatura', type: 'number' },
-            { key: 'spo2Hosp', label: 'SpO₂', type: 'number' },
-            { key: 'dolorEvaHosp', label: 'Dolor EVA', type: 'number' },
-            { key: 'pesoHosp', label: 'Peso', type: 'number' },
-            { key: 'tallaHosp', label: 'Talla', type: 'number' },
-            { key: 'glucosaHosp', label: 'Glucosa', type: 'number' },
+            { key: 'taSistolicaHosp', label: 'TA sistólica (mmHg)', type: 'number' },
+            { key: 'taDiastolicaHosp', label: 'TA diastólica (mmHg)', type: 'number' },
+            { key: 'fcHosp', label: 'FC (lpm)', type: 'number' },
+            { key: 'frHosp', label: 'FR (rpm)', type: 'number' },
+            { key: 'temperaturaHosp', label: 'Temperatura (°C)', type: 'number' },
+            { key: 'spo2Hosp', label: 'SpO₂ (%)', type: 'number' },
+            { key: 'dolorEvaHosp', label: 'Dolor EVA (0–10)', type: 'number' },
+            { key: 'pesoHosp', label: 'Peso (kg)', type: 'number' },
+            { key: 'tallaHosp', label: 'Talla (cm)', type: 'number' },
+            { key: 'glucosaHosp', label: 'Glucosa capilar (mg/dL)', type: 'number' },
             { key: 'exploracionFisicaHosp', label: 'Exploración física', type: 'textarea' },
             { key: 'estadoMentalHosp', label: 'Estado mental', type: 'select', options: [
               { value: '', label: 'Selecciona una opción' },
@@ -2986,6 +3060,18 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
       description: 'Seguimiento clínico intrahospitalario.',
       icon: Activity,
       sections: [
+        {
+          key: 'datos_generales_evol_hosp',
+          title: 'Datos generales de evolución',
+          fields: [
+            { key: 'fechaHoraEvolucionHosp', label: 'Fecha y hora de evolución', type: 'datetime-local' },
+            { key: 'diaEstanciaHosp', label: 'Día de estancia hospitalaria', type: 'number' },
+            { key: 'turnoEvolHosp', label: 'Turno', type: 'select', options: hospitalShiftOptions },
+            { key: 'estadoClinicoEvolHosp', label: 'Estado clínico', type: 'select', options: hospitalEvolutionClinicalStatusOptions },
+            { key: 'especialidadGuardiaEvolHosp', label: 'Especialidad / guardia responsable', type: 'readonly' },
+            { key: 'referenciaEvolucionPreviaHosp', label: 'Referencia de evolución previa', type: 'readonly' },
+          ],
+        },
         {
           key: 'subjetivo_evol_hosp',
           title: 'Subjetivo',
@@ -3673,14 +3759,14 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               itemFields: [
                 { key: 'fecha', label: 'Fecha', type: 'date' },
                 { key: 'hora', label: 'Hora', type: 'time' },
-                { key: 'taSistolica', label: 'TA sistólica', type: 'number' },
-                { key: 'taDiastolica', label: 'TA diastólica', type: 'number' },
-                { key: 'fc', label: 'FC', type: 'number' },
-                { key: 'fr', label: 'FR', type: 'number' },
-                { key: 'temperatura', label: 'Temperatura', type: 'number' },
-                { key: 'spo2', label: 'SpO₂', type: 'number' },
-                { key: 'glucosaCapilar', label: 'Glucosa capilar', type: 'number' },
-                { key: 'dolorEva', label: 'Dolor EVA', type: 'number' },
+                { key: 'taSistolica', label: 'TA sistólica (mmHg)', type: 'number' },
+                { key: 'taDiastolica', label: 'TA diastólica (mmHg)', type: 'number' },
+                { key: 'fc', label: 'FC (lpm)', type: 'number' },
+                { key: 'fr', label: 'FR (rpm)', type: 'number' },
+                { key: 'temperatura', label: 'Temperatura (°C)', type: 'number' },
+                { key: 'spo2', label: 'SpO₂ (%)', type: 'number' },
+                { key: 'glucosaCapilar', label: 'Glucosa capilar (mg/dL)', type: 'number' },
+                { key: 'dolorEva', label: 'Dolor EVA (0–10)', type: 'number' },
               ],
             },
             {
@@ -3762,21 +3848,15 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
           title: 'Tipo y destino de egreso',
           fields: [
             { key: 'tipoRegistro', label: 'Tipo de registro', type: 'readonly', inheritanceMode: 'system' },
-            { key: 'tipoEgresoHosp', label: 'Tipo de egreso', type: 'select', options: [
-              { value: '', label: 'Selecciona una opción' },
-              { value: 'ALTA_MEDICA', label: 'Alta médica' },
-              { value: 'HOSPITALIZACION', label: 'Hospitalización' },
-              { value: 'TRASLADO', label: 'Traslado' },
-              { value: 'DEFUNCION', label: 'Defunción' },
-            ] },
+            { key: 'tipoEgresoHosp', label: 'Tipo de egreso', type: 'select', options: hospitalDischargeTypeOptions },
             { key: 'destinoPacienteEgresoHosp', label: 'Destino del paciente', type: 'select', options: [
               { value: '', label: 'Selecciona una opción' },
               { value: 'DOMICILIO', label: 'Domicilio' },
               { value: 'OTRA_UNIDAD', label: 'Otra unidad' },
               { value: 'REHABILITACION', label: 'Rehabilitación' },
               { value: 'MORTUORIO', label: 'Mortuorio' },
-            ] },
-            { key: 'unidadReceptoraEgresoHosp', label: 'Unidad receptora', type: 'text' },
+            ], visibleWhen: { fieldKey: 'tipoEgresoHosp', values: hospitalDischargeDestinationVisibleValues } },
+            { key: 'unidadReceptoraEgresoHosp', label: 'Unidad receptora', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
             { key: 'fechaHoraEgresoHosp', label: 'Fecha y hora de egreso', type: 'datetime-local' },
             { key: 'fechaIngresoReadonlyHosp', label: 'Fecha de ingreso', type: 'readonly', inheritanceMode: 'system' },
             { key: 'diasEstanciaHosp', label: 'Días de estancia', type: 'readonly', inheritanceMode: 'system' },
@@ -3787,6 +3867,25 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
               { value: 'DETERIORADO', label: 'Deteriorado' },
               { value: 'FALLECIDO', label: 'Fallecido' },
             ] },
+            { key: 'motivoAltaVoluntariaEgresoHosp', label: 'Motivo de alta voluntaria', type: 'textarea', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'riesgosExplicadosAltaVoluntariaEgresoHosp', label: 'Riesgos explicados al paciente', type: 'textarea', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'profesionalResponsableAltaVoluntariaEgresoHosp', label: 'Profesional responsable', type: 'readonly', inheritanceMode: 'system', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'firmanteConformidadNombreEgresoHosp', label: 'Nombre de quien firma conformidad', type: 'text', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'firmanteConformidadCalidadEgresoHosp', label: 'Calidad con la que firma', type: 'select', options: hospitalConformitySignerOptions, visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'firmanteConformidadRelacionEgresoHosp', label: 'Relación con el paciente', type: 'text', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'fechaHoraConformidadEgresoHosp', label: 'Fecha y hora de conformidad', type: 'datetime-local', visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'confirmacionConformidadEgresoHosp', label: 'Confirmación / firma de conformidad', type: 'select', options: hospitalConformityConfirmationOptions, visibleWhen: hospitalDischargeVoluntaryVisible },
+            { key: 'medicoReceptorEgresoHosp', label: 'Médico receptor', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'cedulaMedicoReceptorEgresoHosp', label: 'Identificación profesional receptor', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'servicioReceptorEgresoHosp', label: 'Servicio receptor', type: 'text', visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'medioTrasladoEgresoHosp', label: 'Medio de traslado', type: 'select', options: hospitalTransportMethodOptions, visibleWhen: hospitalDischargeTransferVisible },
+            { key: 'horaDefuncionEgresoHosp', label: 'Hora de defunción', type: 'datetime-local', visibleWhen: hospitalDischargeDeathVisible },
+            { key: 'causaDefuncionEgresoHosp', label: 'Causa de defunción', type: 'textarea', visibleWhen: hospitalDischargeDeathVisible },
+            { key: 'certificadoDefuncionRelacionadoEgresoHosp', label: 'Certificado de defunción relacionado', type: 'text', visibleWhen: hospitalDischargeDeathVisible },
+            { key: 'horaUltimoContactoEgresoHosp', label: 'Hora de último contacto', type: 'datetime-local', visibleWhen: hospitalDischargeAbandonmentVisible },
+            { key: 'circunstanciasAbandonoEgresoHosp', label: 'Circunstancias registradas', type: 'textarea', visibleWhen: hospitalDischargeAbandonmentVisible },
+            { key: 'profesionalDocumentaAbandonoEgresoHosp', label: 'Profesional que documenta', type: 'readonly', inheritanceMode: 'system', visibleWhen: hospitalDischargeAbandonmentVisible },
+            { key: 'fechaHoraDocumentacionAbandonoEgresoHosp', label: 'Fecha y hora de documentación', type: 'readonly', inheritanceMode: 'system', visibleWhen: hospitalDischargeAbandonmentVisible },
           ],
         },
         {
@@ -3910,6 +4009,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             },
             { key: 'sintomasActualesPreproc', label: 'Síntomas actuales', type: 'textarea' },
             { key: 'evolucionPadecimientoPreproc', label: 'Evolución del padecimiento', type: 'textarea' },
+            {
+              key: 'antecedentesRelevantesPreprocSubtitle',
+              label: 'Antecedentes relevantes para el procedimiento',
+              type: 'subtitle',
+            },
             { key: 'antDiabetesPreproc', label: 'Diabetes', type: 'checkbox' },
             { key: 'antHipertensionPreproc', label: 'Hipertensión', type: 'checkbox' },
             { key: 'antCardiopatiaPreproc', label: 'Cardiopatía', type: 'checkbox' },
@@ -4046,6 +4150,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             { key: 'suspensionMedicamentosPreproc', label: 'Suspensión de medicamentos', type: 'text' },
             { key: 'atbProfilacticoPreproc', label: 'ATB profiláctico', type: 'text' },
             { key: 'preparacionEspecialPreproc', label: 'Preparación especial', type: 'text' },
+            {
+              key: 'checklistSeguridadQuirurgicaOmsPreprocSubtitle',
+              label: 'Checklist de seguridad quirúrgica (OMS)',
+              type: 'subtitle',
+            },
             { key: 'omsPacienteIdentificadoPreproc', label: 'Paciente identificado', type: 'checkbox' },
             { key: 'omsProcedimientoConfirmadoPreproc', label: 'Procedimiento confirmado', type: 'checkbox' },
             { key: 'omsSitioQuirurgicoMarcadoPreproc', label: 'Sitio quirúrgico marcado', type: 'checkbox' },
@@ -4325,6 +4434,11 @@ export const episodeProfileSchemas: Record<string, EpisodeTabDefinition[]> = {
             { key: 'aldreteSpo2RecEval', label: 'SpO2', type: 'select', options: [{ value: '', label: 'Sin calcular' }, { value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' }] },
             { key: 'aldreteTotalRecEval', label: 'Aldrete total', type: 'readonly', inheritanceMode: 'system' },
             { key: 'aldreteInterpretacionRecEval', label: 'Interpretación Aldrete', type: 'readonly', inheritanceMode: 'system' },
+            {
+              key: 'criteriosAltaAmbulatoriaRecEvalSubtitle',
+              label: 'Criterios de alta ambulatoria',
+              type: 'subtitle',
+            },
             { key: 'altaToleraViaOralRecEval', label: 'Tolera vía oral sin náusea ni vómito', type: 'checkbox' },
             { key: 'altaDeambulacionIndependienteRecEval', label: 'Deambulación independiente', type: 'checkbox' },
             { key: 'altaMiccionEspontaneaRecEval', label: 'Micción espontánea', type: 'checkbox' },
@@ -4679,6 +4793,10 @@ export function buildInitialStructuredSections(encounterType: string) {
 
     for (const section of tab.sections) {
       for (const field of section.fields) {
+        if (isPresentationField(field)) {
+          continue;
+        }
+
         sections[tab.title][field.key] = buildDefaultFieldValue(field);
       }
     }
@@ -4728,6 +4846,10 @@ export function buildHistoryVersionPrefill(
 
   for (const section of tabDefinition.sections) {
     for (const field of section.fields) {
+      if (isPresentationField(field)) {
+        continue;
+      }
+
       const inheritanceMode = field.inheritanceMode ?? 'fresh_capture';
 
       if (inheritanceMode === 'carry_forward') {
@@ -5238,8 +5360,6 @@ const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinitio
         { key: 'documentoAlternativas', label: 'Alternativas', type: 'textarea' },
         { key: 'documentoRiesgosNoTratamiento', label: 'Riesgos de no tratamiento', type: 'textarea' },
         { key: 'documentoNombrePacienteConsentimiento', label: 'Nombre del paciente', type: 'text' },
-        { key: 'documentoFirmaPacienteConsentimiento', label: 'Firma paciente', type: 'text' },
-        { key: 'documentoFirmaMedicoConsentimiento', label: 'Firma médico', type: 'text' },
         {
           key: 'documentoTestigosConsentimiento',
           label: 'Testigos',
@@ -5247,7 +5367,6 @@ const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinitio
           itemAddLabel: 'Agregar testigo',
           itemFields: [
             { key: 'nombre', label: 'Nombre', type: 'text' },
-            { key: 'firma', label: 'Firma', type: 'text' },
           ],
         },
       ],
@@ -5313,8 +5432,6 @@ const hospitalDocumentSectionDefinitions: Record<string, EpisodeSectionDefinitio
           { value: 'VIOLENTA', label: 'Violenta' },
         ] },
         { key: 'documentoAvisoInstitucionalDefuncion', label: 'Aviso institucional', type: 'text' },
-        { key: 'documentoMedicoCertificante', label: 'Médico certificante', type: 'text' },
-        { key: 'documentoCedulaCertificante', label: 'Cédula', type: 'text' },
       ],
     },
   ],
@@ -5411,7 +5528,7 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
       },
       {
         key: 'firmarDocumentoClinico',
-        label: 'Firma',
+        label: 'Firma electrónica',
         type: 'action',
         actionLabel: 'Firmar documento',
         inheritanceMode: 'system',
@@ -5419,6 +5536,34 @@ const consultationDocumentSharedSections: EpisodeSectionDefinition[] = [
     ],
   },
 ];
+
+const consultationLaboratoryDocumentLegalSection: EpisodeSectionDefinition = {
+  key: 'documento_legales',
+  title: 'Datos legales y firma',
+  fields: [
+    { key: 'tipoRegistro', label: 'Tipo de documento', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoFecha', label: 'Fecha', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoHora', label: 'Hora', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoFolio', label: 'Folio del documento', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoVersion', label: 'Versión', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoEstado', label: 'Estado', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoInstitucionEmisora', label: 'Institución emisora', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoRfcMedico', label: 'RFC', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoLicenciaSanitaria', label: 'Licencia sanitaria', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoCodigoVerificacion', label: 'Código de verificación', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoNombreProfesional', label: 'Profesional responsable', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoCedulaProfesional', label: 'Cédula', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoEspecialidadProfesional', label: 'Especialidad', type: 'readonly', inheritanceMode: 'system' },
+    { key: 'documentoLugarAtencion', label: 'Lugar de atención', type: 'readonly', inheritanceMode: 'system' },
+    {
+      key: 'firmarDocumentoClinico',
+      label: 'Firma',
+      type: 'action',
+      actionLabel: 'Firmar documento',
+      inheritanceMode: 'system',
+    },
+  ],
+};
 
 export function getConsultationDocumentTypes() {
   return Object.keys(consultationDocumentSectionDefinitions);
@@ -5451,7 +5596,7 @@ export function getConsultationDocumentTabDefinition(
     sections: [
       ...(consultationDocumentSectionDefinitions[noteType] ??
         consultationDocumentSectionDefinitions['Solicitud de laboratorio']),
-      ...consultationDocumentSharedSections,
+      consultationLaboratoryDocumentLegalSection,
     ],
   };
 }
