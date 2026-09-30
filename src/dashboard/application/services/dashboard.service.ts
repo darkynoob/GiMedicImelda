@@ -1,10 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  Encounter,
-  Facility,
-  Patient,
-  Prisma,
-} from '@prisma/client';
+import type { Encounter, Facility, Patient, Prisma } from '@prisma/client';
 import { ENCOUNTER_REPOSITORY } from '../../../shared/persistence/tokens/encounter.token';
 import { FACILITY_REPOSITORY } from '../../../shared/persistence/tokens/facility.token';
 import { MEDICALRECORD_REPOSITORY } from '../../../shared/persistence/tokens/medicalRecord.token';
@@ -33,30 +28,35 @@ export class DashboardService {
   ) {}
 
   async getSummary(tenantId: string): Promise<DashboardSummaryResponse> {
-    const [tenant, patientsCount, medicalRecordsCount, openEncountersCount, recentEncounters] =
-      await Promise.all([
-        this.tenantRepository.findById(tenantId),
-        this.patientRepository.count({
-          where: { tenantId },
-        } satisfies Prisma.PatientCountArgs),
-        this.medicalRecordRepository.count({
-          where: {
-            tenantId,
-            status: 'ACTIVE',
-          },
-        } as Prisma.MedicalRecordCountArgs),
-        this.encounterRepository.count({
-          where: {
-            tenantId,
-            status: 'OPEN',
-          },
-        } as Prisma.EncounterCountArgs),
-        this.encounterRepository.findMany({
-          where: { tenantId },
-          orderBy: { openedAt: 'desc' },
-          take: 5,
-        } satisfies Prisma.EncounterFindManyArgs),
-      ]);
+    const [
+      tenant,
+      patientsCount,
+      medicalRecordsCount,
+      openEncountersCount,
+      recentEncounters,
+    ] = await Promise.all([
+      this.tenantRepository.findById(tenantId),
+      this.patientRepository.count({
+        where: { tenantId },
+      } satisfies Prisma.PatientCountArgs),
+      this.medicalRecordRepository.count({
+        where: {
+          tenantId,
+          status: 'ACTIVE',
+        },
+      } as Prisma.MedicalRecordCountArgs),
+      this.encounterRepository.count({
+        where: {
+          tenantId,
+          status: 'OPEN',
+        },
+      } as Prisma.EncounterCountArgs),
+      this.encounterRepository.findMany({
+        where: { tenantId },
+        orderBy: { openedAt: 'desc' },
+        take: 5,
+      } satisfies Prisma.EncounterFindManyArgs),
+    ]);
 
     const patientIds = [
       ...new Set(recentEncounters.map((encounter) => encounter.patientId)),
@@ -78,7 +78,9 @@ export class DashboardService {
         : Promise.resolve([]),
     ]);
 
-    const patientsById = new Map(patients.map((patient) => [patient.id, patient]));
+    const patientsById = new Map(
+      patients.map((patient) => [patient.id, patient]),
+    );
     const facilitiesById = new Map(
       facilities.map((facility) => [facility.id, facility]),
     );
@@ -111,7 +113,8 @@ export class DashboardService {
         encounterType: encounter.encounterType,
         status: encounter.status,
         patientName:
-          patientsById.get(encounter.patientId)?.fullName ?? 'Paciente sin nombre',
+          patientsById.get(encounter.patientId)?.fullName ??
+          'Paciente sin nombre',
         facilityName: facilitiesById.get(encounter.facilityId)?.name ?? null,
         openedAt: encounter.openedAt.toISOString(),
       })),

@@ -169,7 +169,7 @@ export class PatientSearchService {
 
     if (!search) {
       return andConditions.length === 1
-        ? andConditions[0]!
+        ? andConditions[0]
         : { AND: andConditions };
     }
 

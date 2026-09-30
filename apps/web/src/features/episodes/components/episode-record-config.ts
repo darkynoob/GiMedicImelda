@@ -209,17 +209,22 @@ const surgeryConfig: Record<string, EpisodeRecordPanelConfig> = {
   },
 };
 
-const recordConfigByEncounterType: Record<string, Record<string, EpisodeRecordPanelConfig>> =
-  {
-    OUTPATIENT: outpatientConfig,
-    EMERGENCY: emergencyConfig,
-    HOSPITALIZATION: hospitalizationConfig,
-    SURGERY: surgeryConfig,
-  };
+const recordConfigByEncounterType: Record<
+  string,
+  Record<string, EpisodeRecordPanelConfig>
+> = {
+  OUTPATIENT: outpatientConfig,
+  EMERGENCY: emergencyConfig,
+  HOSPITALIZATION: hospitalizationConfig,
+  SURGERY: surgeryConfig,
+};
 
 export const encounterRecordStatusConfig: Record<
   string,
-  { label: string; badgeVariant: 'draft' | 'signed' | 'warning' | 'success' | 'secondary' }
+  {
+    label: string;
+    badgeVariant: 'draft' | 'signed' | 'warning' | 'success' | 'secondary';
+  }
 > = {
   DRAFT: { label: 'Borrador', badgeVariant: 'draft' },
   OPEN: { label: 'Abierto', badgeVariant: 'warning' },

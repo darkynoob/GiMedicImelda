@@ -37,7 +37,8 @@ async function bootstrap() {
   );
 
   const allowedOrigins = buildAllowedOrigins();
-  const isDevelopment = (process.env.NODE_ENV ?? 'development') !== 'production';
+  const isDevelopment =
+    (process.env.NODE_ENV ?? 'development') !== 'production';
 
   app.enableCors({
     origin(origin, callback) {

@@ -304,7 +304,13 @@ export interface EncounterDetailResponse {
     label: string;
     timestamp: string;
     detail: string;
-    kind: 'episode' | 'document' | 'vital' | 'diagnosis' | 'record' | 'attachment';
+    kind:
+      | 'episode'
+      | 'document'
+      | 'vital'
+      | 'diagnosis'
+      | 'record'
+      | 'attachment';
   }>;
   profile: {
     encounterType: string;

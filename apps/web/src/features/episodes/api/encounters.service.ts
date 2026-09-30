@@ -36,12 +36,16 @@ export function fetchEncounters(token: string, query: EncountersListQuery) {
   if (query.admissionSource?.trim()) {
     params.set('admissionSource', query.admissionSource.trim());
   }
-  if (query.facilityId?.trim()) params.set('facilityId', query.facilityId.trim());
+  if (query.facilityId?.trim())
+    params.set('facilityId', query.facilityId.trim());
   if (query.patientId?.trim()) params.set('patientId', query.patientId.trim());
 
-  return apiRequest<EncountersListResponse>(`/encounters?${params.toString()}`, {
-    token,
-  });
+  return apiRequest<EncountersListResponse>(
+    `/encounters?${params.toString()}`,
+    {
+      token,
+    },
+  );
 }
 
 export function fetchEncounterMeta(token: string) {

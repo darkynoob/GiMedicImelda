@@ -215,7 +215,11 @@ export class PatientsService {
       ? await this.findPatientIdsByIdentifierSearch(tenantId, trimmedSearch)
       : [];
 
-    const where = this.buildPatientSearchWhere(tenantId, query, patientIdsByIdentifier);
+    const where = this.buildPatientSearchWhere(
+      tenantId,
+      query,
+      patientIdsByIdentifier,
+    );
     const skip = (query.page - 1) * query.pageSize;
 
     const [patients, total] = await Promise.all([
@@ -231,56 +235,58 @@ export class PatientsService {
     ]);
 
     const patientIds = patients.map((patient) => patient.id);
-    const [identifiers, medicalRecords, encounterCounts, allergies] = await Promise.all([
-      patientIds.length > 0
-        ? this.patientIdentifierRepository.findMany({
-            where: {
-              tenantId,
-              patientId: { in: patientIds },
-            },
-            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-          } satisfies Prisma.PatientIdentifierFindManyArgs)
-        : Promise.resolve([]),
-      patientIds.length > 0
-        ? this.medicalRecordRepository.findMany({
-            where: {
-              tenantId,
-              patientId: { in: patientIds },
-            },
-            orderBy: { openedAt: 'desc' },
-          } satisfies Prisma.MedicalRecordFindManyArgs)
-        : Promise.resolve([]),
-      patientIds.length > 0
-        ? this.prisma.encounter.groupBy({
-            by: ['patientId'],
-            where: {
-              tenantId,
-              patientId: { in: patientIds },
-            },
-            _count: {
-              patientId: true,
-            },
-          })
-        : Promise.resolve([]),
-      patientIds.length > 0
-        ? this.prisma.allergy.findMany({
-            where: {
-              tenantId,
-              patientId: { in: patientIds },
-              encounterId: null,
-            },
-            orderBy: { createdAt: 'asc' },
-          })
-        : Promise.resolve([]),
-    ]);
+    const [identifiers, medicalRecords, encounterCounts, allergies] =
+      await Promise.all([
+        patientIds.length > 0
+          ? this.patientIdentifierRepository.findMany({
+              where: {
+                tenantId,
+                patientId: { in: patientIds },
+              },
+              orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+            } satisfies Prisma.PatientIdentifierFindManyArgs)
+          : Promise.resolve([]),
+        patientIds.length > 0
+          ? this.medicalRecordRepository.findMany({
+              where: {
+                tenantId,
+                patientId: { in: patientIds },
+              },
+              orderBy: { openedAt: 'desc' },
+            } satisfies Prisma.MedicalRecordFindManyArgs)
+          : Promise.resolve([]),
+        patientIds.length > 0
+          ? this.prisma.encounter.groupBy({
+              by: ['patientId'],
+              where: {
+                tenantId,
+                patientId: { in: patientIds },
+              },
+              _count: {
+                patientId: true,
+              },
+            })
+          : Promise.resolve([]),
+        patientIds.length > 0
+          ? this.prisma.allergy.findMany({
+              where: {
+                tenantId,
+                patientId: { in: patientIds },
+                encounterId: null,
+              },
+              orderBy: { createdAt: 'asc' },
+            })
+          : Promise.resolve([]),
+      ]);
 
     const identifiersByPatientId = this.groupByPatientId(identifiers);
     const medicalRecordByPatientId =
       this.pickLatestMedicalRecordByPatient(medicalRecords);
     const encounterCountByPatientId = new Map<string, number>(
-      encounterCounts.map(
-        (item): [string, number] => [item.patientId, item._count.patientId],
-      ),
+      encounterCounts.map((item): [string, number] => [
+        item.patientId,
+        item._count.patientId,
+      ]),
     );
     const allergiesByPatientId = new Map<string, string[]>();
 
@@ -783,7 +789,9 @@ export class PatientsService {
     }
 
     if (!search) {
-      return andConditions.length === 1 ? andConditions[0]! : { AND: andConditions };
+      return andConditions.length === 1
+        ? andConditions[0]
+        : { AND: andConditions };
     }
 
     const orConditions: Prisma.PatientWhereInput[] = [
@@ -1263,11 +1271,11 @@ export class PatientsService {
       (billingProfile.requiresInvoice ||
         Boolean(
           billingProfile.businessName ||
-            billingProfile.taxRfc ||
-            billingProfile.taxRegime ||
-            billingProfile.taxPostalCode ||
-            billingProfile.billingEmail ||
-            billingProfile.cfdiUse,
+          billingProfile.taxRfc ||
+          billingProfile.taxRegime ||
+          billingProfile.taxPostalCode ||
+          billingProfile.billingEmail ||
+          billingProfile.cfdiUse,
         ));
 
     if (!hasBillingPayload) {

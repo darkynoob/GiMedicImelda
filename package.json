@@ -12,6 +12,7 @@
     "build": "nest build",
     "build:all": "npm run build && npm run build:web",
     "build:web": "npm run build --workspace apps/web",
+    "postinstall": "prisma generate",
     "dev": "concurrently \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "nest start --watch",
     "dev:web": "npm run dev --workspace apps/web",
@@ -31,7 +32,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1004.0",
-    "@nestjs/common": "^11.0.1",
+    "@nestjs/common": "^11.2.7",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.2",

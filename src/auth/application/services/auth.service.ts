@@ -87,11 +87,14 @@ export class AuthService {
     let payload: AuthJwtPayload;
 
     try {
-      payload = await this.jwtService.verifyAsync<AuthJwtPayload>(refreshToken, {
-        secret:
-          this.configService.get<string>('JWT_REFRESH_SECRET') ??
-          'gimedic-dev-refresh-secret',
-      });
+      payload = await this.jwtService.verifyAsync<AuthJwtPayload>(
+        refreshToken,
+        {
+          secret:
+            this.configService.get<string>('JWT_REFRESH_SECRET') ??
+            'gimedic-dev-refresh-secret',
+        },
+      );
     } catch {
       throw new UnauthorizedException('Refresh token inválido o expirado');
     }
@@ -99,7 +102,9 @@ export class AuthService {
     const user = await this.findAccessUserById(payload.sub);
 
     if (!user || user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('Usuario no disponible para refrescar sesión');
+      throw new UnauthorizedException(
+        'Usuario no disponible para refrescar sesión',
+      );
     }
 
     const permissionCodes = [
@@ -165,9 +170,7 @@ export class AuthService {
     return users[0] ?? null;
   }
 
-  private async findAccessUserById(
-    id: string,
-  ): Promise<AuthUserRecord | null> {
+  private async findAccessUserById(id: string): Promise<AuthUserRecord | null> {
     const users = (await this.userRepository.findMany({
       where: { id },
       include: {

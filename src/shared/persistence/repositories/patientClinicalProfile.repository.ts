@@ -4,22 +4,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { PatientClinicalProfileModel } from '../models/patientClinicalProfile.model';
 import type { IBaseRepository } from './base.repository';
 
-export interface PatientClinicalProfileRepository
-  extends IBaseRepository<
-    PatientClinicalProfileModel,
-    Prisma.PatientClinicalProfileCreateInput,
-    Prisma.PatientClinicalProfileUpdateInput,
-    Prisma.PatientClinicalProfileFindManyArgs,
-    Prisma.PatientClinicalProfileCountArgs,
-    Prisma.PatientClinicalProfileUpsertArgs
-  > {
+export interface PatientClinicalProfileRepository extends IBaseRepository<
+  PatientClinicalProfileModel,
+  Prisma.PatientClinicalProfileCreateInput,
+  Prisma.PatientClinicalProfileUpdateInput,
+  Prisma.PatientClinicalProfileFindManyArgs,
+  Prisma.PatientClinicalProfileCountArgs,
+  Prisma.PatientClinicalProfileUpsertArgs
+> {
   findByPatient(patientId: string): Promise<PatientClinicalProfileModel | null>;
 }
 
 @Injectable()
-export class PrismaPatientClinicalProfileRepository
-  implements PatientClinicalProfileRepository
-{
+export class PrismaPatientClinicalProfileRepository implements PatientClinicalProfileRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findById(id: string): Promise<PatientClinicalProfileModel | null> {

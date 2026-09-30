@@ -91,7 +91,10 @@ const hospitalEvolutionClinicalStatusLabels: Record<
   CRITICO: 'Crítico',
   ESTABLE: 'Estable',
 };
-const hospitalShiftLabels: Record<(typeof hospitalShiftValues)[number], string> = {
+const hospitalShiftLabels: Record<
+  (typeof hospitalShiftValues)[number],
+  string
+> = {
   MATUTINO: 'Matutino',
   VESPERTINO: 'Vespertino',
   NOCTURNO: 'Nocturno',
@@ -327,7 +330,11 @@ const emergencyInitialNoteMentalStatusAllowedValues = [
   'ESTUPOROSO',
   'COMATOSO',
 ] as const;
-const emergencyNursingFallRiskAllowedValues = ['BAJO', 'MEDIO', 'ALTO'] as const;
+const emergencyNursingFallRiskAllowedValues = [
+  'BAJO',
+  'MEDIO',
+  'ALTO',
+] as const;
 type TriageClinicalAlert = {
   code: string;
   message: string;
@@ -723,11 +730,11 @@ export class EncountersService {
     });
 
     return {
-      encounterTypes: Object.entries(encounterTypeLabels).map(
-        ([value, label]) => ({ value, label }),
-      ).filter((option) =>
-        supportedEncounterTypesForUi.has(option.value as EncounterType),
-      ),
+      encounterTypes: Object.entries(encounterTypeLabels)
+        .map(([value, label]) => ({ value, label }))
+        .filter((option) =>
+          supportedEncounterTypesForUi.has(option.value as EncounterType),
+        ),
       encounterStatuses: Object.entries(encounterStatusLabels).map(
         ([value, label]) => ({
           value,
@@ -777,7 +784,10 @@ export class EncountersService {
     tenantId: string,
     encounterNumber: string,
   ): Promise<EncounterDetailResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
 
     return await this.toEncounterDetailResponse(
       encounter,
@@ -825,7 +835,10 @@ export class EncountersService {
       );
     }
 
-    const encounterNumber = await this.generateEncounterNumber(facility.id, openedAt);
+    const encounterNumber = await this.generateEncounterNumber(
+      facility.id,
+      openedAt,
+    );
 
     const result = await this.prisma.$transaction(async (tx) => {
       const medicalRecord = await tx.medicalRecord.findFirst({
@@ -882,7 +895,9 @@ export class EncountersService {
           tenantId: context.tenantId,
           encounterId: encounter.id,
           encounterType: input.encounterType,
-          sectionsJson: this.buildDefaultStructuredSections(input.encounterType),
+          sectionsJson: this.buildDefaultStructuredSections(
+            input.encounterType,
+          ),
           alertsJson: [],
         },
       });
@@ -897,7 +912,10 @@ export class EncountersService {
       return encounter.id;
     });
 
-    const createdEncounter = await this.findEncounterById(context.tenantId, result);
+    const createdEncounter = await this.findEncounterById(
+      context.tenantId,
+      result,
+    );
     return await this.toEncounterDetailResponse(
       createdEncounter,
       createdEncounter.attendingUserId
@@ -924,15 +942,15 @@ export class EncountersService {
       facilityId,
       serviceAreaId:
         input.serviceAreaId === undefined
-          ? currentEncounter.serviceAreaId ?? undefined
+          ? (currentEncounter.serviceAreaId ?? undefined)
           : input.serviceAreaId,
       specialtyId:
         input.specialtyId === undefined
-          ? currentEncounter.specialtyId ?? undefined
+          ? (currentEncounter.specialtyId ?? undefined)
           : input.specialtyId,
       attendingUserId:
         input.attendingUserId === undefined
-          ? currentEncounter.attendingUserId ?? undefined
+          ? (currentEncounter.attendingUserId ?? undefined)
           : input.attendingUserId,
     });
 
@@ -945,7 +963,7 @@ export class EncountersService {
         ? new Date(input.closedAt)
         : nextStatus === EncounterStatus.OPEN
           ? null
-          : currentEncounter.closedAt ?? new Date();
+          : (currentEncounter.closedAt ?? new Date());
 
     if (closedAt && closedAt < openedAt) {
       throw new BadRequestException(
@@ -973,7 +991,8 @@ export class EncountersService {
             input.reasonForVisit === undefined
               ? currentEncounter.reasonForVisit
               : input.reasonForVisit,
-          notes: input.notes === undefined ? currentEncounter.notes : input.notes,
+          notes:
+            input.notes === undefined ? currentEncounter.notes : input.notes,
         },
       });
 
@@ -996,7 +1015,10 @@ export class EncountersService {
             alertsJson: [],
           },
         });
-      } else if (input.encounterType && input.encounterType !== currentEncounter.encounterType) {
+      } else if (
+        input.encounterType &&
+        input.encounterType !== currentEncounter.encounterType
+      ) {
         await tx.encounterProfile.upsert({
           where: {
             encounterId: currentEncounter.id,
@@ -1012,7 +1034,9 @@ export class EncountersService {
             tenantId,
             encounterId: currentEncounter.id,
             encounterType: input.encounterType,
-            sectionsJson: this.buildDefaultStructuredSections(input.encounterType),
+            sectionsJson: this.buildDefaultStructuredSections(
+              input.encounterType,
+            ),
             alertsJson: [],
           },
         });
@@ -1045,10 +1069,15 @@ export class EncountersService {
     encounterNumber: string,
     input: EncounterSectionRecordMutationDto,
   ): Promise<EncounterDetailResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     this.assertEncounterEditable(encounter);
     this.assertRecordTabAllowed(encounter.encounterType, input.tabKey);
-    const recordedAt = input.recordedAt ? new Date(input.recordedAt) : new Date();
+    const recordedAt = input.recordedAt
+      ? new Date(input.recordedAt)
+      : new Date();
     const responsibleUser = encounter.attendingUserId
       ? await this.userRepository.findById(encounter.attendingUserId)
       : null;
@@ -1064,21 +1093,23 @@ export class EncountersService {
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
-    const consultationVersionContext = await this.resolveConsultationVersionContext({
-      encounterId: encounter.id,
-      encounterType: encounter.encounterType,
-      tabKey: input.tabKey,
-    });
+    const consultationVersionContext =
+      await this.resolveConsultationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     const evolutionVersionContext = await this.resolveEvolutionVersionContext({
       encounterId: encounter.id,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
     });
-    const prescriptionVersionContext = await this.resolvePrescriptionVersionContext({
-      encounterId: encounter.id,
-      encounterType: encounter.encounterType,
-      tabKey: input.tabKey,
-    });
+    const prescriptionVersionContext =
+      await this.resolvePrescriptionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+      });
     const documentVersionContext = await this.resolveDocumentVersionContext({
       encounterId: encounter.id,
       encounterType: encounter.encounterType,
@@ -1097,7 +1128,10 @@ export class EncountersService {
         tabKey: input.tabKey,
       });
     if (
-      this.isEmergencyInitialNoteRecord(encounter.encounterType, input.tabKey) &&
+      this.isEmergencyInitialNoteRecord(
+        encounter.encounterType,
+        input.tabKey,
+      ) &&
       emergencyInitialNoteVersionContext?.latestRecord
     ) {
       throw new BadRequestException(
@@ -1117,7 +1151,10 @@ export class EncountersService {
         tabKey: input.tabKey,
       });
     if (
-      this.isEmergencyNursingSheetRecord(encounter.encounterType, input.tabKey) &&
+      this.isEmergencyNursingSheetRecord(
+        encounter.encounterType,
+        input.tabKey,
+      ) &&
       emergencyNursingSheetVersionContext?.latestRecord
     ) {
       return await this.toEncounterDetailResponse(
@@ -1292,8 +1329,10 @@ export class EncountersService {
           status: normalizedRecordPayload.status,
           recordedAt,
           authoredByUserId: userId,
-          formDataJson: normalizedRecordPayload.formData as Prisma.InputJsonValue,
-          metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
+          formDataJson:
+            normalizedRecordPayload.formData as Prisma.InputJsonValue,
+          metadataJson:
+            normalizedRecordPayload.metadata as Prisma.InputJsonValue,
           signedAt:
             normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
               ? new Date()
@@ -1577,7 +1616,10 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
 
-    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    const updatedEncounter = await this.findEncounterById(
+      tenantId,
+      encounter.id,
+    );
     return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
@@ -1593,7 +1635,10 @@ export class EncountersService {
     recordId: string,
     input: EncounterSectionRecordMutationDto,
   ): Promise<EncounterDetailResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     this.assertEncounterEditable(encounter);
     const currentRecord = await this.prisma.encounterSectionRecord.findUnique({
       where: { id: recordId },
@@ -1633,24 +1678,26 @@ export class EncountersService {
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
     });
-    const consultationVersionContext = await this.resolveConsultationVersionContext({
-      encounterId: encounter.id,
-      encounterType: encounter.encounterType,
-      tabKey: input.tabKey,
-      currentRecordId: currentRecord.id,
-    });
+    const consultationVersionContext =
+      await this.resolveConsultationVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     const evolutionVersionContext = await this.resolveEvolutionVersionContext({
       encounterId: encounter.id,
       encounterType: encounter.encounterType,
       tabKey: input.tabKey,
       currentRecordId: currentRecord.id,
     });
-    const prescriptionVersionContext = await this.resolvePrescriptionVersionContext({
-      encounterId: encounter.id,
-      encounterType: encounter.encounterType,
-      tabKey: input.tabKey,
-      currentRecordId: currentRecord.id,
-    });
+    const prescriptionVersionContext =
+      await this.resolvePrescriptionVersionContext({
+        encounterId: encounter.id,
+        encounterType: encounter.encounterType,
+        tabKey: input.tabKey,
+        currentRecordId: currentRecord.id,
+      });
     const documentVersionContext = await this.resolveDocumentVersionContext({
       encounterId: encounter.id,
       encounterType: encounter.encounterType,
@@ -1857,7 +1904,7 @@ export class EncountersService {
         metadataJson: normalizedRecordPayload.metadata as Prisma.InputJsonValue,
         signedAt:
           normalizedRecordPayload.status === EncounterRecordStatus.SIGNED
-            ? currentRecord.signedAt ?? new Date()
+            ? (currentRecord.signedAt ?? new Date())
             : null,
       },
     });
@@ -2122,7 +2169,10 @@ export class EncountersService {
       metadata: normalizedRecordPayload.metadata,
     });
 
-    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    const updatedEncounter = await this.findEncounterById(
+      tenantId,
+      encounter.id,
+    );
     return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
@@ -2138,7 +2188,10 @@ export class EncountersService {
     recordId: string,
     password: string,
   ): Promise<EncounterDetailResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     this.assertEncounterEditable(encounter);
     const [currentRecord, currentUser] = await Promise.all([
       this.prisma.encounterSectionRecord.findUnique({
@@ -2172,7 +2225,8 @@ export class EncountersService {
       throw new BadRequestException('La contraseña capturada no es correcta');
     }
 
-    const currentMetadata = this.normalizeRecordMetadata(currentRecord.metadataJson) ?? {};
+    const currentMetadata =
+      this.normalizeRecordMetadata(currentRecord.metadataJson) ?? {};
     this.assertRecordCanBeSigned({
       encounterType: currentRecord.encounterType,
       tabKey: currentRecord.tabKey,
@@ -2365,10 +2419,18 @@ export class EncountersService {
         : {};
     const isHospitalConsultationResponseSignature =
       isHospitalConsultation &&
-      this.hasCapturedValue(hospitalConsultationFormData.requestSignedAtInterHosp) &&
-      (this.hasCapturedValue(hospitalConsultationFormData.impresionDiagnosticaInterHosp) ||
-        this.hasCapturedValue(hospitalConsultationFormData.sugerenciasTerapeuticasInterHosp) ||
-        this.hasCapturedValue(hospitalConsultationFormData.resultadoInterconsultaHosp));
+      this.hasCapturedValue(
+        hospitalConsultationFormData.requestSignedAtInterHosp,
+      ) &&
+      (this.hasCapturedValue(
+        hospitalConsultationFormData.impresionDiagnosticaInterHosp,
+      ) ||
+        this.hasCapturedValue(
+          hospitalConsultationFormData.sugerenciasTerapeuticasInterHosp,
+        ) ||
+        this.hasCapturedValue(
+          hospitalConsultationFormData.resultadoInterconsultaHosp,
+        ));
     const nextRecordStatus =
       isHospitalConsultation && !isHospitalConsultationResponseSignature
         ? EncounterRecordStatus.OPEN
@@ -2377,20 +2439,21 @@ export class EncountersService {
       isHospitalConsultation && !isHospitalConsultationResponseSignature
         ? null
         : signedAt;
-    const nextHospitalConsultationFormData: Record<string, unknown> | null = isHospitalConsultation
-      ? {
-          ...hospitalConsultationFormData,
-          ...(isHospitalConsultationResponseSignature
-            ? {
-                responseSignedAtInterHosp: signedAt.toISOString(),
-                estatusInterconsultaHosp: 'RESPONDIDA',
-              }
-            : {
-                requestSignedAtInterHosp: signedAt.toISOString(),
-                estatusInterconsultaHosp: 'SOLICITADA',
-          }),
-        }
-      : null;
+    const nextHospitalConsultationFormData: Record<string, unknown> | null =
+      isHospitalConsultation
+        ? {
+            ...hospitalConsultationFormData,
+            ...(isHospitalConsultationResponseSignature
+              ? {
+                  responseSignedAtInterHosp: signedAt.toISOString(),
+                  estatusInterconsultaHosp: 'RESPONDIDA',
+                }
+              : {
+                  requestSignedAtInterHosp: signedAt.toISOString(),
+                  estatusInterconsultaHosp: 'SOLICITADA',
+                }),
+          }
+        : null;
     const nextHospitalSurgicalDocumentFormData: Record<string, unknown> | null =
       isHospitalSurgicalDocument
         ? {
@@ -2407,9 +2470,10 @@ export class EncountersService {
             documentoFechaFirma: signedAt.toISOString(),
           }
         : null;
-    const nextAmbulatoryProcedureSupportingDocumentFormData:
-      | Record<string, unknown>
-      | null = isAmbulatoryProcedureSupportingDocument
+    const nextAmbulatoryProcedureSupportingDocumentFormData: Record<
+      string,
+      unknown
+    > | null = isAmbulatoryProcedureSupportingDocument
       ? {
           ...hospitalConsultationFormData,
           documentoEstado: 'Firmado',
@@ -2445,13 +2509,15 @@ export class EncountersService {
                   lastCorrectionResignedByUserId: currentUser.id,
                 }
               : {}),
-            ...(isHospitalConsultation && !isHospitalConsultationResponseSignature
+            ...(isHospitalConsultation &&
+            !isHospitalConsultationResponseSignature
               ? {
                   requestSignedAt: signedAt.toISOString(),
                   systemStatus: 'SOLICITADA',
                 }
               : {}),
-            ...(isHospitalConsultation && isHospitalConsultationResponseSignature
+            ...(isHospitalConsultation &&
+            isHospitalConsultationResponseSignature
               ? {
                   responseSignedAt: signedAt.toISOString(),
                   systemStatus: 'RESPONDIDA',
@@ -2479,7 +2545,13 @@ export class EncountersService {
         });
       }
 
-      if (this.isConsultationClosureDocument(currentRecord.encounterType, currentRecord.tabKey, currentRecord.noteType)) {
+      if (
+        this.isConsultationClosureDocument(
+          currentRecord.encounterType,
+          currentRecord.tabKey,
+          currentRecord.noteType,
+        )
+      ) {
         await transaction.encounter.update({
           where: { id: encounter.id },
           data: {
@@ -2648,8 +2720,12 @@ export class EncountersService {
               signedAt: signedAt.toISOString(),
               signedWithPasswordValidation: true,
               procedureStageEnabled: true,
-              documentHash: this.readStringValue(preprocedureFormData.hashPreproc),
-              digitalSeal: this.readStringValue(preprocedureFormData.selloDigitalPreproc),
+              documentHash: this.readStringValue(
+                preprocedureFormData.hashPreproc,
+              ),
+              digitalSeal: this.readStringValue(
+                preprocedureFormData.selloDigitalPreproc,
+              ),
             } as Prisma.InputJsonValue,
           },
         });
@@ -2673,11 +2749,15 @@ export class EncountersService {
             patientId: encounter.patientId,
             takenAt: currentRecord.recordedAt,
             weightKg: this.readNumericValue(preprocedureFormData.pesoKgPreproc),
-            heightCm: this.readNumericValue(preprocedureFormData.tallaCmPreproc),
+            heightCm: this.readNumericValue(
+              preprocedureFormData.tallaCmPreproc,
+            ),
             temperatureC: this.readNumericValue(
               preprocedureFormData.temperaturaPreproc,
             ),
-            heartRate: this.readRoundedNumericValue(preprocedureFormData.fcPreproc),
+            heartRate: this.readRoundedNumericValue(
+              preprocedureFormData.fcPreproc,
+            ),
             respiratoryRate: this.readRoundedNumericValue(
               preprocedureFormData.frPreproc,
             ),
@@ -2758,7 +2838,9 @@ export class EncountersService {
               signedAt: signedAt.toISOString(),
               status: EncounterRecordStatus.SIGNED,
               hash: this.readStringValue(procedureFormData.hashProc),
-              digitalSeal: this.readStringValue(procedureFormData.selloDigitalProc),
+              digitalSeal: this.readStringValue(
+                procedureFormData.selloDigitalProc,
+              ),
               availableForDischarge: true,
             },
           },
@@ -2848,7 +2930,8 @@ export class EncountersService {
             : {};
         const verificationCode =
           this.extractRecordVersionMetadata(currentRecord.metadataJson)
-            .verificationCode ?? randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
+            .verificationCode ??
+          randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
         const qrValue = `GIMEDIC-QR:${this.readStringValue(prescriptionFormData.folioRecetaEgreso)}:${verificationCode}`;
 
         await transaction.encounterSectionRecord.update({
@@ -2867,8 +2950,12 @@ export class EncountersService {
               signedWithPasswordValidation: true,
               qrActive: true,
               verificationCode,
-              documentHash: this.readStringValue(prescriptionFormData.hashRecetaEgreso),
-              digitalSeal: this.readStringValue(prescriptionFormData.selloDigitalRecetaEgreso),
+              documentHash: this.readStringValue(
+                prescriptionFormData.hashRecetaEgreso,
+              ),
+              digitalSeal: this.readStringValue(
+                prescriptionFormData.selloDigitalRecetaEgreso,
+              ),
             } as Prisma.InputJsonValue,
           },
         });
@@ -2903,7 +2990,9 @@ export class EncountersService {
                   .versionNumber ?? null,
               signedAt: signedAt.toISOString(),
               status: EncounterRecordStatus.SIGNED,
-              folio: this.readStringValue(prescriptionFormData.folioRecetaEgreso),
+              folio: this.readStringValue(
+                prescriptionFormData.folioRecetaEgreso,
+              ),
               qrActive: true,
             },
           },
@@ -2962,7 +3051,9 @@ export class EncountersService {
               status: EncounterRecordStatus.SIGNED,
               closedEncounter: true,
               hash: this.readStringValue(dischargeFormData.hashEgresoAmb),
-              digitalSeal: this.readStringValue(dischargeFormData.selloDigitalEgresoAmb),
+              digitalSeal: this.readStringValue(
+                dischargeFormData.selloDigitalEgresoAmb,
+              ),
             },
           },
         });
@@ -3025,13 +3116,23 @@ export class EncountersService {
             takenAt: admittedAt,
             weightKg: this.readNumericValue(hospitalFormData.pesoHosp),
             heightCm: this.readNumericValue(hospitalFormData.tallaHosp),
-            temperatureC: this.readNumericValue(hospitalFormData.temperaturaHosp),
+            temperatureC: this.readNumericValue(
+              hospitalFormData.temperaturaHosp,
+            ),
             heartRate: this.readRoundedNumericValue(hospitalFormData.fcHosp),
-            respiratoryRate: this.readRoundedNumericValue(hospitalFormData.frHosp),
-            systolicBp: this.readRoundedNumericValue(hospitalFormData.taSistolicaHosp),
-            diastolicBp: this.readRoundedNumericValue(hospitalFormData.taDiastolicaHosp),
+            respiratoryRate: this.readRoundedNumericValue(
+              hospitalFormData.frHosp,
+            ),
+            systolicBp: this.readRoundedNumericValue(
+              hospitalFormData.taSistolicaHosp,
+            ),
+            diastolicBp: this.readRoundedNumericValue(
+              hospitalFormData.taDiastolicaHosp,
+            ),
             oxygenSaturation: this.readNumericValue(hospitalFormData.spo2Hosp),
-            painScale: this.readRoundedNumericValue(hospitalFormData.dolorEvaHosp),
+            painScale: this.readRoundedNumericValue(
+              hospitalFormData.dolorEvaHosp,
+            ),
           },
         });
         await transaction.auditLog.create({
@@ -3079,7 +3180,9 @@ export class EncountersService {
             temperatureC: this.readNumericValue(
               hospitalFormData.temperaturaEvolHosp,
             ),
-            heartRate: this.readRoundedNumericValue(hospitalFormData.fcEvolHosp),
+            heartRate: this.readRoundedNumericValue(
+              hospitalFormData.fcEvolHosp,
+            ),
             respiratoryRate: this.readRoundedNumericValue(
               hospitalFormData.frEvolHosp,
             ),
@@ -3089,7 +3192,9 @@ export class EncountersService {
             diastolicBp: this.readRoundedNumericValue(
               hospitalFormData.taDiastolicaEvolHosp,
             ),
-            oxygenSaturation: this.readNumericValue(hospitalFormData.spo2EvolHosp),
+            oxygenSaturation: this.readNumericValue(
+              hospitalFormData.spo2EvolHosp,
+            ),
             painScale: this.readRoundedNumericValue(
               hospitalFormData.dolorEvaEvolHosp,
             ),
@@ -3164,7 +3269,9 @@ export class EncountersService {
         );
         const responseTimeMinutes =
           requestedAt && responseSignedAt && responseSignedAt >= requestedAt
-            ? Math.round((responseSignedAt.getTime() - requestedAt.getTime()) / 60000)
+            ? Math.round(
+                (responseSignedAt.getTime() - requestedAt.getTime()) / 60000,
+              )
             : null;
 
         await transaction.$executeRaw`
@@ -3345,7 +3452,10 @@ export class EncountersService {
       }
     });
 
-    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    const updatedEncounter = await this.findEncounterById(
+      tenantId,
+      encounter.id,
+    );
     return await this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
@@ -3361,7 +3471,10 @@ export class EncountersService {
     recordId: string,
     reason?: string,
   ): Promise<EncounterDetailResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     this.assertEncounterEditable(encounter);
     const record = await this.prisma.encounterSectionRecord.findUnique({
       where: { id: recordId },
@@ -3414,7 +3527,10 @@ export class EncountersService {
       });
     });
 
-    const updatedEncounter = await this.findEncounterById(tenantId, encounter.id);
+    const updatedEncounter = await this.findEncounterById(
+      tenantId,
+      encounter.id,
+    );
     return this.toEncounterDetailResponse(
       updatedEncounter,
       updatedEncounter.attendingUserId
@@ -3428,7 +3544,10 @@ export class EncountersService {
     encounterNumber: string,
     recordId: string,
   ): Promise<EncounterSectionRecordPdfResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     const record = await this.findPdfEligibleSectionRecord(
       tenantId,
       encounter.id,
@@ -3440,7 +3559,8 @@ export class EncountersService {
       record,
       preview: true,
       downloadCount:
-        this.extractRecordVersionMetadata(record.metadataJson).pdfDownloadCount ?? 0,
+        this.extractRecordVersionMetadata(record.metadataJson)
+          .pdfDownloadCount ?? 0,
     });
   }
 
@@ -3449,7 +3569,10 @@ export class EncountersService {
     encounterNumber: string,
     recordId: string,
   ): Promise<EncounterSectionRecordPdfResponse> {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     const record = await this.findPdfEligibleSectionRecord(
       tenantId,
       encounter.id,
@@ -3462,14 +3585,23 @@ export class EncountersService {
       !this.isEmergencyInitialNoteRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyEvolutionRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyOrdersRecord(record.encounterType, record.tabKey) &&
-      !this.isEmergencyConsultationRecord(record.encounterType, record.tabKey) &&
+      !this.isEmergencyConsultationRecord(
+        record.encounterType,
+        record.tabKey,
+      ) &&
       !this.isEmergencyDischargeRecord(record.encounterType, record.tabKey) &&
       !this.isEmergencyDocumentRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalMedicalOrdersRecord(
+        record.encounterType,
+        record.tabKey,
+      ) &&
       !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
-      !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
+      !this.isHospitalSurgicalDocumentRecord(
+        record.encounterType,
+        record.tabKey,
+      ) &&
       !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
       !this.isHospitalDischargeRecord(record.encounterType, record.tabKey) &&
       !this.isAmbulatoryRecoveryEvaluationRecord(
@@ -3480,10 +3612,7 @@ export class EncountersService {
         record.encounterType,
         record.tabKey,
       ) &&
-      !this.isAmbulatoryDischargeRecord(
-        record.encounterType,
-        record.tabKey,
-      ) &&
+      !this.isAmbulatoryDischargeRecord(record.encounterType, record.tabKey) &&
       !this.isAmbulatoryProcedureSupportingDocumentRecord(
         record.encounterType,
         record.tabKey,
@@ -3494,11 +3623,16 @@ export class EncountersService {
       );
     }
 
-    const currentMetadata = this.extractRecordVersionMetadata(record.metadataJson);
+    const currentMetadata = this.extractRecordVersionMetadata(
+      record.metadataJson,
+    );
     const currentDownloadCount = currentMetadata.pdfDownloadCount ?? 0;
 
     if (
-      this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey) &&
+      this.isConsultationPrescriptionRecord(
+        record.encounterType,
+        record.tabKey,
+      ) &&
       currentDownloadCount >= 1
     ) {
       await this.prisma.encounterSectionRecord.update({
@@ -3579,7 +3713,9 @@ export class EncountersService {
       `;
     }
 
-    if (this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey)) {
+    if (
+      this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey)
+    ) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalMedicalOrder"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
@@ -3587,7 +3723,9 @@ export class EncountersService {
       `;
     }
 
-    if (this.isHospitalConsultationRecord(record.encounterType, record.tabKey)) {
+    if (
+      this.isHospitalConsultationRecord(record.encounterType, record.tabKey)
+    ) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalConsultation"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
@@ -3595,7 +3733,9 @@ export class EncountersService {
       `;
     }
 
-    if (this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey)) {
+    if (
+      this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey)
+    ) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalSurgicalDocument"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
@@ -3603,7 +3743,9 @@ export class EncountersService {
       `;
     }
 
-    if (this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey)) {
+    if (
+      this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey)
+    ) {
       await this.prisma.$executeRaw`
         UPDATE "HospitalNursingShift"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "updatedAt" = NOW()
@@ -3619,7 +3761,9 @@ export class EncountersService {
       `;
     }
 
-    if (this.isAmbulatoryPreprocedureRecord(record.encounterType, record.tabKey)) {
+    if (
+      this.isAmbulatoryPreprocedureRecord(record.encounterType, record.tabKey)
+    ) {
       await this.prisma.$executeRaw`
         UPDATE "AmbulatoryPreprocedureAssessment"
         SET "pdfDownloadCount" = ${nextDownloadCount}, "pdfLastDownloadedAt" = ${downloadedAt}, "pdfGeneratedAt" = COALESCE("pdfGeneratedAt", ${downloadedAt}), "pdfFileName" = COALESCE("pdfFileName", ${`${this.sanitizeFileName(record.title)}.pdf`}), "updatedAt" = NOW()
@@ -3683,7 +3827,10 @@ export class EncountersService {
     encounterNumber: string,
     files: UploadedAttachmentFile[],
   ) {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     this.assertEncounterEditable(encounter);
 
     if (!files.length) {
@@ -3756,7 +3903,10 @@ export class EncountersService {
     encounterNumber: string,
     attachmentId: string,
   ) {
-    const encounter = await this.findEncounterByNumber(tenantId, encounterNumber);
+    const encounter = await this.findEncounterByNumber(
+      tenantId,
+      encounterNumber,
+    );
     this.assertEncounterEditable(encounter);
     const attachment = await this.prisma.attachment.findUnique({
       where: { id: attachmentId },
@@ -3891,7 +4041,9 @@ export class EncountersService {
     }
 
     if (input.attendingUserId) {
-      const clinician = await this.userRepository.findById(input.attendingUserId);
+      const clinician = await this.userRepository.findById(
+        input.attendingUserId,
+      );
       if (!clinician || clinician.tenantId !== input.tenantId) {
         throw new NotFoundException('Profesional responsable no encontrado');
       }
@@ -4012,7 +4164,10 @@ export class EncountersService {
         take: 1,
       },
       diagnoses: {
-        orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'desc' as const }],
+        orderBy: [
+          { isPrimary: 'desc' as const },
+          { createdAt: 'desc' as const },
+        ],
       },
       problems: {
         orderBy: {
@@ -4052,7 +4207,10 @@ export class EncountersService {
         },
       },
       sectionRecords: {
-        orderBy: [{ recordedAt: 'desc' as const }, { createdAt: 'desc' as const }],
+        orderBy: [
+          { recordedAt: 'desc' as const },
+          { createdAt: 'desc' as const },
+        ],
         include: {
           authoredByUser: {
             select: {
@@ -4123,7 +4281,7 @@ export class EncountersService {
       fileSizeBytes: attachment.fileSizeBytes.toString(),
       uploadedAt: attachment.uploadedAt.toISOString(),
     }));
-      const timeline = [
+    const timeline = [
       {
         id: `${encounter.id}-created`,
         label: 'Episodio abierto',
@@ -4161,8 +4319,8 @@ export class EncountersService {
         detail: diagnosis.diagnosisType ?? 'Diagnostico registrado',
         kind: 'diagnosis' as const,
       })),
-        ...(latestVitalSign
-          ? [
+      ...(latestVitalSign
+        ? [
             {
               id: latestVitalSign.id,
               label: 'Signos vitales registrados',
@@ -4171,18 +4329,18 @@ export class EncountersService {
               kind: 'vital' as const,
             },
           ]
-          : []),
-      ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
-      const consultationSummary =
-        encounter.encounterType === EncounterType.OUTPATIENT
-          ? this.buildConsultationSummaryResponse(
-              encounter,
-              sectionRecords,
-              latestVitalSign,
-            )
-          : null;
+        : []),
+    ].sort((left, right) => right.timestamp.localeCompare(left.timestamp));
+    const consultationSummary =
+      encounter.encounterType === EncounterType.OUTPATIENT
+        ? this.buildConsultationSummaryResponse(
+            encounter,
+            sectionRecords,
+            latestVitalSign,
+          )
+        : null;
 
-      return {
+    return {
       id: encounter.id,
       encounterNumber: encounter.encounterNumber,
       encounterType: encounter.encounterType,
@@ -4262,11 +4420,11 @@ export class EncountersService {
         imaging: encounter.imagingRequests.length,
         attachments: encounter.attachments.length,
       },
-	      latestVitalSigns: latestVitalSign
-	        ? this.toVitalSignsSummary(latestVitalSign)
-	        : [],
-	      consultationSummary,
-	      diagnoses: encounter.diagnoses.map((diagnosis) => ({
+      latestVitalSigns: latestVitalSign
+        ? this.toVitalSignsSummary(latestVitalSign)
+        : [],
+      consultationSummary,
+      diagnoses: encounter.diagnoses.map((diagnosis) => ({
         id: diagnosis.id,
         code: diagnosis.code,
         description: diagnosis.description,
@@ -4295,14 +4453,14 @@ export class EncountersService {
       historyVersionContext: {
         latestVersionNumber:
           patientHistoryVersionContext?.latestVersionNumber ?? 0,
-        nextVersionNumber:
-          patientHistoryVersionContext?.nextVersionNumber ?? 1,
+        nextVersionNumber: patientHistoryVersionContext?.nextVersionNumber ?? 1,
         latestRecordId: patientHistoryVersionContext?.latestRecord?.id ?? null,
         latestRecordTitle:
           patientHistoryVersionContext?.latestRecord?.title ?? null,
         latestRecordFormData:
           patientHistoryVersionContext?.latestRecord?.formDataJson &&
-          typeof patientHistoryVersionContext.latestRecord.formDataJson === 'object' &&
+          typeof patientHistoryVersionContext.latestRecord.formDataJson ===
+            'object' &&
           !Array.isArray(patientHistoryVersionContext.latestRecord.formDataJson)
             ? (patientHistoryVersionContext.latestRecord.formDataJson as Record<
                 string,
@@ -4315,7 +4473,8 @@ export class EncountersService {
       attachments,
       timeline,
       profile: {
-        encounterType: encounter.profile?.encounterType ?? encounter.encounterType,
+        encounterType:
+          encounter.profile?.encounterType ?? encounter.encounterType,
         sections: this.ensureStructuredSections(
           encounter.profile?.encounterType ?? encounter.encounterType,
           encounter.profile?.sectionsJson ?? null,
@@ -4343,12 +4502,15 @@ export class EncountersService {
     encounterType: EncounterType,
     rawSections: Prisma.JsonValue | null,
   ) {
-    const defaultSections = this.buildDefaultStructuredSections(encounterType) as Record<
-      string,
-      unknown
-    >;
+    const defaultSections = this.buildDefaultStructuredSections(
+      encounterType,
+    ) as Record<string, unknown>;
 
-    if (!rawSections || typeof rawSections !== 'object' || Array.isArray(rawSections)) {
+    if (
+      !rawSections ||
+      typeof rawSections !== 'object' ||
+      Array.isArray(rawSections)
+    ) {
       return defaultSections;
     }
 
@@ -4387,19 +4549,27 @@ export class EncountersService {
     const recordsWithVersion = records.map((record) => ({
       record,
       versionNumber:
-        this.extractHistoryVersionMetadata(record.metadataJson).versionNumber ?? 0,
+        this.extractHistoryVersionMetadata(record.metadataJson).versionNumber ??
+        0,
     }));
-    const latestVersion = recordsWithVersion.sort((left, right) => {
-      if (left.versionNumber !== right.versionNumber) {
-        return right.versionNumber - left.versionNumber;
-      }
+    const latestVersion =
+      recordsWithVersion.sort((left, right) => {
+        if (left.versionNumber !== right.versionNumber) {
+          return right.versionNumber - left.versionNumber;
+        }
 
-      if (left.record.recordedAt.getTime() !== right.record.recordedAt.getTime()) {
-        return right.record.recordedAt.getTime() - left.record.recordedAt.getTime();
-      }
+        if (
+          left.record.recordedAt.getTime() !== right.record.recordedAt.getTime()
+        ) {
+          return (
+            right.record.recordedAt.getTime() - left.record.recordedAt.getTime()
+          );
+        }
 
-      return right.record.createdAt.getTime() - left.record.createdAt.getTime();
-    })[0] ?? null;
+        return (
+          right.record.createdAt.getTime() - left.record.createdAt.getTime()
+        );
+      })[0] ?? null;
     const latestRecord = latestVersion?.record ?? null;
     const latestVersionNumber = latestVersion?.versionNumber ?? 0;
     const nextVersionNumber = latestVersionNumber + 1;
@@ -4443,8 +4613,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractConsultationVersionMetadata(latestRecord.metadataJson)
-          .versionNumber ?? 0
+      ? (this.extractConsultationVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4460,7 +4630,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isConsultationEvolutionRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isConsultationEvolutionRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -4481,7 +4653,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4497,7 +4670,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isConsultationPrescriptionRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isConsultationPrescriptionRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -4524,7 +4699,8 @@ export class EncountersService {
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = records.reduce((highestVersion, record) => {
       const recordVersion =
-        this.extractRecordVersionMetadata(record.metadataJson).versionNumber ?? 0;
+        this.extractRecordVersionMetadata(record.metadataJson).versionNumber ??
+        0;
 
       return Math.max(highestVersion, recordVersion);
     }, 0);
@@ -4565,7 +4741,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4603,7 +4780,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4641,7 +4819,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4679,7 +4858,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4695,7 +4875,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -4704,13 +4886,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Hoja de enfermería',
         noteType: 'Hoja de enfermería',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4758,7 +4943,8 @@ export class EncountersService {
 
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4774,7 +4960,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isEmergencyConsultationRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyConsultationRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -4783,13 +4971,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Interconsultas',
         noteType: 'Interconsultas',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4814,7 +5005,9 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Egreso',
         noteType: 'Egreso de urgencias',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
@@ -4842,13 +5035,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Ingreso',
         noteType: 'Ingreso hospitalario',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4873,13 +5069,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Evolución',
         noteType: 'Evolución hospitalaria',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4895,7 +5094,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isHospitalMedicalOrdersRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalMedicalOrdersRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -4904,13 +5105,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Indicaciones médicas',
         noteType: 'Indicaciones médicas',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4935,13 +5139,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Interconsultas',
         noteType: 'Interconsultas',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4957,7 +5164,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -4965,13 +5174,16 @@ export class EncountersService {
       where: {
         encounterId: input.encounterId,
         tabKey: 'Procedimientos / Cirugía',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -4995,13 +5207,16 @@ export class EncountersService {
       where: {
         encounterId: input.encounterId,
         tabKey: 'Enfermería',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -5025,7 +5240,9 @@ export class EncountersService {
       where: {
         encounterId: input.encounterId,
         tabKey: 'Egreso',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
@@ -5044,7 +5261,9 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
+    ) {
       return null;
     }
 
@@ -5053,13 +5272,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Valoración preprocedimiento',
         noteType: 'Valoración preprocedimiento',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -5084,13 +5306,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Procedimiento',
         noteType: 'Procedimiento',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -5118,15 +5343,22 @@ export class EncountersService {
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
         encounterId: input.encounterId,
-        tabKey: { in: ['Recuperación / Evaluación', 'Recuperación / Evolución'] },
-        noteType: { in: ['Recuperación / Evaluación', 'Recuperación / Evolución'] },
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        tabKey: {
+          in: ['Recuperación / Evaluación', 'Recuperación / Evolución'],
+        },
+        noteType: {
+          in: ['Recuperación / Evaluación', 'Recuperación / Evolución'],
+        },
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -5142,22 +5374,38 @@ export class EncountersService {
     tabKey: string;
     currentRecordId?: string;
   }): Promise<RecordVersionContext | null> {
-    if (!this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)) {
+    if (
+      !this.isAmbulatoryDischargePrescriptionRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+    ) {
       return null;
     }
 
     const records = await this.prisma.encounterSectionRecord.findMany({
       where: {
         encounterId: input.encounterId,
-        tabKey: { in: ['Receta e indicaciones de egreso', 'Indicaciones / Receta'] },
-        noteType: { in: ['Receta e indicaciones de egreso', 'Indicaciones de egreso', 'Receta médica'] },
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        tabKey: {
+          in: ['Receta e indicaciones de egreso', 'Indicaciones / Receta'],
+        },
+        noteType: {
+          in: [
+            'Receta e indicaciones de egreso',
+            'Indicaciones de egreso',
+            'Receta médica',
+          ],
+        },
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -5182,13 +5430,16 @@ export class EncountersService {
         encounterId: input.encounterId,
         tabKey: 'Egreso',
         noteType: 'Egreso',
-        ...(input.currentRecordId ? { NOT: { id: input.currentRecordId } } : {}),
+        ...(input.currentRecordId
+          ? { NOT: { id: input.currentRecordId } }
+          : {}),
       },
       orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
     });
     const latestRecord = records[0] ?? null;
     const latestVersionNumber = latestRecord
-      ? this.extractRecordVersionMetadata(latestRecord.metadataJson).versionNumber ?? 0
+      ? (this.extractRecordVersionMetadata(latestRecord.metadataJson)
+          .versionNumber ?? 0)
       : 0;
 
     return {
@@ -5213,16 +5464,14 @@ export class EncountersService {
 
   private normalizeSectionRecordPayload(input: {
     encounter: TenantEncounterRecord;
-    currentRecord:
-      | {
-          id: string;
-          title: string;
-          noteType: string;
-          status: EncounterRecordStatus;
-          formDataJson: Prisma.JsonValue;
-          metadataJson: Prisma.JsonValue | null;
-        }
-      | null;
+    currentRecord: {
+      id: string;
+      title: string;
+      noteType: string;
+      status: EncounterRecordStatus;
+      formDataJson: Prisma.JsonValue;
+      metadataJson: Prisma.JsonValue | null;
+    } | null;
     historyVersionContext: Awaited<
       ReturnType<EncountersService['resolveHistoryVersionContext']>
     >;
@@ -5248,13 +5497,17 @@ export class EncountersService {
       ReturnType<EncountersService['resolveEmergencyEvolutionVersionContext']>
     >;
     emergencyNursingSheetVersionContext: Awaited<
-      ReturnType<EncountersService['resolveEmergencyNursingSheetVersionContext']>
+      ReturnType<
+        EncountersService['resolveEmergencyNursingSheetVersionContext']
+      >
     >;
     emergencyOrdersVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyOrdersVersionContext']>
     >;
     emergencyConsultationVersionContext: Awaited<
-      ReturnType<EncountersService['resolveEmergencyConsultationVersionContext']>
+      ReturnType<
+        EncountersService['resolveEmergencyConsultationVersionContext']
+      >
     >;
     emergencyDischargeVersionContext: Awaited<
       ReturnType<EncountersService['resolveEmergencyDischargeVersionContext']>
@@ -5266,13 +5519,17 @@ export class EncountersService {
       ReturnType<EncountersService['resolveHospitalEvolutionVersionContext']>
     >;
     hospitalMedicalOrdersVersionContext: Awaited<
-      ReturnType<EncountersService['resolveHospitalMedicalOrdersVersionContext']>
+      ReturnType<
+        EncountersService['resolveHospitalMedicalOrdersVersionContext']
+      >
     >;
     hospitalConsultationVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalConsultationVersionContext']>
     >;
     hospitalSurgicalDocumentVersionContext: Awaited<
-      ReturnType<EncountersService['resolveHospitalSurgicalDocumentVersionContext']>
+      ReturnType<
+        EncountersService['resolveHospitalSurgicalDocumentVersionContext']
+      >
     >;
     hospitalNursingShiftVersionContext: Awaited<
       ReturnType<EncountersService['resolveHospitalNursingShiftVersionContext']>
@@ -5281,7 +5538,9 @@ export class EncountersService {
       ReturnType<EncountersService['resolveHospitalDischargeVersionContext']>
     >;
     ambulatoryPreprocedureVersionContext: Awaited<
-      ReturnType<EncountersService['resolveAmbulatoryPreprocedureVersionContext']>
+      ReturnType<
+        EncountersService['resolveAmbulatoryPreprocedureVersionContext']
+      >
     >;
     ambulatoryProcedureVersionContext: Awaited<
       ReturnType<EncountersService['resolveAmbulatoryProcedureVersionContext']>
@@ -5366,7 +5625,8 @@ export class EncountersService {
       );
       const versionNumber =
         currentRecordMetadata.versionNumber ??
-        input.ambulatoryDischargePrescriptionVersionContext?.nextVersionNumber ??
+        input.ambulatoryDischargePrescriptionVersionContext
+          ?.nextVersionNumber ??
         1;
       const prescriptionFolio =
         currentRecordMetadata.prescriptionFolio ??
@@ -5563,9 +5823,9 @@ export class EncountersService {
           pdfDownloadCount:
             this.extractRecordVersionMetadata(input.currentRecord?.metadataJson)
               .pdfDownloadCount ?? 0,
-          pdfLastDownloadedAt:
-            this.extractRecordVersionMetadata(input.currentRecord?.metadataJson)
-              .pdfLastDownloadedAt,
+          pdfLastDownloadedAt: this.extractRecordVersionMetadata(
+            input.currentRecord?.metadataJson,
+          ).pdfLastDownloadedAt,
         },
       };
     }
@@ -5690,9 +5950,9 @@ export class EncountersService {
         status:
           systemStatus === 'RESPONDIDA' || systemStatus === 'CERRADA'
             ? EncounterRecordStatus.SIGNED
-            : input.input.status ??
+            : (input.input.status ??
               input.currentRecord?.status ??
-              EncounterRecordStatus.DRAFT,
+              EncounterRecordStatus.DRAFT),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -5736,9 +5996,9 @@ export class EncountersService {
         status:
           input.currentRecord?.status === EncounterRecordStatus.SIGNED
             ? EncounterRecordStatus.SIGNED
-            : input.input.status ??
+            : (input.input.status ??
               input.currentRecord?.status ??
-              EncounterRecordStatus.DRAFT,
+              EncounterRecordStatus.DRAFT),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -5782,7 +6042,8 @@ export class EncountersService {
       const formData = this.buildHospitalEvolutionFormData({
         encounter: input.encounter,
         incomingFormData: input.input.formData,
-        admissionFormDataJson: latestHospitalAdmissionRecord?.formDataJson ?? null,
+        admissionFormDataJson:
+          latestHospitalAdmissionRecord?.formDataJson ?? null,
         recordedAt: input.recordedAt,
         previousEvolutionRecord: previousHospitalEvolutionRecord,
         previousEvolutionFormDataJson:
@@ -5797,9 +6058,9 @@ export class EncountersService {
         status:
           input.currentRecord?.status === EncounterRecordStatus.SIGNED
             ? EncounterRecordStatus.SIGNED
-            : input.input.status ??
+            : (input.input.status ??
               input.currentRecord?.status ??
-              EncounterRecordStatus.DRAFT,
+              EncounterRecordStatus.DRAFT),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -5810,7 +6071,8 @@ export class EncountersService {
             previousHospitalEvolutionRecord?.id ??
             latestHospitalAdmissionRecord?.id ??
             null,
-          previousEvolutionRecordId: previousHospitalEvolutionRecord?.id ?? null,
+          previousEvolutionRecordId:
+            previousHospitalEvolutionRecord?.id ?? null,
           pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
           pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
         },
@@ -5850,9 +6112,9 @@ export class EncountersService {
         status:
           input.currentRecord?.status === EncounterRecordStatus.SIGNED
             ? EncounterRecordStatus.SIGNED
-            : input.input.status ??
+            : (input.input.status ??
               input.currentRecord?.status ??
-              EncounterRecordStatus.DRAFT,
+              EncounterRecordStatus.DRAFT),
         formData,
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
@@ -5866,7 +6128,9 @@ export class EncountersService {
             this.readStringValue(
               this.normalizeRecordMetadata(input.currentRecord?.metadataJson)
                 ?.sourceEmergencyRecordId,
-            ) || latestEmergencyDischargeRecord?.id || null,
+            ) ||
+            latestEmergencyDischargeRecord?.id ||
+            null,
           pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
           pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
         },
@@ -5904,7 +6168,8 @@ export class EncountersService {
         metadata: {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
           versionNumber,
-          inheritedFromRecordId: currentRecordMetadata.inheritedFromRecordId ?? null,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ?? null,
         },
       };
     }
@@ -5937,8 +6202,10 @@ export class EncountersService {
       const formData = this.buildEmergencyConsultationFormData({
         encounter: input.encounter,
         incomingFormData: input.input.formData,
-        latestInitialNoteFormDataJson: latestInitialNoteRecord?.formDataJson ?? null,
-        latestEvolutionFormDataJson: latestEvolutionRecord?.formDataJson ?? null,
+        latestInitialNoteFormDataJson:
+          latestInitialNoteRecord?.formDataJson ?? null,
+        latestEvolutionFormDataJson:
+          latestEvolutionRecord?.formDataJson ?? null,
         latestOrdersFormDataJson: latestOrdersRecord?.formDataJson ?? null,
         recordedAt: input.recordedAt,
         responsibleUser: input.responsibleUser,
@@ -5986,7 +6253,9 @@ export class EncountersService {
       const documentType = this.resolveEmergencyOrderDocumentType({
         noteType: input.input.noteType,
         formData: input.input.formData,
-        metadata: this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
+        metadata: this.normalizeRecordMetadata(
+          input.currentRecord?.metadataJson,
+        ),
       });
       const documentLabel = this.getEmergencyOrderDocumentLabel(documentType);
       const versionNumber =
@@ -5996,8 +6265,10 @@ export class EncountersService {
       const formData = this.buildEmergencyOrdersFormData({
         encounter: input.encounter,
         incomingFormData: input.input.formData,
-        latestInitialNoteFormDataJson: latestInitialNoteRecord?.formDataJson ?? null,
-        latestEvolutionFormDataJson: latestEvolutionRecord?.formDataJson ?? null,
+        latestInitialNoteFormDataJson:
+          latestInitialNoteRecord?.formDataJson ?? null,
+        latestEvolutionFormDataJson:
+          latestEvolutionRecord?.formDataJson ?? null,
         responsibleUser: input.responsibleUser,
         documentType,
       });
@@ -6149,8 +6420,10 @@ export class EncountersService {
       const formData = this.buildEmergencyEvolutionFormData({
         encounter: input.encounter,
         incomingFormData: input.input.formData,
-        latestInitialNoteFormDataJson: latestInitialNoteRecord?.formDataJson ?? null,
-        latestEvolutionFormDataJson: latestEvolutionRecord?.formDataJson ?? null,
+        latestInitialNoteFormDataJson:
+          latestInitialNoteRecord?.formDataJson ?? null,
+        latestEvolutionFormDataJson:
+          latestEvolutionRecord?.formDataJson ?? null,
         recordedAt: input.recordedAt,
         responsibleUser: input.responsibleUser,
       });
@@ -6207,7 +6480,9 @@ export class EncountersService {
           ...this.normalizeRecordMetadata(input.currentRecord?.metadataJson),
           versionNumber: 1,
           inheritedFromRecordId:
-            currentRecordMetadata.inheritedFromRecordId ?? latestTriageRecord?.id ?? null,
+            currentRecordMetadata.inheritedFromRecordId ??
+            latestTriageRecord?.id ??
+            null,
         },
       };
     }
@@ -6268,7 +6543,10 @@ export class EncountersService {
             input.input.noteType,
             input.encounter.encounterNumber,
           ),
-        status: input.input.status ?? input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+        status:
+          input.input.status ??
+          input.currentRecord?.status ??
+          EncounterRecordStatus.DRAFT,
         formData: input.input.formData,
         metadata:
           this.normalizeRecordMetadata(input.currentRecord?.metadataJson) ?? {},
@@ -6349,28 +6627,31 @@ export class EncountersService {
               input.input.tabKey,
             )
           ? this.buildHospitalDocumentFormData({
-            encounter: input.encounter,
-            currentRecordFormData: input.currentRecord?.formDataJson ?? null,
-            incomingFormData: input.input.formData,
-            noteType: input.input.noteType,
-            recordedAt: input.recordedAt,
-            responsibleUser: input.responsibleUser,
-            versionNumber,
-            folio: documentFolio,
-            verificationCode,
+              encounter: input.encounter,
+              currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+              incomingFormData: input.input.formData,
+              noteType: input.input.noteType,
+              recordedAt: input.recordedAt,
+              responsibleUser: input.responsibleUser,
+              versionNumber,
+              folio: documentFolio,
+              verificationCode,
             })
           : (this.buildConsultationDocumentFormData({
-            encounter: input.encounter,
-            currentRecordFormData: input.currentRecord?.formDataJson ?? null,
-            incomingFormData: input.input.formData,
-            noteType: input.input.noteType,
-            responsibleUser: input.responsibleUser,
+              encounter: input.encounter,
+              currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+              incomingFormData: input.input.formData,
+              noteType: input.input.noteType,
+              responsibleUser: input.responsibleUser,
             }) as Record<string, unknown>);
 
       return {
         tabKey: input.input.tabKey,
         noteType: input.input.noteType,
-        title: this.buildConsultationDocumentTitle(input.input.noteType, versionNumber),
+        title: this.buildConsultationDocumentTitle(
+          input.input.noteType,
+          versionNumber,
+        ),
         status:
           input.currentRecord?.status === EncounterRecordStatus.SIGNED
             ? EncounterRecordStatus.SIGNED
@@ -6398,7 +6679,9 @@ export class EncountersService {
           folio: documentFolio,
           verificationCode,
           documentHash: this.readStringValue(mergedFormData.documentoHash),
-          digitalSeal: this.readStringValue(mergedFormData.documentoSelloDigital),
+          digitalSeal: this.readStringValue(
+            mergedFormData.documentoSelloDigital,
+          ),
           pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
           pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
           inheritedFromRecordId:
@@ -6434,12 +6717,15 @@ export class EncountersService {
         input.encounter,
         latestHistoryRecord?.formDataJson ?? null,
       );
-      const longitudinalResultsSummary = this.resolveConsultationResultsSummary({
-        incomingFormData: input.input.formData,
-        currentRecordFormData: input.currentRecord?.formDataJson ?? null,
-        latestConsultationFormData: latestConsultationRecord?.formDataJson ?? null,
-        latestHistoryFormData: latestHistoryRecord?.formDataJson ?? null,
-      });
+      const longitudinalResultsSummary = this.resolveConsultationResultsSummary(
+        {
+          incomingFormData: input.input.formData,
+          currentRecordFormData: input.currentRecord?.formDataJson ?? null,
+          latestConsultationFormData:
+            latestConsultationRecord?.formDataJson ?? null,
+          latestHistoryFormData: latestHistoryRecord?.formDataJson ?? null,
+        },
+      );
       const calculatedImc = this.calculateBodyMassIndex(
         input.input.formData,
         input.currentRecord?.formDataJson ?? null,
@@ -6498,19 +6784,23 @@ export class EncountersService {
         currentRecordMetadata.versionNumber ??
         input.evolutionVersionContext?.nextVersionNumber ??
         1;
-      const previousEvolutionRecord = input.evolutionVersionContext?.latestRecord ?? null;
+      const previousEvolutionRecord =
+        input.evolutionVersionContext?.latestRecord ?? null;
       const latestConsultationRecord = this.findLatestSectionRecord(
         input.encounter.sectionRecords,
         'Consulta actual',
       );
       const diagnosisBaseline = this.buildEvolutionDiagnosesBaseline({
-        previousEvolutionFormData: previousEvolutionRecord?.formDataJson ?? null,
-        latestConsultationFormData: latestConsultationRecord?.formDataJson ?? null,
+        previousEvolutionFormData:
+          previousEvolutionRecord?.formDataJson ?? null,
+        latestConsultationFormData:
+          latestConsultationRecord?.formDataJson ?? null,
       });
       const treatmentBaseline = this.resolveEvolutionTreatmentBaseline({
         incomingFormData: input.input.formData,
         currentRecordFormData: input.currentRecord?.formDataJson ?? null,
-        previousEvolutionFormData: previousEvolutionRecord?.formDataJson ?? null,
+        previousEvolutionFormData:
+          previousEvolutionRecord?.formDataJson ?? null,
       });
       const comparisonSnapshot = this.buildEvolutionComparisonSnapshot(
         previousEvolutionRecord,
@@ -6613,11 +6903,13 @@ export class EncountersService {
           recetaCodigoVerificacion: verificationCode,
           recetaDiagnosticoPrincipal:
             prescriptionSuggestionSnapshot.primaryDiagnosis,
-          recetaDiagnosticoCie10: prescriptionSuggestionSnapshot.primaryDiagnosisCode,
+          recetaDiagnosticoCie10:
+            prescriptionSuggestionSnapshot.primaryDiagnosisCode,
           recetaDiagnosticoSecundarios:
             prescriptionSuggestionSnapshot.secondaryDiagnoses,
           recetaProximaCita: prescriptionSuggestionSnapshot.nextAppointment,
-          recetaSeguimientoFecha: prescriptionSuggestionSnapshot.nextAppointment,
+          recetaSeguimientoFecha:
+            prescriptionSuggestionSnapshot.nextAppointment,
           recetaInstitucionEmisora:
             input.encounter.facility?.institutionName ??
             input.encounter.facility?.legalName ??
@@ -6625,9 +6917,7 @@ export class EncountersService {
             input.encounter.tenant.name ??
             input.encounter.facility?.name ??
             'Institución no configurada',
-          recetaRfcMedico:
-            input.encounter.tenant.taxId ||
-            'RFC no configurado',
+          recetaRfcMedico: input.encounter.tenant.taxId || 'RFC no configurado',
           recetaLicenciaSanitaria:
             input.encounter.facility?.legalName ?? 'Licencia no configurada',
           recetaNombreProfesional:
@@ -6636,12 +6926,10 @@ export class EncountersService {
             input.responsibleUser?.professionalLicense ?? 'Sin cédula',
           recetaEspecialidadProfesional:
             input.encounter.specialty?.name ?? 'Sin especialidad',
-          recetaLugarAtencion: [
-            input.encounter.facility?.name,
-            input.encounter.serviceArea?.name,
-          ]
-            .filter(Boolean)
-            .join(' · ') || 'Lugar no configurado',
+          recetaLugarAtencion:
+            [input.encounter.facility?.name, input.encounter.serviceArea?.name]
+              .filter(Boolean)
+              .join(' · ') || 'Lugar no configurado',
           recetaAlertas: safetyAlerts,
         },
         metadata: {
@@ -6651,7 +6939,8 @@ export class EncountersService {
           verificationCode,
           pdfDownloadCount: currentRecordMetadata.pdfDownloadCount ?? 0,
           pdfLastDownloadedAt: currentRecordMetadata.pdfLastDownloadedAt,
-          inheritedFromRecordId: currentRecordMetadata.inheritedFromRecordId ?? null,
+          inheritedFromRecordId:
+            currentRecordMetadata.inheritedFromRecordId ?? null,
         },
       };
     }
@@ -6677,13 +6966,17 @@ export class EncountersService {
       tabKey: input.input.tabKey,
       noteType: 'Historia clínica',
       title: `Historia clínica versión ${versionNumber}`,
-      status: input.input.status ?? input.currentRecord?.status ?? EncounterRecordStatus.DRAFT,
+      status:
+        input.input.status ??
+        input.currentRecord?.status ??
+        EncounterRecordStatus.DRAFT,
       formData: {
         ...normalizedHistoryFormData,
         legalMedico:
           input.responsibleUser?.fullName ?? 'Sin profesional responsable',
         legalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
-        legalEspecialidad: input.encounter.specialty?.name ?? 'Sin especialidad',
+        legalEspecialidad:
+          input.encounter.specialty?.name ?? 'Sin especialidad',
       },
       metadata: {
         ...baseHistoryMetadata,
@@ -6700,7 +6993,10 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.OUTPATIENT && tabKey === 'Historia clínica';
+    return (
+      encounterType === EncounterType.OUTPATIENT &&
+      tabKey === 'Historia clínica'
+    );
   }
 
   private buildConsultationHistoryNoteTypeLabel(
@@ -6770,7 +7066,9 @@ export class EncountersService {
             study.interpretacionHallazgo,
           ).trim(),
           sourceModule: this.readStringValue(study.sourceModule).trim(),
-          sourceReferenceId: this.readStringValue(study.sourceReferenceId).trim(),
+          sourceReferenceId: this.readStringValue(
+            study.sourceReferenceId,
+          ).trim(),
         };
       })
       .filter((study) =>
@@ -6813,7 +7111,10 @@ export class EncountersService {
       : EncounterRecordStatus.DRAFT;
   }
 
-  private isEmergencyTriageRecord(encounterType: EncounterType, tabKey: string) {
+  private isEmergencyTriageRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Triage';
   }
 
@@ -6821,10 +7122,15 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.EMERGENCY && tabKey === 'Nota inicial';
+    return (
+      encounterType === EncounterType.EMERGENCY && tabKey === 'Nota inicial'
+    );
   }
 
-  private isEmergencyEvolutionRecord(encounterType: EncounterType, tabKey: string) {
+  private isEmergencyEvolutionRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Evolución';
   }
 
@@ -6832,10 +7138,16 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.EMERGENCY && tabKey === 'Hoja de enfermería';
+    return (
+      encounterType === EncounterType.EMERGENCY &&
+      tabKey === 'Hoja de enfermería'
+    );
   }
 
-  private isEmergencyOrdersRecord(encounterType: EncounterType, tabKey: string) {
+  private isEmergencyOrdersRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
     return (
       encounterType === EncounterType.EMERGENCY &&
       tabKey === emergencyOrdersTabKey
@@ -6847,7 +7159,9 @@ export class EncountersService {
     formData?: Record<string, unknown> | null;
     metadata?: Record<string, unknown> | null;
   }): EmergencyOrderDocumentType {
-    const metadataType = this.readStringValue(input.metadata?.orderDocumentType);
+    const metadataType = this.readStringValue(
+      input.metadata?.orderDocumentType,
+    );
     const noteType = this.readStringValue(input.noteType);
     const visibleType = this.readStringValue(input.formData?.tipoRegistro);
 
@@ -6872,23 +7186,41 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.EMERGENCY && tabKey === 'Interconsultas';
+    return (
+      encounterType === EncounterType.EMERGENCY && tabKey === 'Interconsultas'
+    );
   }
 
-  private isEmergencyDischargeRecord(encounterType: EncounterType, tabKey: string) {
+  private isEmergencyDischargeRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Egreso';
   }
 
-  private isEmergencyDocumentRecord(encounterType: EncounterType, tabKey: string) {
+  private isEmergencyDocumentRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
     return encounterType === EncounterType.EMERGENCY && tabKey === 'Documentos';
   }
 
-  private isHospitalAdmissionRecord(encounterType: EncounterType, tabKey: string) {
-    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Ingreso';
+  private isHospitalAdmissionRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Ingreso'
+    );
   }
 
-  private isHospitalEvolutionRecord(encounterType: EncounterType, tabKey: string) {
-    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Evolución';
+  private isHospitalEvolutionRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Evolución'
+    );
   }
 
   private isHospitalMedicalOrdersRecord(
@@ -6905,7 +7237,10 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Interconsultas';
+    return (
+      encounterType === EncounterType.HOSPITALIZATION &&
+      tabKey === 'Interconsultas'
+    );
   }
 
   private isHospitalSurgicalDocumentRecord(
@@ -6922,11 +7257,18 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Enfermería';
+    return (
+      encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Enfermería'
+    );
   }
 
-  private isHospitalDischargeRecord(encounterType: EncounterType, tabKey: string) {
-    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Egreso';
+  private isHospitalDischargeRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Egreso'
+    );
   }
 
   private isAmbulatoryPreprocedureRecord(
@@ -6939,8 +7281,13 @@ export class EncountersService {
     );
   }
 
-  private isAmbulatoryProcedureRecord(encounterType: EncounterType, tabKey: string) {
-    return encounterType === EncounterType.SURGERY && tabKey === 'Procedimiento';
+  private isAmbulatoryProcedureRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.SURGERY && tabKey === 'Procedimiento'
+    );
   }
 
   private isAmbulatoryRecoveryEvaluationRecord(
@@ -7049,10 +7396,7 @@ export class EncountersService {
       'Egreso',
     );
     const careLocation =
-      [
-        input.encounter.facility?.name,
-        input.encounter.serviceArea?.name,
-      ]
+      [input.encounter.facility?.name, input.encounter.serviceArea?.name]
         .filter(Boolean)
         .join(' · ') ||
       input.encounter.tenant.legalName ||
@@ -7069,10 +7413,21 @@ export class EncountersService {
       this.readStringValue(currentFormData.documentoSelloDigital) ||
       `${input.verificationCode}-${documentHash.slice(0, 16)}`;
     const diagnosis =
-      this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
-      this.readStringValueFromJson(latestDischarge, 'diagnosticoFinalEgresoHosp') ||
-      this.readStringValueFromJson(latestEvolution, 'diagnosticoPrincipalEvolHosp') ||
-      this.readStringValueFromJson(latestAdmission, 'diagnosticoPrincipalHosp') ||
+      this.readStringValue(
+        input.incomingFormData.documentoDiagnosticoPrincipal,
+      ) ||
+      this.readStringValueFromJson(
+        latestDischarge,
+        'diagnosticoFinalEgresoHosp',
+      ) ||
+      this.readStringValueFromJson(
+        latestEvolution,
+        'diagnosticoPrincipalEvolHosp',
+      ) ||
+      this.readStringValueFromJson(
+        latestAdmission,
+        'diagnosticoPrincipalHosp',
+      ) ||
       input.encounter.diagnoses[0]?.description ||
       '';
     const cie10 =
@@ -7126,14 +7481,11 @@ export class EncountersService {
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
       documentoRfcMedico: input.encounter.tenant.taxId ?? '',
-      documentoLicenciaSanitaria:
-        input.encounter.facility?.legalName ?? '',
-      documentoNombreProfesional:
-        input.responsibleUser?.fullName ?? '',
+      documentoLicenciaSanitaria: input.encounter.facility?.legalName ?? '',
+      documentoNombreProfesional: input.responsibleUser?.fullName ?? '',
       documentoCedulaProfesional:
         input.responsibleUser?.professionalLicense ?? '',
-      documentoEspecialidadProfesional:
-        input.encounter.specialty?.name ?? '',
+      documentoEspecialidadProfesional: input.encounter.specialty?.name ?? '',
       documentoLugarAtencion: careLocation,
     };
   }
@@ -7193,23 +7545,45 @@ export class EncountersService {
       this.readStringValue(currentFormData.documentoSelloDigital) ||
       `${input.verificationCode}-${documentHash.slice(0, 16)}`;
     const diagnosis =
-      this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
-      this.readStringValueFromJson(dischargeFormData, 'diagnosticoFinalEgresoAmb') ||
-      this.readStringValueFromJson(procedureFormData, 'diagnosticoPostoperatorioProc') ||
-      this.readStringValueFromJson(preprocedureFormData, 'diagnosticoPreoperatorioPreproc') ||
+      this.readStringValue(
+        input.incomingFormData.documentoDiagnosticoPrincipal,
+      ) ||
+      this.readStringValueFromJson(
+        dischargeFormData,
+        'diagnosticoFinalEgresoAmb',
+      ) ||
+      this.readStringValueFromJson(
+        procedureFormData,
+        'diagnosticoPostoperatorioProc',
+      ) ||
+      this.readStringValueFromJson(
+        preprocedureFormData,
+        'diagnosticoPreoperatorioPreproc',
+      ) ||
       input.encounter.diagnoses[0]?.description ||
       '';
     const cie10 =
       this.readStringValue(input.incomingFormData.documentoDiagnosticoCie10) ||
       this.readStringValueFromJson(dischargeFormData, 'cie10EgresoAmb') ||
-      this.readStringValueFromJson(procedureFormData, 'cie10PostoperatorioProc') ||
+      this.readStringValueFromJson(
+        procedureFormData,
+        'cie10PostoperatorioProc',
+      ) ||
       this.readStringValueFromJson(preprocedureFormData, 'cie10Preproc') ||
       input.encounter.diagnoses[0]?.code ||
       '';
     const procedureName =
-      this.readStringValue(input.incomingFormData.documentoProcedimientoNombre) ||
-      this.readStringValueFromJson(procedureFormData, 'procedimientoRealizadoProc') ||
-      this.readStringValueFromJson(preprocedureFormData, 'procedimientoIndicadoPreproc') ||
+      this.readStringValue(
+        input.incomingFormData.documentoProcedimientoNombre,
+      ) ||
+      this.readStringValueFromJson(
+        procedureFormData,
+        'procedimientoRealizadoProc',
+      ) ||
+      this.readStringValueFromJson(
+        preprocedureFormData,
+        'procedimientoIndicadoPreproc',
+      ) ||
       '';
     const careLocation =
       [input.encounter.facility?.name, input.encounter.serviceArea?.name]
@@ -7237,13 +7611,19 @@ export class EncountersService {
                 recoveryFormData,
                 'exploracionPostprocedimientoRecEval',
               ) ||
-              this.readStringValueFromJson(recoveryFormData, 'planVigilanciaRecEval'),
+              this.readStringValueFromJson(
+                recoveryFormData,
+                'planVigilanciaRecEval',
+              ),
           }
         : input.noteType === 'Consentimiento informado'
           ? {
               documentoProcedimientoNombre: procedureName,
               documentoTipoAnestesia:
-                this.readStringValueFromJson(procedureFormData, 'tipoAnestesiaProc') ||
+                this.readStringValueFromJson(
+                  procedureFormData,
+                  'tipoAnestesiaProc',
+                ) ||
                 this.readStringValueFromJson(
                   preprocedureFormData,
                   'tipoAnestesiaPrevistaPreproc',
@@ -7340,10 +7720,15 @@ export class EncountersService {
         documentoDiagnosticoPrincipal: input.diagnosis,
         documentoDiagnosticoCie10: input.cie10,
         documentoServicioSolicitud:
-          this.readStringValueFromJson(input.latestAdmission, 'servicioIngresoHosp') ||
-          '',
+          this.readStringValueFromJson(
+            input.latestAdmission,
+            'servicioIngresoHosp',
+          ) || '',
         documentoEstudiosLaboratorio: this.readObjectArray(
-          this.readUnknownFromJson(input.latestOrders, 'estudiosSolicitadosHospDoc'),
+          this.readUnknownFromJson(
+            input.latestOrders,
+            'estudiosSolicitadosHospDoc',
+          ),
         ),
       };
     }
@@ -7353,47 +7738,82 @@ export class EncountersService {
         documentoDiagnosticoPrincipal: input.diagnosis,
         documentoDiagnosticoCie10: input.cie10,
         documentoServicioSolicitud:
-          this.readStringValueFromJson(input.latestAdmission, 'servicioIngresoHosp') ||
-          '',
+          this.readStringValueFromJson(
+            input.latestAdmission,
+            'servicioIngresoHosp',
+          ) || '',
       };
     }
 
     if (input.noteType === 'Consentimiento informado') {
       return {
         documentoProcedimientoNombre:
-          this.readStringValueFromJson(input.latestSurgical, 'cirugiaPropuestaQuirHosp') ||
-          this.readStringValueFromJson(input.latestSurgical, 'procedimientoRealizadoPostopHosp') ||
+          this.readStringValueFromJson(
+            input.latestSurgical,
+            'cirugiaPropuestaQuirHosp',
+          ) ||
+          this.readStringValueFromJson(
+            input.latestSurgical,
+            'procedimientoRealizadoPostopHosp',
+          ) ||
           '',
         documentoNombrePacienteConsentimiento:
-          this.readStringValueFromJson(input.latestAdmission, 'pacienteNombre') || '',
+          this.readStringValueFromJson(
+            input.latestAdmission,
+            'pacienteNombre',
+          ) || '',
       };
     }
 
     if (input.noteType === 'Resumen clínico') {
       return {
         documentoMotivoAtencion:
-          this.readStringValueFromJson(input.latestAdmission, 'motivoIngresoClinicoHosp') ||
-          '',
+          this.readStringValueFromJson(
+            input.latestAdmission,
+            'motivoIngresoClinicoHosp',
+          ) || '',
         documentoDiagnosticosIniciales:
-          this.readStringValueFromJson(input.latestAdmission, 'diagnosticoPrincipalHosp') ||
-          input.diagnosis,
+          this.readStringValueFromJson(
+            input.latestAdmission,
+            'diagnosticoPrincipalHosp',
+          ) || input.diagnosis,
         documentoDiagnosticosFinales:
-          this.readStringValueFromJson(input.latestDischarge, 'diagnosticoFinalEgresoHosp') ||
-          input.diagnosis,
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'diagnosticoFinalEgresoHosp',
+          ) || input.diagnosis,
         documentoEvolucion:
-          this.readStringValueFromJson(input.latestDischarge, 'evolucionEstanciaEgresoHosp') ||
-          this.readStringValueFromJson(input.latestEvolution, 'interpretacionClinicaEvolHosp') ||
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'evolucionEstanciaEgresoHosp',
+          ) ||
+          this.readStringValueFromJson(
+            input.latestEvolution,
+            'interpretacionClinicaEvolHosp',
+          ) ||
           '',
         documentoTratamientos:
-          this.readStringValueFromJson(input.latestDischarge, 'manejoRealizadoEgresoHosp') ||
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'manejoRealizadoEgresoHosp',
+          ) ||
           this.summarizeHospitalOrderMedications(
             this.readObjectArray(
-              this.readUnknownFromJson(input.latestOrders, 'medicamentosIndicacionesHosp'),
+              this.readUnknownFromJson(
+                input.latestOrders,
+                'medicamentosIndicacionesHosp',
+              ),
             ),
           ),
         documentoPlan:
-          this.readStringValueFromJson(input.latestDischarge, 'seguimientoEgresoHosp') ||
-          this.readStringValueFromJson(input.latestEvolution, 'seguimientoEvolHosp') ||
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'seguimientoEgresoHosp',
+          ) ||
+          this.readStringValueFromJson(
+            input.latestEvolution,
+            'seguimientoEvolHosp',
+          ) ||
           '',
       };
     }
@@ -7401,25 +7821,40 @@ export class EncountersService {
     if (input.noteType === 'Referencia / traslado') {
       return {
         documentoUnidadOrigen:
-          this.readStringValueFromJson(input.latestAdmission, 'servicioIngresoHosp') || '',
+          this.readStringValueFromJson(
+            input.latestAdmission,
+            'servicioIngresoHosp',
+          ) || '',
         documentoMotivoTraslado:
-          this.readStringValueFromJson(input.latestDischarge, 'problemasPendientesEgresoHosp') ||
-          '',
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'problemasPendientesEgresoHosp',
+          ) || '',
         documentoResumenClinicoBreve:
-          this.readStringValueFromJson(input.latestDischarge, 'resumenNarrativoEgresoHosp') ||
-          this.readStringValueFromJson(input.latestEvolution, 'interpretacionClinicaEvolHosp') ||
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'resumenNarrativoEgresoHosp',
+          ) ||
+          this.readStringValueFromJson(
+            input.latestEvolution,
+            'interpretacionClinicaEvolHosp',
+          ) ||
           '',
         documentoManejoPrevio:
-          this.readStringValueFromJson(input.latestDischarge, 'manejoRealizadoEgresoHosp') ||
-          '',
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'manejoRealizadoEgresoHosp',
+          ) || '',
       };
     }
 
     if (input.noteType === 'Defunción') {
       return {
         documentoDatosPacienteDefuncion:
-          this.readStringValueFromJson(input.latestDischarge, 'resumenNarrativoEgresoHosp') ||
-          '',
+          this.readStringValueFromJson(
+            input.latestDischarge,
+            'resumenNarrativoEgresoHosp',
+          ) || '',
       };
     }
 
@@ -7520,20 +7955,24 @@ export class EncountersService {
       fechaIngresoHosp: admissionDate,
       horaIngresoHosp: admissionTime,
       tiempoValoracionInicialHosp:
-        this.readStringValue(input.incomingFormData.tiempoValoracionInicialHosp) ||
-        this.calculateAdmissionAssessmentTime(input.encounter.openedAt, input.recordedAt),
+        this.readStringValue(
+          input.incomingFormData.tiempoValoracionInicialHosp,
+        ) ||
+        this.calculateAdmissionAssessmentTime(
+          input.encounter.openedAt,
+          input.recordedAt,
+        ),
       episodioOrigenHosp: originEpisodeReference,
       referenciaUrgenciasHosp:
         this.readStringValue(input.incomingFormData.referenciaUrgenciasHosp) ||
         sourceEmergencySummary,
       grupoSanguineoRhHosp: bloodType,
       medicoIngresoLegal:
-        input.responsibleUser?.fullName ??
-        'Sin profesional responsable',
+        input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       cedulaIngresoLegal:
-        input.responsibleUser?.professionalLicense ??
-        'Sin cédula',
-      especialidadIngresoLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      especialidadIngresoLegal:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
       lugarAtencionIngresoLegal:
         input.encounter.facility?.name ??
         input.encounter.tenant.legalName ??
@@ -7589,11 +8028,14 @@ export class EncountersService {
     const capturedClinicalStatus = this.readStringValue(
       input.incomingFormData.estadoClinicoEvolHosp,
     );
-    const clinicalStatus =
-      this.isHospitalEvolutionClinicalStatus(capturedClinicalStatus)
-        ? capturedClinicalStatus
-        : '';
-    const capturedShift = this.readStringValue(input.incomingFormData.turnoEvolHosp);
+    const clinicalStatus = this.isHospitalEvolutionClinicalStatus(
+      capturedClinicalStatus,
+    )
+      ? capturedClinicalStatus
+      : '';
+    const capturedShift = this.readStringValue(
+      input.incomingFormData.turnoEvolHosp,
+    );
     const shift = this.isHospitalShift(capturedShift)
       ? capturedShift
       : this.resolveHospitalShiftValue(input.recordedAt);
@@ -7611,43 +8053,60 @@ export class EncountersService {
       estadoClinicoEvolHosp: clinicalStatus,
       turnoEvolHosp: shift,
       especialidadGuardiaEvolHosp: responsibleSpecialty,
-      referenciaEvolucionPreviaHosp: this.formatHospitalEvolutionPreviousReference(
-        input.previousEvolutionRecord,
-      ),
+      referenciaEvolucionPreviaHosp:
+        this.formatHospitalEvolutionPreviousReference(
+          input.previousEvolutionRecord,
+        ),
       fechaHoraEvolucionPreviaHosp:
         input.previousEvolutionRecord?.recordedAt.toISOString() ?? '',
       diagnosticosActivosEvolHosp: activeDiagnoses,
       cambiosClinicosEvolHosp:
         this.readStringValue(input.incomingFormData.cambiosClinicosEvolHosp) ||
-        this.buildHospitalEvolutionChangeReference(input.previousEvolutionFormDataJson),
+        this.buildHospitalEvolutionChangeReference(
+          input.previousEvolutionFormDataJson,
+        ),
       medicoEvolHospLegal:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       cedulaEvolHospLegal:
         input.responsibleUser?.professionalLicense ?? 'Sin cédula',
-      especialidadEvolHospLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      especialidadEvolHospLegal:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
       lugarAtencionEvolHospLegal:
         input.encounter.facility?.name ??
         input.encounter.tenant.legalName ??
         input.encounter.tenant.name,
       referenciaIngresoHosp:
-        this.readStringValueFromJson(input.admissionFormDataJson, 'diagnosticoPrincipalHosp') ||
-        this.readStringValueFromJson(input.admissionFormDataJson, 'motivoIngresoClinicoHosp'),
+        this.readStringValueFromJson(
+          input.admissionFormDataJson,
+          'diagnosticoPrincipalHosp',
+        ) ||
+        this.readStringValueFromJson(
+          input.admissionFormDataJson,
+          'motivoIngresoClinicoHosp',
+        ),
     };
   }
 
-  private buildHospitalEvolutionChangeReference(rawValue: Prisma.JsonValue | null) {
+  private buildHospitalEvolutionChangeReference(
+    rawValue: Prisma.JsonValue | null,
+  ) {
     const previousInterpretation = this.readStringValueFromJson(
       rawValue,
       'interpretacionClinicaEvolHosp',
     );
-    const previousPlan = this.readStringValueFromJson(rawValue, 'tratamientoEvolHosp');
+    const previousPlan = this.readStringValueFromJson(
+      rawValue,
+      'tratamientoEvolHosp',
+    );
 
     if (!previousInterpretation && !previousPlan) {
       return '';
     }
 
     return [
-      previousInterpretation ? `Evolución previa: ${previousInterpretation}` : '',
+      previousInterpretation
+        ? `Evolución previa: ${previousInterpretation}`
+        : '',
       previousPlan ? `Plan previo: ${previousPlan}` : '',
     ]
       .filter(Boolean)
@@ -7694,7 +8153,9 @@ export class EncountersService {
     return 'NOCTURNO';
   }
 
-  private isHospitalShift(value: string): value is (typeof hospitalShiftValues)[number] {
+  private isHospitalShift(
+    value: string,
+  ): value is (typeof hospitalShiftValues)[number] {
     return hospitalShiftValues.includes(
       value as (typeof hospitalShiftValues)[number],
     );
@@ -7789,23 +8250,29 @@ export class EncountersService {
     const requestTime =
       this.readStringValue(input.incomingFormData.horaSolicitudInterHosp) ||
       input.recordedAt.toISOString().slice(11, 16);
-    const priority = this.readStringValue(input.incomingFormData.prioridadInterHosp);
+    const priority = this.readStringValue(
+      input.incomingFormData.prioridadInterHosp,
+    );
     const targetResponseMinutes =
-      this.readNumericValue(input.incomingFormData.tiempoObjetivoRespuestaInterHosp) ??
-      this.calculateHospitalConsultationSlaMinutes(priority);
+      this.readNumericValue(
+        input.incomingFormData.tiempoObjetivoRespuestaInterHosp,
+      ) ?? this.calculateHospitalConsultationSlaMinutes(priority);
     const responseDate = this.readStringValue(
       input.incomingFormData.fechaRespuestaInterHosp,
     );
     const responseTime = this.readStringValue(
       input.incomingFormData.horaRespuestaInterHosp,
     );
-    const responseTimeMinutes = this.calculateHospitalConsultationElapsedMinutes(
-      requestDate,
-      requestTime,
-      responseDate,
-      responseTime,
+    const responseTimeMinutes =
+      this.calculateHospitalConsultationElapsedMinutes(
+        requestDate,
+        requestTime,
+        responseDate,
+        responseTime,
+      );
+    const closedAt = this.parseOptionalDate(
+      input.incomingFormData.fechaCierreInterHosp,
     );
-    const closedAt = this.parseOptionalDate(input.incomingFormData.fechaCierreInterHosp);
     const requestedAt = this.parseOptionalDate(`${requestDate}T${requestTime}`);
     const closureTimeMinutes =
       requestedAt && closedAt && closedAt >= requestedAt
@@ -7839,7 +8306,8 @@ export class EncountersService {
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       cedulaInterLegal:
         input.responsibleUser?.professionalLicense ?? 'Sin cédula',
-      especialidadInterLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      especialidadInterLegal:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
       lugarAtencionInterLegal:
         input.encounter.facility?.name ??
         input.encounter.tenant.legalName ??
@@ -7873,11 +8341,13 @@ export class EncountersService {
         procedureDate,
         realStartTime,
         realEndTime,
-      ) ?? this.readRoundedNumericValue(input.incomingFormData.duracionMinutosProc);
+      ) ??
+      this.readRoundedNumericValue(input.incomingFormData.duracionMinutosProc);
     const anesthesiaType = this.readStringValue(
       input.incomingFormData.tipoAnestesiaProc,
     );
-    const hasAnesthesia = anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
+    const hasAnesthesia =
+      anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
     const alerts = this.buildAmbulatoryProcedureAlerts(input.incomingFormData);
     const hashSeed = JSON.stringify({
       encounterId: input.encounter.id,
@@ -7905,8 +8375,9 @@ export class EncountersService {
       alertasAnestesiaProc:
         alerts.length > 0 ? alerts.join('\n') : 'Sin alertas anestésicas',
       alertaDestinoProc:
-        this.readStringValue(input.incomingFormData.destinoPostprocedimientoProc) ===
-        'HOSPITALIZACION'
+        this.readStringValue(
+          input.incomingFormData.destinoPostprocedimientoProc,
+        ) === 'HOSPITALIZACION'
           ? 'Destino hospitalización: preparar enlace a episodio hospitalario.'
           : 'Sin alerta de destino.',
       profesionalNombreProc:
@@ -7950,7 +8421,8 @@ export class EncountersService {
       Boolean(formData.toProfilaxisAntibioticaProc) === false
         ? 'Profilaxis antibiótica no registrada en Time-Out.'
         : '',
-      this.readStringValue(formData.cuentaGasasInstrumentalProc) === 'INCOMPLETA'
+      this.readStringValue(formData.cuentaGasasInstrumentalProc) ===
+      'INCOMPLETA'
         ? 'Cuenta de gasas e instrumental incompleta: bloquea firma.'
         : '',
       this.readStringValue(formData.huboComplicacionesProc) === 'SI' &&
@@ -8000,8 +8472,7 @@ export class EncountersService {
       horaValoracionRecEval:
         this.readStringValue(input.incomingFormData.horaValoracionRecEval) ||
         input.recordedAt.toISOString().slice(11, 16),
-      aldreteTotalRecEval:
-        aldreteTotal === null ? '' : String(aldreteTotal),
+      aldreteTotalRecEval: aldreteTotal === null ? '' : String(aldreteTotal),
       aldreteInterpretacionRecEval:
         aldreteTotal === null
           ? 'Aldrete pendiente de cálculo'
@@ -8017,7 +8488,9 @@ export class EncountersService {
           : 'Verde - normal',
       alertasAutomaticasRecEval:
         alerts.length > 0
-          ? alerts.map((alert) => `${alert.severity}: ${alert.message}`).join('\n')
+          ? alerts
+              .map((alert) => `${alert.severity}: ${alert.message}`)
+              .join('\n')
           : 'Sin alertas activas',
       profesionalNombreRecEval:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
@@ -8065,7 +8538,8 @@ export class EncountersService {
     const documentHash =
       this.readStringValue(input.currentMetadata.documentHash) ||
       createHash('sha256').update(hashSeed).digest('hex');
-    const qrActive = this.readStringValue(input.currentMetadata.qrActive) === 'true';
+    const qrActive =
+      this.readStringValue(input.currentMetadata.qrActive) === 'true';
 
     return {
       ...input.incomingFormData,
@@ -8098,7 +8572,9 @@ export class EncountersService {
           .join('\n') || 'Sin alergias conflictivas detectadas automáticamente',
       validacionesMedicamentosRecetaEgreso:
         alerts.length > 0
-          ? alerts.map((alert) => `${alert.severity}: ${alert.message}`).join('\n')
+          ? alerts
+              .map((alert) => `${alert.severity}: ${alert.message}`)
+              .join('\n')
           : 'VERDE: sin problemas detectados',
       semaforoMedicamentosRecetaEgreso: hasRedAlert
         ? 'Rojo - bloqueo'
@@ -8184,14 +8660,20 @@ export class EncountersService {
     encounter: TenantEncounterRecord;
     formData: Record<string, unknown>;
   }) {
-    const medications = this.readObjectArray(input.formData.medicamentosRecetaEgreso);
+    const medications = this.readObjectArray(
+      input.formData.medicamentosRecetaEgreso,
+    );
     const normalizedNames = medications
-      .map((item) => this.readStringValue(item.medicamento).toLowerCase().trim())
+      .map((item) =>
+        this.readStringValue(item.medicamento).toLowerCase().trim(),
+      )
       .filter(Boolean);
     const allergyText = [
       input.encounter.allergies.map((allergy) => allergy.substance).join(', '),
       input.encounter.patient.allergiesNotes ?? '',
-    ].join(' ').toLowerCase();
+    ]
+      .join(' ')
+      .toLowerCase();
     const validations: Array<{
       severity: 'VERDE' | 'AMARILLO' | 'ROJO';
       validationType: string;
@@ -8220,7 +8702,8 @@ export class EncountersService {
       validations.push({
         severity: 'ROJO',
         validationType: 'ALERGIA',
-        message: 'Alergia registrada a penicilinas y medicamento relacionado indicado.',
+        message:
+          'Alergia registrada a penicilinas y medicamento relacionado indicado.',
         blocking: true,
       });
     }
@@ -8231,7 +8714,8 @@ export class EncountersService {
       validations.push({
         severity: 'ROJO',
         validationType: 'INTERACCION',
-        message: 'Interacción grave: warfarina con ibuprofeno aumenta riesgo de sangrado.',
+        message:
+          'Interacción grave: warfarina con ibuprofeno aumenta riesgo de sangrado.',
         blocking: true,
       });
     }
@@ -8266,7 +8750,9 @@ export class EncountersService {
       sourceMetric: string;
     }> = [];
     const systolic = this.readRoundedNumericValue(formData.taSistolicaRecEval);
-    const diastolic = this.readRoundedNumericValue(formData.taDiastolicaRecEval);
+    const diastolic = this.readRoundedNumericValue(
+      formData.taDiastolicaRecEval,
+    );
     const heartRate = this.readRoundedNumericValue(formData.fcRecEval);
     const spo2 = this.readNumericValue(formData.spo2RecEval);
     const temperature = this.readNumericValue(formData.temperaturaRecEval);
@@ -8358,8 +8844,11 @@ export class EncountersService {
     const anesthesiaType = this.readStringValue(
       input.incomingFormData.tipoAnestesiaPrevistaPreproc,
     );
-    const hasAnesthesia = anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
-    const alerts = this.buildAmbulatoryPreprocedureAlerts(input.incomingFormData);
+    const hasAnesthesia =
+      anesthesiaType !== '' && anesthesiaType !== 'NO_APLICA';
+    const alerts = this.buildAmbulatoryPreprocedureAlerts(
+      input.incomingFormData,
+    );
     const hashSeed = JSON.stringify({
       encounterId: input.encounter.id,
       tabKey: 'Valoración preprocedimiento',
@@ -8378,17 +8867,24 @@ export class EncountersService {
       versionPreproc: input.versionNumber,
       imcPreproc: imc !== null ? String(imc) : '',
       institucionConsentimientoPreproc:
-        this.readStringValue(input.incomingFormData.institucionConsentimientoPreproc) ||
-        input.encounter.tenant.name,
+        this.readStringValue(
+          input.incomingFormData.institucionConsentimientoPreproc,
+        ) || input.encounter.tenant.name,
       razonSocialConsentimientoPreproc:
-        this.readStringValue(input.incomingFormData.razonSocialConsentimientoPreproc) ||
+        this.readStringValue(
+          input.incomingFormData.razonSocialConsentimientoPreproc,
+        ) ||
         input.encounter.tenant.legalName ||
         input.encounter.tenant.name,
       lugarFechaConsentimientoPreproc:
-        this.readStringValue(input.incomingFormData.lugarFechaConsentimientoPreproc) ||
+        this.readStringValue(
+          input.incomingFormData.lugarFechaConsentimientoPreproc,
+        ) ||
         `${input.encounter.facility?.name ?? input.encounter.tenant.name} · ${input.recordedAt.toISOString().slice(0, 10)}`,
       consentimientoAnestesicoPreproc: hasAnesthesia
-        ? this.readStringValue(input.incomingFormData.consentimientoAnestesicoPreproc)
+        ? this.readStringValue(
+            input.incomingFormData.consentimientoAnestesicoPreproc,
+          )
         : 'NO_APLICA',
       profesionalNombrePreproc:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
@@ -8422,7 +8918,8 @@ export class EncountersService {
       this.readStringValue(formData.riesgoCardiovascularPreproc) === 'ALTO'
         ? 'Riesgo cardiovascular alto.'
         : '',
-      this.readStringValue(formData.riesgoTromboembolicoCapriniPreproc) === 'ALTO'
+      this.readStringValue(formData.riesgoTromboembolicoCapriniPreproc) ===
+      'ALTO'
         ? 'Riesgo tromboembólico alto.'
         : '',
       this.readStringValue(formData.ayunoConfirmadoPreproc) === 'NO'
@@ -8487,7 +8984,8 @@ export class EncountersService {
       pacienteDocumentoQuirurgico: patient.fullName,
       curpDocumentoQuirurgico: patient.curp ?? 'CURP no registrada',
       expedienteDocumentoQuirurgico:
-        input.encounter.medicalRecord?.recordNumber ?? 'Expediente no configurado',
+        input.encounter.medicalRecord?.recordNumber ??
+        'Expediente no configurado',
       folioEpisodioDocumentoQuirurgico: input.encounter.encounterNumber,
       tipoEpisodioDocumentoQuirurgico: 'Hospitalización',
       servicioDocumentoQuirurgico:
@@ -8509,7 +9007,8 @@ export class EncountersService {
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       cedulaQuirLegal:
         input.responsibleUser?.professionalLicense ?? 'Sin cédula',
-      especialidadQuirLegal: input.encounter.specialty?.name ?? 'Sin especialidad',
+      especialidadQuirLegal:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
       lugarAtencionQuirLegal:
         input.encounter.facility?.name ??
         input.encounter.tenant.legalName ??
@@ -8533,9 +9032,14 @@ export class EncountersService {
         this.readStringValue(input.incomingFormData.turnoEnfermeriaHosp),
       ) ||
       'Turno Matutino';
-    const intake = this.readNumericValue(input.incomingFormData.ingresosMlEnfHosp);
-    const output = this.readNumericValue(input.incomingFormData.egresosMlEnfHosp);
-    const balance = intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : null;
+    const intake = this.readNumericValue(
+      input.incomingFormData.ingresosMlEnfHosp,
+    );
+    const output = this.readNumericValue(
+      input.incomingFormData.egresosMlEnfHosp,
+    );
+    const balance =
+      intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : null;
     const nurseName =
       input.responsibleUser?.fullName ?? 'Sin profesional responsable';
 
@@ -8544,23 +9048,22 @@ export class EncountersService {
       tipoRegistro: 'Enfermería',
       turnoEnfermeriaHosp: shiftType,
       estadoTurnoEnfermeriaHosp:
-        this.readStringValue(input.incomingFormData.estadoTurnoEnfermeriaHosp) ||
-        'BORRADOR',
+        this.readStringValue(
+          input.incomingFormData.estadoTurnoEnfermeriaHosp,
+        ) || 'BORRADOR',
       balanceTotalEnfHosp: balance === null ? '' : String(balance),
-      medicamentosMinistradosEnfHosp: this
-        .readObjectArray(input.incomingFormData.medicamentosMinistradosEnfHosp)
-        .map((medication) => ({
-          ...medication,
-          enfermeria:
-            this.readStringValue(medication.enfermeria) || nurseName,
-        })),
-      procedimientosEnfermeriaTurnoHosp: this
-        .readObjectArray(input.incomingFormData.procedimientosEnfermeriaTurnoHosp)
-        .map((procedure) => ({
-          ...procedure,
-          realizadoPor:
-            this.readStringValue(procedure.realizadoPor) || nurseName,
-        })),
+      medicamentosMinistradosEnfHosp: this.readObjectArray(
+        input.incomingFormData.medicamentosMinistradosEnfHosp,
+      ).map((medication) => ({
+        ...medication,
+        enfermeria: this.readStringValue(medication.enfermeria) || nurseName,
+      })),
+      procedimientosEnfermeriaTurnoHosp: this.readObjectArray(
+        input.incomingFormData.procedimientosEnfermeriaTurnoHosp,
+      ).map((procedure) => ({
+        ...procedure,
+        realizadoPor: this.readStringValue(procedure.realizadoPor) || nurseName,
+      })),
       profesionalEnfermeriaLegal: nurseName,
       cedulaEnfermeriaLegal:
         input.responsibleUser?.professionalLicense ?? 'Sin cédula',
@@ -8593,18 +9096,18 @@ export class EncountersService {
 
     return {
       ...input.incomingFormData,
-      medicacionAdministradaEnfUrg: this
-        .readObjectArray(input.incomingFormData.medicacionAdministradaEnfUrg)
-        .map((medication) => ({
-          ...medication,
-          responsable: nurseName,
-        })),
-      procedimientosEnfermeriaEnfUrg: this
-        .readObjectArray(input.incomingFormData.procedimientosEnfermeriaEnfUrg)
-        .map((procedure) => ({
-          ...procedure,
-          responsable: nurseName,
-        })),
+      medicacionAdministradaEnfUrg: this.readObjectArray(
+        input.incomingFormData.medicacionAdministradaEnfUrg,
+      ).map((medication) => ({
+        ...medication,
+        responsable: nurseName,
+      })),
+      procedimientosEnfermeriaEnfUrg: this.readObjectArray(
+        input.incomingFormData.procedimientosEnfermeriaEnfUrg,
+      ).map((procedure) => ({
+        ...procedure,
+        responsable: nurseName,
+      })),
       elaboroEnfUrg: professionalName,
       cedulaEnfUrg: professionalLicense,
     };
@@ -8627,10 +9130,16 @@ export class EncountersService {
       this.findLatestHospitalRecordFormData(input.encounter, 'Evolución'),
     );
     const orders = this.normalizeJsonObject(
-      this.findLatestHospitalRecordFormData(input.encounter, 'Indicaciones médicas'),
+      this.findLatestHospitalRecordFormData(
+        input.encounter,
+        'Indicaciones médicas',
+      ),
     );
     const procedure = this.normalizeJsonObject(
-      this.findLatestHospitalRecordFormData(input.encounter, 'Procedimientos / Cirugía'),
+      this.findLatestHospitalRecordFormData(
+        input.encounter,
+        'Procedimientos / Cirugía',
+      ),
     );
     const consultation = this.normalizeJsonObject(
       this.findLatestHospitalRecordFormData(input.encounter, 'Interconsultas'),
@@ -8665,7 +9174,8 @@ export class EncountersService {
       : '';
     const responsibleProfessional =
       input.responsibleUser?.fullName ?? 'Sin profesional responsable';
-    const responsibleLicense = input.responsibleUser?.professionalLicense ?? 'Sin cédula';
+    const responsibleLicense =
+      input.responsibleUser?.professionalLicense ?? 'Sin cédula';
     const baseFormData: Record<string, unknown> = {
       ...input.incomingFormData,
       tipoRegistro: 'Egreso',
@@ -8704,8 +9214,9 @@ export class EncountersService {
       motivoIngresoEgresoHosp:
         this.readStringValue(admission.motivoIngresoClinicoHosp) ||
         input.encounter.reasonForVisit,
-      diagnosticoIngresoEgresoHosp:
-        this.readStringValue(admission.diagnosticoPrincipalHosp),
+      diagnosticoIngresoEgresoHosp: this.readStringValue(
+        admission.diagnosticoPrincipalHosp,
+      ),
       diagnosticoFinalEgresoHosp:
         this.readStringValue(evolution.diagnosticosActivosEvolHosp) ||
         this.readStringValue(admission.diagnosticoPrincipalHosp),
@@ -8721,17 +9232,21 @@ export class EncountersService {
       evolucionEstanciaEgresoHosp:
         this.readStringValue(evolution.interpretacionClinicaEvolHosp) ||
         this.readStringValue(evolution.justificacionNom004EvolHosp),
-      problemasPendientesEgresoHosp:
-        this.readStringValue(evolution.cambiosClinicosEvolHosp),
-      resumenNarrativoEgresoHosp:
-        this.readStringValue(consultation.impresionDiagnosticaInterHosp),
-      medicamentosEgresoHosp:
-        this.summarizeHospitalOrderMedications(orders.medicamentosIndicacionesHosp),
+      problemasPendientesEgresoHosp: this.readStringValue(
+        evolution.cambiosClinicosEvolHosp,
+      ),
+      resumenNarrativoEgresoHosp: this.readStringValue(
+        consultation.impresionDiagnosticaInterHosp,
+      ),
+      medicamentosEgresoHosp: this.summarizeHospitalOrderMedications(
+        orders.medicamentosIndicacionesHosp,
+      ),
       dietaEgresoHosp:
         this.readStringValue(orders.dietaIndicacionesHosp) ||
         this.readStringValue(admission.dietaInicialHosp),
-      actividadRestriccionesEgresoHosp:
-        this.readStringValue(orders.reposoActividadIndicacionesHosp),
+      actividadRestriccionesEgresoHosp: this.readStringValue(
+        orders.reposoActividadIndicacionesHosp,
+      ),
       seguimientoEgresoHosp:
         this.readStringValue(evolution.seguimientoEvolHosp) ||
         this.readStringValue(consultation.sugerenciasTerapeuticasInterHosp),
@@ -8743,14 +9258,18 @@ export class EncountersService {
     };
 
     for (const [fieldKey, value] of Object.entries(suggestions)) {
-      if (!this.hasCapturedValue(baseFormData[fieldKey]) && this.hasCapturedValue(value)) {
+      if (
+        !this.hasCapturedValue(baseFormData[fieldKey]) &&
+        this.hasCapturedValue(value)
+      ) {
         baseFormData[fieldKey] = value;
       }
     }
 
     if (this.readStringValue(baseFormData.tipoEgresoHosp) === 'ALTA_MEDICA') {
       baseFormData.destinoPacienteEgresoHosp =
-        this.readStringValue(baseFormData.destinoPacienteEgresoHosp) || 'DOMICILIO';
+        this.readStringValue(baseFormData.destinoPacienteEgresoHosp) ||
+        'DOMICILIO';
     }
 
     return baseFormData;
@@ -8760,10 +9279,14 @@ export class EncountersService {
     encounter: TenantEncounterRecord,
     tabKey: string,
   ) {
-    return [...encounter.sectionRecords]
-      .filter((record) => record.tabKey === tabKey)
-      .sort((left, right) => right.recordedAt.getTime() - left.recordedAt.getTime())[0]
-      ?.formDataJson ?? null;
+    return (
+      [...encounter.sectionRecords]
+        .filter((record) => record.tabKey === tabKey)
+        .sort(
+          (left, right) =>
+            right.recordedAt.getTime() - left.recordedAt.getTime(),
+        )[0]?.formDataJson ?? null
+    );
   }
 
   private summarizeHospitalOrderMedications(rawValue: unknown) {
@@ -8791,7 +9314,10 @@ export class EncountersService {
       professionalLicense: string | null;
     } | null,
   ): EncounterDetailResponse['emergencySummary'] {
-    const triageRecord = this.findLatestEmergencySectionRecord(encounter, 'Triage');
+    const triageRecord = this.findLatestEmergencySectionRecord(
+      encounter,
+      'Triage',
+    );
     const initialNoteRecord = this.findLatestEmergencySectionRecord(
       encounter,
       'Nota inicial',
@@ -8810,8 +9336,12 @@ export class EncountersService {
     );
     const triage = this.readSectionRecordFormData(triageRecord);
     const initialNote = this.readSectionRecordFormData(initialNoteRecord);
-    const latestEvolution = this.readSectionRecordFormData(latestEvolutionRecord);
-    const latestDischarge = this.readSectionRecordFormData(latestDischargeRecord);
+    const latestEvolution = this.readSectionRecordFormData(
+      latestEvolutionRecord,
+    );
+    const latestDischarge = this.readSectionRecordFormData(
+      latestDischargeRecord,
+    );
     const latestNursing = this.readSectionRecordFormData(latestNursingRecord);
     const primaryDiagnosis = this.resolveEmergencyPrimaryDiagnosis(
       encounter,
@@ -8883,9 +9413,12 @@ export class EncountersService {
               null,
             status: latestNursingRecord.status,
             fallRisk:
-              this.cleanEmergencySummaryText(latestNursing.riesgoCaidasEnfUrg) || null,
+              this.cleanEmergencySummaryText(
+                latestNursing.riesgoCaidasEnfUrg,
+              ) || null,
             painEva:
-              this.cleanEmergencySummaryText(latestNursing.dolorEvaEnfUrg) || null,
+              this.cleanEmergencySummaryText(latestNursing.dolorEvaEnfUrg) ||
+              null,
             observations:
               this.cleanEmergencySummaryText(
                 latestNursing.observacionesEnfermeriaEnfUrg,
@@ -8909,22 +9442,24 @@ export class EncountersService {
     encounter: TenantEncounterRecord,
     tabKey: string,
   ) {
-    return [...encounter.sectionRecords]
-      .filter((record) => record.tabKey === tabKey)
-      .sort((left, right) => {
-        const leftVersion = this.extractRecordVersionMetadata(
-          left.metadataJson,
-        ).versionNumber ?? 0;
-        const rightVersion = this.extractRecordVersionMetadata(
-          right.metadataJson,
-        ).versionNumber ?? 0;
+    return (
+      [...encounter.sectionRecords]
+        .filter((record) => record.tabKey === tabKey)
+        .sort((left, right) => {
+          const leftVersion =
+            this.extractRecordVersionMetadata(left.metadataJson)
+              .versionNumber ?? 0;
+          const rightVersion =
+            this.extractRecordVersionMetadata(right.metadataJson)
+              .versionNumber ?? 0;
 
-        if (leftVersion !== rightVersion) {
-          return rightVersion - leftVersion;
-        }
+          if (leftVersion !== rightVersion) {
+            return rightVersion - leftVersion;
+          }
 
-        return right.recordedAt.getTime() - left.recordedAt.getTime();
-      })[0] ?? null;
+          return right.recordedAt.getTime() - left.recordedAt.getTime();
+        })[0] ?? null
+    );
   }
 
   private readSectionRecordFormData(
@@ -8965,9 +9500,11 @@ export class EncountersService {
   }
 
   private firstEmergencySummaryText(values: unknown[]) {
-    return values
-      .map((value) => this.cleanEmergencySummaryText(value))
-      .find(Boolean) ?? null;
+    return (
+      values
+        .map((value) => this.cleanEmergencySummaryText(value))
+        .find(Boolean) ?? null
+    );
   }
 
   private uniqueEmergencySummaryLines(values: unknown[], limit = 8) {
@@ -9050,18 +9587,21 @@ export class EncountersService {
     const diagnosisDescriptions = this.normalizeEmergencyEvolutionDiagnoses(
       latestEvolution.diagnosticosEvolucionUrg,
     )
-      .filter((diagnosis) => diagnosis.diagnostico && diagnosis.tipo !== 'DIFERENCIAL')
+      .filter(
+        (diagnosis) =>
+          diagnosis.diagnostico && diagnosis.tipo !== 'DIFERENCIAL',
+      )
       .map((diagnosis) =>
-        [diagnosis.diagnostico, diagnosis.cie10 ? `CIE-10 ${diagnosis.cie10}` : '']
+        [
+          diagnosis.diagnostico,
+          diagnosis.cie10 ? `CIE-10 ${diagnosis.cie10}` : '',
+        ]
           .filter(Boolean)
           .join(' · '),
       );
 
     return this.uniqueEmergencySummaryLines(
-      [
-        ...problemDescriptions,
-        ...diagnosisDescriptions,
-      ],
+      [...problemDescriptions, ...diagnosisDescriptions],
       8,
     );
   }
@@ -9077,7 +9617,9 @@ export class EncountersService {
 
     for (const record of orderRecords) {
       const formData = this.readSectionRecordFormData(record);
-      for (const medication of this.readObjectArray(formData.medicamentosOrdenesUrg)) {
+      for (const medication of this.readObjectArray(
+        formData.medicamentosOrdenesUrg,
+      )) {
         medicationLines.push(
           [
             medication.medicamento,
@@ -9093,7 +9635,9 @@ export class EncountersService {
         );
       }
 
-      for (const solution of this.readObjectArray(formData.solucionesIntravenosasOrdenes)) {
+      for (const solution of this.readObjectArray(
+        formData.solucionesIntravenosasOrdenes,
+      )) {
         solutionLines.push(
           [
             solution.tipoSolucion,
@@ -9111,8 +9655,13 @@ export class EncountersService {
         );
       }
 
-      for (const study of this.readObjectArray(formData.estudiosSolicitadosOrdenes)) {
-        if (this.cleanEmergencySummaryText(study.estado).toUpperCase() === 'CANCELADA') {
+      for (const study of this.readObjectArray(
+        formData.estudiosSolicitadosOrdenes,
+      )) {
+        if (
+          this.cleanEmergencySummaryText(study.estado).toUpperCase() ===
+          'CANCELADA'
+        ) {
           continue;
         }
 
@@ -9169,7 +9718,10 @@ export class EncountersService {
       input.latestDischarge.tipoEgresoUrg,
     ]);
 
-    if (dischargeDestination && input.encounter.status === EncounterStatus.CLOSED) {
+    if (
+      dischargeDestination &&
+      input.encounter.status === EncounterStatus.CLOSED
+    ) {
       return {
         label: dischargeDestination,
         source: 'Egreso',
@@ -9258,7 +9810,8 @@ export class EncountersService {
     return (
       candidates.sort(
         (left, right) =>
-          new Date(right.recordedAt).getTime() - new Date(left.recordedAt).getTime(),
+          new Date(right.recordedAt).getTime() -
+          new Date(left.recordedAt).getTime(),
       )[0] ?? null
     );
   }
@@ -9293,13 +9846,35 @@ export class EncountersService {
             value: `${systolic}/${diastolic} mmHg`,
           }
         : null,
-      this.formatEmergencyVitalSign('FC (lpm)', formData[keys.heartRate], 'lpm'),
-      this.formatEmergencyVitalSign('FR (rpm)', formData[keys.respiratoryRate], 'rpm'),
-      this.formatEmergencyVitalSign('Temperatura (°C)', formData[keys.temperature], '°C'),
-      this.formatEmergencyVitalSign('SpO₂ (%)', formData[keys.oxygenSaturation], '%'),
-      this.formatEmergencyVitalSign('EVA dolor (0-10)', formData[keys.painEva], ''),
+      this.formatEmergencyVitalSign(
+        'FC (lpm)',
+        formData[keys.heartRate],
+        'lpm',
+      ),
+      this.formatEmergencyVitalSign(
+        'FR (rpm)',
+        formData[keys.respiratoryRate],
+        'rpm',
+      ),
+      this.formatEmergencyVitalSign(
+        'Temperatura (°C)',
+        formData[keys.temperature],
+        '°C',
+      ),
+      this.formatEmergencyVitalSign(
+        'SpO₂ (%)',
+        formData[keys.oxygenSaturation],
+        '%',
+      ),
+      this.formatEmergencyVitalSign(
+        'EVA dolor (0-10)',
+        formData[keys.painEva],
+        '',
+      ),
       this.formatEmergencyVitalSign('Glasgow', formData[keys.glasgow], ''),
-    ].filter((value): value is { label: string; value: string } => Boolean(value));
+    ].filter((value): value is { label: string; value: string } =>
+      Boolean(value),
+    );
 
     if (values.length === 0) {
       return null;
@@ -9308,13 +9883,21 @@ export class EncountersService {
     return {
       source,
       recordedAt:
-        this.resolveEmergencyClinicalTimestamp(formData, record, dateKey, timeKey) ??
-        record.recordedAt.toISOString(),
+        this.resolveEmergencyClinicalTimestamp(
+          formData,
+          record,
+          dateKey,
+          timeKey,
+        ) ?? record.recordedAt.toISOString(),
       values,
     };
   }
 
-  private formatEmergencyVitalSign(label: string, value: unknown, unit: string) {
+  private formatEmergencyVitalSign(
+    label: string,
+    value: unknown,
+    unit: string,
+  ) {
     const normalizedValue = this.cleanEmergencySummaryText(value);
 
     return normalizedValue
@@ -9347,10 +9930,10 @@ export class EncountersService {
   }
 
   private resolveEmergencyActiveAlerts(input: {
-      encounter: TenantEncounterRecord;
-      triage: Record<string, unknown>;
-      latestEvolution: Record<string, unknown>;
-    }) {
+    encounter: TenantEncounterRecord;
+    triage: Record<string, unknown>;
+    latestEvolution: Record<string, unknown>;
+  }) {
     const alerts: Array<{
       label: string;
       severity: 'CRITICAL' | 'WARNING' | 'INFO';
@@ -9414,7 +9997,9 @@ export class EncountersService {
         transfusionReaction !== 'NO'
       ) {
         alerts.push({
-          label: transfusionDescription || `Reacción transfusional: ${transfusionReaction}`,
+          label:
+            transfusionDescription ||
+            `Reacción transfusional: ${transfusionReaction}`,
           severity: 'CRITICAL',
           source: 'Transfusión',
         });
@@ -9425,7 +10010,9 @@ export class EncountersService {
       ['eventosAdversosUrg', 'Evento adverso'],
       ['complicacionesUrg', 'Complicación'],
     ] as const) {
-      const label = this.cleanEmergencySummaryText(input.latestEvolution[fieldKey]);
+      const label = this.cleanEmergencySummaryText(
+        input.latestEvolution[fieldKey],
+      );
 
       if (label) {
         alerts.push({
@@ -9509,7 +10096,9 @@ export class EncountersService {
     responseTime: string,
   ) {
     const requestedAt = this.parseOptionalDate(`${requestDate}T${requestTime}`);
-    const respondedAt = this.parseOptionalDate(`${responseDate}T${responseTime}`);
+    const respondedAt = this.parseOptionalDate(
+      `${responseDate}T${responseTime}`,
+    );
 
     if (!requestedAt || !respondedAt || respondedAt < requestedAt) {
       return null;
@@ -9558,7 +10147,9 @@ export class EncountersService {
     const executorUserLabel =
       this.readStringValue(formData.usuarioEjecutorHosp) ||
       'Pendiente de asignación por enfermería';
-    const executionTime = this.parseOptionalDate(formData.horaEjecucionIndicacionesHosp);
+    const executionTime = this.parseOptionalDate(
+      formData.horaEjecucionIndicacionesHosp,
+    );
     const rows: Array<{
       orderLabel: string;
       responsibleArea: string;
@@ -9568,60 +10159,66 @@ export class EncountersService {
       sourceType: string;
     }> = [];
 
-    this.readObjectArray(formData.medicamentosIndicacionesHosp).forEach((item) => {
-      const medicationName = this.readStringValue(item.medicamento);
-      if (medicationName) {
-        rows.push({
-          orderLabel: medicationName,
-          responsibleArea: 'Farmacia / Enfermería',
-          status: 'PENDIENTE',
-          executorUserLabel,
-          executionTime,
-          sourceType: 'MEDICAMENTO',
-        });
-      }
-    });
-    this.readObjectArray(formData.solucionesIvIndicacionesHosp).forEach((item) => {
-      const solutionType = this.readStringValue(item.tipoSolucion);
-      if (solutionType) {
-        rows.push({
-          orderLabel: solutionType,
-          responsibleArea: 'Enfermería',
-          status: 'PENDIENTE',
-          executorUserLabel,
-          executionTime,
-          sourceType: 'SOLUCION_IV',
-        });
-      }
-    });
-    this.readObjectArray(formData.estudiosSolicitadosIndicacionesHosp).forEach((item) => {
-      const studyType = this.readStringValue(item.tipoEstudio);
-      if (studyType) {
-        rows.push({
-          orderLabel: studyType,
-          responsibleArea: this.inferStudyTargetModule(studyType),
-          status: 'PENDIENTE',
-          executorUserLabel,
-          executionTime,
-          sourceType: 'ESTUDIO',
-        });
-      }
-    });
-    this.readObjectArray(formData.interconsultasSolicitadasIndicacionesHosp).forEach(
+    this.readObjectArray(formData.medicamentosIndicacionesHosp).forEach(
       (item) => {
-        const serviceName = this.readStringValue(item.servicio);
-        if (serviceName) {
+        const medicationName = this.readStringValue(item.medicamento);
+        if (medicationName) {
           rows.push({
-            orderLabel: serviceName,
-            responsibleArea: 'Interconsulta',
+            orderLabel: medicationName,
+            responsibleArea: 'Farmacia / Enfermería',
             status: 'PENDIENTE',
             executorUserLabel,
             executionTime,
-            sourceType: 'INTERCONSULTA',
+            sourceType: 'MEDICAMENTO',
           });
         }
       },
     );
+    this.readObjectArray(formData.solucionesIvIndicacionesHosp).forEach(
+      (item) => {
+        const solutionType = this.readStringValue(item.tipoSolucion);
+        if (solutionType) {
+          rows.push({
+            orderLabel: solutionType,
+            responsibleArea: 'Enfermería',
+            status: 'PENDIENTE',
+            executorUserLabel,
+            executionTime,
+            sourceType: 'SOLUCION_IV',
+          });
+        }
+      },
+    );
+    this.readObjectArray(formData.estudiosSolicitadosIndicacionesHosp).forEach(
+      (item) => {
+        const studyType = this.readStringValue(item.tipoEstudio);
+        if (studyType) {
+          rows.push({
+            orderLabel: studyType,
+            responsibleArea: this.inferStudyTargetModule(studyType),
+            status: 'PENDIENTE',
+            executorUserLabel,
+            executionTime,
+            sourceType: 'ESTUDIO',
+          });
+        }
+      },
+    );
+    this.readObjectArray(
+      formData.interconsultasSolicitadasIndicacionesHosp,
+    ).forEach((item) => {
+      const serviceName = this.readStringValue(item.servicio);
+      if (serviceName) {
+        rows.push({
+          orderLabel: serviceName,
+          responsibleArea: 'Interconsulta',
+          status: 'PENDIENTE',
+          executorUserLabel,
+          executionTime,
+          sourceType: 'INTERCONSULTA',
+        });
+      }
+    });
 
     return rows;
   }
@@ -9629,11 +10226,13 @@ export class EncountersService {
   private buildEmergencyTriageFormData(input: {
     incomingFormData: Record<string, unknown>;
     recordedAt: Date;
-    responsibleUser: (Partial<TriageResponsibleUser> & {
-      id: string;
-      fullName: string;
-      professionalLicense: string | null;
-    }) | null;
+    responsibleUser:
+      | (Partial<TriageResponsibleUser> & {
+          id: string;
+          fullName: string;
+          professionalLicense: string | null;
+        })
+      | null;
   }) {
     const cleanIncomingFormData = { ...input.incomingFormData };
     delete cleanIncomingFormData.tipoRegistro;
@@ -9671,7 +10270,8 @@ export class EncountersService {
       ),
       triageLegalMedico:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
-      triageLegalCedula: input.responsibleUser?.professionalLicense ?? 'Sin cédula',
+      triageLegalCedula:
+        input.responsibleUser?.professionalLicense ?? 'Sin cédula',
     };
     this.assertEmergencyTriageClinicalQuickState(baseFormData);
     this.normalizeAndAssertEmergencyTriageDestination(baseFormData);
@@ -9708,16 +10308,24 @@ export class EncountersService {
       )
         ? 'Sí'
         : 'No',
-      alertasAutomaticas: alertasAutomaticas.map((alert) => alert.message).join('\n'),
+      alertasAutomaticas: alertasAutomaticas
+        .map((alert) => alert.message)
+        .join('\n'),
       alertasAutomaticasSnapshot: alertasAutomaticas,
     };
   }
 
-  private hasSelectedTriageClinicalDiscriminator(formData: Record<string, unknown>) {
-    return triageClinicalDiscriminatorFields.some(({ key }) => formData[key] === true);
+  private hasSelectedTriageClinicalDiscriminator(
+    formData: Record<string, unknown>,
+  ) {
+    return triageClinicalDiscriminatorFields.some(
+      ({ key }) => formData[key] === true,
+    );
   }
 
-  private assertEmergencyTriageClinicalQuickState(formData: Record<string, unknown>) {
+  private assertEmergencyTriageClinicalQuickState(
+    formData: Record<string, unknown>,
+  ) {
     const missingFields = emergencyTriageClinicalQuickStateFields
       .filter(({ key }) => !this.hasCapturedValue(formData[key]))
       .map(({ label }) => label);
@@ -9799,11 +10407,14 @@ export class EncountersService {
       | null,
   ) {
     const roleText = (responsibleUser?.roles ?? [])
-      .map((assignment) => `${assignment.role.code} ${assignment.role.name}`.toLowerCase())
+      .map((assignment) =>
+        `${assignment.role.code} ${assignment.role.name}`.toLowerCase(),
+      )
       .join(' ');
 
     if (roleText.includes('paramed')) return 'Paramédico';
-    if (roleText.includes('enferm') || roleText.includes('nurse')) return 'Enfermería';
+    if (roleText.includes('enferm') || roleText.includes('nurse'))
+      return 'Enfermería';
     if (
       roleText.includes('medic') ||
       roleText.includes('physician') ||
@@ -9867,7 +10478,9 @@ export class EncountersService {
         (allowedValue) => allowedValue === requiereReevaluacion,
       )
     ) {
-      throw new BadRequestException('Indica si el paciente requiere reevaluación');
+      throw new BadRequestException(
+        'Indica si el paciente requiere reevaluación',
+      );
     }
 
     if (requiereReevaluacion !== 'SI') {
@@ -9881,7 +10494,9 @@ export class EncountersService {
     const nuevaPrioridad = this.readStringValue(
       formData.nuevaPrioridadReevaluacion,
     );
-    const motivoCambio = this.readStringValue(formData.motivoCambioReevaluacion);
+    const motivoCambio = this.readStringValue(
+      formData.motivoCambioReevaluacion,
+    );
 
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaReevaluacion)) {
       throw new BadRequestException('Captura una hora de reevaluación válida');
@@ -9896,11 +10511,15 @@ export class EncountersService {
     }
 
     if (!motivoCambio) {
-      throw new BadRequestException('Captura el motivo del cambio de reevaluación');
+      throw new BadRequestException(
+        'Captura el motivo del cambio de reevaluación',
+      );
     }
   }
 
-  private normalizeAndAssertEmergencyTriageOrigin(formData: Record<string, unknown>) {
+  private normalizeAndAssertEmergencyTriageOrigin(
+    formData: Record<string, unknown>,
+  ) {
     const procedencia = this.readStringValue(formData.procedenciaIngreso);
     if (
       !emergencyTriageOriginAllowedValues.some(
@@ -9947,7 +10566,9 @@ export class EncountersService {
 
     const telefono = this.readStringValue(formData.telefonoAcompanante);
     if (telefono && !/^[0-9+\-\s()]{7,20}$/.test(telefono)) {
-      throw new BadRequestException('Captura un teléfono de acompañante válido');
+      throw new BadRequestException(
+        'Captura un teléfono de acompañante válido',
+      );
     }
   }
 
@@ -10033,10 +10654,12 @@ export class EncountersService {
       professionalLicense: string | null;
     } | null;
   }) {
-    const latestInitialNoteFormData =
-      this.normalizeJsonObject(input.latestInitialNoteFormDataJson);
-    const latestEvolutionFormData =
-      this.normalizeJsonObject(input.latestEvolutionFormDataJson);
+    const latestInitialNoteFormData = this.normalizeJsonObject(
+      input.latestInitialNoteFormDataJson,
+    );
+    const latestEvolutionFormData = this.normalizeJsonObject(
+      input.latestEvolutionFormDataJson,
+    );
     const baseFormData: Record<string, unknown> = {
       ...input.incomingFormData,
       tipoRegistro: 'Evolución en urgencias',
@@ -10047,9 +10670,14 @@ export class EncountersService {
         this.readStringValue(input.incomingFormData.horaEvolucionUrg) ||
         input.recordedAt.toISOString().slice(11, 16),
       diaEvolucionUrg: String(
-        this.calculateEmergencyEvolutionDay(input.encounter.openedAt, input.recordedAt),
+        this.calculateEmergencyEvolutionDay(
+          input.encounter.openedAt,
+          input.recordedAt,
+        ),
       ),
-      resultadosEstudiosIntegrados: this.buildEmergencyExternalResultsSummary(input.encounter),
+      resultadosEstudiosIntegrados: this.buildEmergencyExternalResultsSummary(
+        input.encounter,
+      ),
       evolucionUrgLegalNombre:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       evolucionUrgLegalCedula:
@@ -10062,9 +10690,10 @@ export class EncountersService {
           .join(' · ') || 'Lugar no configurado',
     };
 
-    const sourceFormData = Object.keys(latestEvolutionFormData).length > 0
-      ? latestEvolutionFormData
-      : latestInitialNoteFormData;
+    const sourceFormData =
+      Object.keys(latestEvolutionFormData).length > 0
+        ? latestEvolutionFormData
+        : latestInitialNoteFormData;
     const vitalSnapshotMap: Record<string, unknown> = {
       taSistolicaEvolUrg:
         latestEvolutionFormData.taSistolicaEvolUrg ??
@@ -10072,17 +10701,24 @@ export class EncountersService {
       taDiastolicaEvolUrg:
         latestEvolutionFormData.taDiastolicaEvolUrg ??
         latestInitialNoteFormData.taDiastolicaNota,
-      fcEvolUrg: latestEvolutionFormData.fcEvolUrg ?? latestInitialNoteFormData.fcNota,
-      frEvolUrg: latestEvolutionFormData.frEvolUrg ?? latestInitialNoteFormData.frNota,
+      fcEvolUrg:
+        latestEvolutionFormData.fcEvolUrg ?? latestInitialNoteFormData.fcNota,
+      frEvolUrg:
+        latestEvolutionFormData.frEvolUrg ?? latestInitialNoteFormData.frNota,
       tempEvolUrg:
-        latestEvolutionFormData.tempEvolUrg ?? latestInitialNoteFormData.tempNota,
+        latestEvolutionFormData.tempEvolUrg ??
+        latestInitialNoteFormData.tempNota,
       spo2EvolUrg:
-        latestEvolutionFormData.spo2EvolUrg ?? latestInitialNoteFormData.spo2Nota,
-      evaEvolUrg: latestEvolutionFormData.evaEvolUrg ?? latestInitialNoteFormData.evaNota,
+        latestEvolutionFormData.spo2EvolUrg ??
+        latestInitialNoteFormData.spo2Nota,
+      evaEvolUrg:
+        latestEvolutionFormData.evaEvolUrg ?? latestInitialNoteFormData.evaNota,
       glucosaEvolUrg:
-        latestEvolutionFormData.glucosaEvolUrg ?? latestInitialNoteFormData.glucosaNota,
+        latestEvolutionFormData.glucosaEvolUrg ??
+        latestInitialNoteFormData.glucosaNota,
       glasgowEvolUrg:
-        latestEvolutionFormData.glasgowEvolUrg ?? latestInitialNoteFormData.glasgowNota,
+        latestEvolutionFormData.glasgowEvolUrg ??
+        latestInitialNoteFormData.glasgowNota,
       diagnosticosEvolucionUrg:
         latestEvolutionFormData.diagnosticosEvolucionUrg ??
         this.buildEmergencyEvolutionDiagnoses(latestInitialNoteFormData),
@@ -10108,8 +10744,12 @@ export class EncountersService {
       informacionBrindadaUrg:
         latestEvolutionFormData.informacionBrindadaUrg ??
         [
-          this.readStringValue(latestInitialNoteFormData.consentimientoUrgenciasNota),
-          this.readStringValue(latestInitialNoteFormData.tipoConsentimientoNota),
+          this.readStringValue(
+            latestInitialNoteFormData.consentimientoUrgenciasNota,
+          ),
+          this.readStringValue(
+            latestInitialNoteFormData.tipoConsentimientoNota,
+          ),
           this.readStringValue(
             latestInitialNoteFormData.observacionesConsentimientoNota,
           ),
@@ -10131,7 +10771,8 @@ export class EncountersService {
       !this.hasCapturedValue(baseFormData.diagnosticosEvolucionUrg) &&
       Array.isArray(sourceFormData.diagnosticosEvolucionUrg)
     ) {
-      baseFormData.diagnosticosEvolucionUrg = sourceFormData.diagnosticosEvolucionUrg;
+      baseFormData.diagnosticosEvolucionUrg =
+        sourceFormData.diagnosticosEvolucionUrg;
     }
 
     baseFormData.diagnosticosEvolucionUrg =
@@ -10158,10 +10799,12 @@ export class EncountersService {
     } | null;
     documentType: EmergencyOrderDocumentType;
   }) {
-    const latestInitialNoteFormData =
-      this.normalizeJsonObject(input.latestInitialNoteFormDataJson);
-    const latestEvolutionFormData =
-      this.normalizeJsonObject(input.latestEvolutionFormDataJson);
+    const latestInitialNoteFormData = this.normalizeJsonObject(
+      input.latestInitialNoteFormDataJson,
+    );
+    const latestEvolutionFormData = this.normalizeJsonObject(
+      input.latestEvolutionFormDataJson,
+    );
     const baseFormData: Record<string, unknown> = {
       ...input.incomingFormData,
       tipoRegistro: this.getEmergencyOrderDocumentLabel(input.documentType),
@@ -10185,8 +10828,9 @@ export class EncountersService {
       this.readStringValue(latestEvolutionFormData.estudiosPendientesUrg) ||
       this.readStringValue(latestInitialNoteFormData.estudiosPlan) ||
       this.readStringValue(latestInitialNoteFormData.estudiosAnalisis);
-    const interventionSuggestion =
-      this.readStringValue(latestInitialNoteFormData.intervencionesPlan);
+    const interventionSuggestion = this.readStringValue(
+      latestInitialNoteFormData.intervencionesPlan,
+    );
 
     if (
       !this.hasCapturedValue(baseFormData.medicamentosOrdenesUrg) &&
@@ -10285,7 +10929,9 @@ export class EncountersService {
     const initialNote = this.normalizeJsonObject(input.initialNoteFormDataJson);
     const evolution = this.normalizeJsonObject(input.evolutionFormDataJson);
     const orders = this.normalizeJsonObject(input.ordersFormDataJson);
-    const consultation = this.normalizeJsonObject(input.consultationFormDataJson);
+    const consultation = this.normalizeJsonObject(
+      input.consultationFormDataJson,
+    );
     const facilityName = input.encounter.facility?.name ?? '';
     const careLocation =
       [input.encounter.facility?.name, input.encounter.serviceArea?.name]
@@ -10310,7 +10956,8 @@ export class EncountersService {
       lugarAtencionEgresoUrg: careLocation,
       egresoLegalNombre: responsibleName,
       egresoLegalCedula: responsibleLicense,
-      egresoLegalEspecialidad: input.encounter.specialty?.name ?? 'Sin especialidad',
+      egresoLegalEspecialidad:
+        input.encounter.specialty?.name ?? 'Sin especialidad',
       egresoLegalLugar: careLocation,
     };
 
@@ -10333,8 +10980,9 @@ export class EncountersService {
       evolucionEstanciaEgresoUrg:
         this.readStringValue(evolution.justificacionClinicaNom004) ||
         this.readStringValue(evolution.referenciaPacienteUrg),
-      medicamentosEgresoUrg:
-        this.summarizeEmergencyOrderMedications(orders.medicamentosOrdenesUrg),
+      medicamentosEgresoUrg: this.summarizeEmergencyOrderMedications(
+        orders.medicamentosOrdenesUrg,
+      ),
       cuidadosGeneralesEgresoUrg:
         this.readStringValue(orders.monitoreoOrdenes) ||
         this.readStringValue(evolution.seguimientoEvolUrg),
@@ -10350,9 +10998,13 @@ export class EncountersService {
       educacionOtorgadaEgresoUrg:
         'Se explica diagnóstico, tratamiento recibido, indicaciones, datos de alarma y plan de seguimiento.',
       comprensionPacienteEgresoUrg: 'ADECUADA',
-      fechaHoraReferenciaTrasladoUrg: input.recordedAt.toISOString().slice(0, 16),
+      fechaHoraReferenciaTrasladoUrg: input.recordedAt
+        .toISOString()
+        .slice(0, 16),
       unidadOrigenTrasladoUrg: facilityName,
-      unidadDestinoTrasladoUrg: this.readStringValue(baseFormData.destinoEgresoUrg),
+      unidadDestinoTrasladoUrg: this.readStringValue(
+        baseFormData.destinoEgresoUrg,
+      ),
       taTrasladoUrg:
         this.readStringValue(initialNote.taSistolicaNota) &&
         this.readStringValue(initialNote.taDiastolicaNota)
@@ -10371,15 +11023,18 @@ export class EncountersService {
       resultadosRelevantesTrasladoUrg:
         this.readStringValue(evolution.resultadosEstudiosIntegrados) ||
         this.readStringValue(initialNote.estudiosAnalisis),
-      tratamientoPrevioTrasladoUrg:
-        this.readStringValue(orders.estadoOrdenesTrazabilidad),
+      tratamientoPrevioTrasladoUrg: this.readStringValue(
+        orders.estadoOrdenesTrazabilidad,
+      ),
       pronosticoTrasladoUrg:
         this.readStringValue(initialNote.pronosticoNota) ||
         this.readStringValue(initialNote.resumenPronostico),
       motivoTrasladoUrg:
         this.readStringValue(baseFormData.motivoTrasladoUrg) ||
         this.readStringValue(baseFormData.tipoEgresoUrg),
-      medicoReceptorTrasladoUrg: this.readStringValue(baseFormData.medicoReceptorUrg),
+      medicoReceptorTrasladoUrg: this.readStringValue(
+        baseFormData.medicoReceptorUrg,
+      ),
       institucionConsentimientoUrg: facilityName,
       razonSocialConsentimientoUrg: facilityName,
       tituloConsentimientoUrg: 'Consentimiento informado',
@@ -10394,7 +11049,9 @@ export class EncountersService {
       horaCertificadoDefuncionUrg: recordedTime,
       elaboraCertificadoDefuncionUrg: responsibleName,
       cedulaCertificadoDefuncionUrg: responsibleLicense,
-      registroFechaHoraCertificadoDefuncionUrg: input.recordedAt.toISOString().slice(0, 16),
+      registroFechaHoraCertificadoDefuncionUrg: input.recordedAt
+        .toISOString()
+        .slice(0, 16),
     };
 
     for (const [fieldKey, value] of Object.entries(fieldSuggestions)) {
@@ -10427,14 +11084,22 @@ export class EncountersService {
       professionalLicense: string | null;
     } | null;
   }) {
-    const initialNote = this.normalizeJsonObject(input.latestInitialNoteFormDataJson);
-    const evolution = this.normalizeJsonObject(input.latestEvolutionFormDataJson);
+    const initialNote = this.normalizeJsonObject(
+      input.latestInitialNoteFormDataJson,
+    );
+    const evolution = this.normalizeJsonObject(
+      input.latestEvolutionFormDataJson,
+    );
     const orders = this.normalizeJsonObject(input.latestOrdersFormDataJson);
     const baseFormData: Record<string, unknown> = {
       ...input.incomingFormData,
       tipoRegistro: 'Interconsultas',
-      fechaInterconsulta: this.readStringValue(input.incomingFormData.fechaInterconsulta) || input.recordedAt.toISOString().slice(0, 10),
-      horaInterconsulta: this.readStringValue(input.incomingFormData.horaInterconsulta) || input.recordedAt.toISOString().slice(11, 16),
+      fechaInterconsulta:
+        this.readStringValue(input.incomingFormData.fechaInterconsulta) ||
+        input.recordedAt.toISOString().slice(0, 10),
+      horaInterconsulta:
+        this.readStringValue(input.incomingFormData.horaInterconsulta) ||
+        input.recordedAt.toISOString().slice(11, 16),
       medicoSolicitanteInterconsulta:
         input.responsibleUser?.fullName ?? 'Sin profesional responsable',
       cedulaSolicitanteInterconsulta:
@@ -10452,12 +11117,17 @@ export class EncountersService {
           .join(' · ') || 'Lugar no configurado',
     };
     const priority = this.readStringValue(baseFormData.prioridadInterconsulta);
-    const requestedAt = this.combineDateAndTime(
-      baseFormData.fechaInterconsulta,
-      baseFormData.horaInterconsulta,
-    ) ?? input.recordedAt;
-    const receivedAt = this.parseOptionalDate(baseFormData.horaRecepcionInterconsulta);
-    const respondedAt = this.parseOptionalDate(baseFormData.horaRespuestaInterconsulta);
+    const requestedAt =
+      this.combineDateAndTime(
+        baseFormData.fechaInterconsulta,
+        baseFormData.horaInterconsulta,
+      ) ?? input.recordedAt;
+    const receivedAt = this.parseOptionalDate(
+      baseFormData.horaRecepcionInterconsulta,
+    );
+    const respondedAt = this.parseOptionalDate(
+      baseFormData.horaRespuestaInterconsulta,
+    );
 
     if (!this.hasCapturedValue(baseFormData.prioridadInterconsulta)) {
       baseFormData.prioridadInterconsulta =
@@ -10480,16 +11150,22 @@ export class EncountersService {
         this.readStringValue(initialNote.resumenPronostico) ||
         this.readStringValue(initialNote.estudiosAnalisis);
     }
-    if (!this.hasCapturedValue(baseFormData.diagnosticoRelacionadoInterconsulta)) {
-      baseFormData.diagnosticoRelacionadoInterconsulta =
-        this.readStringValue(initialNote.diagnosticoNota);
+    if (
+      !this.hasCapturedValue(baseFormData.diagnosticoRelacionadoInterconsulta)
+    ) {
+      baseFormData.diagnosticoRelacionadoInterconsulta = this.readStringValue(
+        initialNote.diagnosticoNota,
+      );
     }
     if (!this.hasCapturedValue(baseFormData.cie10Interconsulta)) {
-      baseFormData.cie10Interconsulta = this.readStringValue(initialNote.cie10Nota);
+      baseFormData.cie10Interconsulta = this.readStringValue(
+        initialNote.cie10Nota,
+      );
     }
     if (!this.hasCapturedValue(baseFormData.ordenesAsociadasInterconsulta)) {
-      baseFormData.ordenesAsociadasInterconsulta =
-        this.readStringValue(orders.estadoOrdenesTrazabilidad);
+      baseFormData.ordenesAsociadasInterconsulta = this.readStringValue(
+        orders.estadoOrdenesTrazabilidad,
+      );
     }
 
     return {
@@ -10520,7 +11196,9 @@ export class EncountersService {
   private buildEmergencyEvolutionDiagnoses(
     latestInitialNoteFormData: Record<string, unknown>,
   ) {
-    const diagnosis = this.readStringValue(latestInitialNoteFormData.diagnosticoNota);
+    const diagnosis = this.readStringValue(
+      latestInitialNoteFormData.diagnosticoNota,
+    );
     const cie10 = this.readStringValue(latestInitialNoteFormData.cie10Nota);
 
     return diagnosis || cie10
@@ -10543,7 +11221,9 @@ export class EncountersService {
     const medicationNames = medications
       .map((item) => this.readStringValue(item.medicamento).trim())
       .filter(Boolean);
-    const lowerMedicationNames = medicationNames.map((name) => name.toLowerCase());
+    const lowerMedicationNames = medicationNames.map((name) =>
+      name.toLowerCase(),
+    );
     const allergyMatches = input.allergies.filter((allergy) =>
       lowerMedicationNames.some((medication) =>
         medication.includes(allergy.toLowerCase()),
@@ -10605,14 +11285,16 @@ export class EncountersService {
     const rows: string[] = [];
 
     this.normalizeObjectArray(input.medications).forEach((item, index) => {
-      const medication = this.readStringValue(item.medicamento) || `Medicamento ${index + 1}`;
+      const medication =
+        this.readStringValue(item.medicamento) || `Medicamento ${index + 1}`;
       rows.push(
         `${medication} | pendiente | ${input.responsibleUserName} | sin ejecución | enfermería`,
       );
     });
 
     this.normalizeObjectArray(input.studies).forEach((item, index) => {
-      const study = this.readStringValue(item.estudio) || `Estudio ${index + 1}`;
+      const study =
+        this.readStringValue(item.estudio) || `Estudio ${index + 1}`;
       const type = this.readStringValue(item.tipo) || 'auxiliar';
       const status = this.readStringValue(item.estado) || 'PENDIENTE';
       rows.push(
@@ -10621,7 +11303,8 @@ export class EncountersService {
     });
 
     this.normalizeObjectArray(input.solutions).forEach((item, index) => {
-      const solution = this.readStringValue(item.tipoSolucion) || `Solución ${index + 1}`;
+      const solution =
+        this.readStringValue(item.tipoSolucion) || `Solución ${index + 1}`;
       rows.push(
         `${solution} | pendiente | ${input.responsibleUserName} | sin ejecución | enfermería`,
       );
@@ -10713,7 +11396,8 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const studies = this.normalizeConsultationHistoryPriorStudiesFormData(
       input.formData.estudiosPreviosRegistrados,
     );
@@ -10760,11 +11444,17 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isEmergencyNursingSheetRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyNursingSheetRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
 
@@ -10807,10 +11497,14 @@ export class EncountersService {
     const nursingSheetId = rows[0]?.id;
     if (!nursingSheetId) return;
 
-    await this.prisma.$executeRaw`DELETE FROM "EmergencyNursingMedicationAdministration" WHERE "nursingSheetId" = ${nursingSheetId}`;
-    await this.prisma.$executeRaw`DELETE FROM "EmergencyNursingProcedure" WHERE "nursingSheetId" = ${nursingSheetId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "EmergencyNursingMedicationAdministration" WHERE "nursingSheetId" = ${nursingSheetId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "EmergencyNursingProcedure" WHERE "nursingSheetId" = ${nursingSheetId}`;
 
-    for (const [sortOrder, medication] of this.readObjectArray(input.formData.medicacionAdministradaEnfUrg).entries()) {
+    for (const [sortOrder, medication] of this.readObjectArray(
+      input.formData.medicacionAdministradaEnfUrg,
+    ).entries()) {
       const medicationName = this.readStringValue(medication.medicamento);
       if (!medicationName) continue;
       await this.prisma.$executeRaw`
@@ -10825,7 +11519,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [sortOrder, procedure] of this.readObjectArray(input.formData.procedimientosEnfermeriaEnfUrg).entries()) {
+    for (const [sortOrder, procedure] of this.readObjectArray(
+      input.formData.procedimientosEnfermeriaEnfUrg,
+    ).entries()) {
       const procedureName = this.readStringValue(procedure.procedimiento);
       if (!procedureName) continue;
       await this.prisma.$executeRaw`
@@ -10854,14 +11550,20 @@ export class EncountersService {
     metadata: Record<string, unknown>;
   }) {
     if (
-      !this.isEmergencyEvolutionRecord(input.encounter.encounterType, input.tabKey)
+      !this.isEmergencyEvolutionRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
     ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const nursingSnapshot = {};
-    const evolutionDate = this.parseOptionalDate(input.formData.fechaEvolucionUrg);
+    const evolutionDate = this.parseOptionalDate(
+      input.formData.fechaEvolucionUrg,
+    );
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const normalizedDiagnoses = this.normalizeEmergencyEvolutionDiagnoses(
@@ -10944,7 +11646,9 @@ export class EncountersService {
         "updatedAt" = NOW()
     `;
 
-    const [emergencyEvolution] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+    const [emergencyEvolution] = await this.prisma.$queryRaw<
+      Array<{ id: string }>
+    >`
       SELECT "id"
       FROM "EmergencyEvolution"
       WHERE "sectionRecordId" = ${input.sectionRecordId}
@@ -11043,7 +11747,10 @@ export class EncountersService {
         AND "deletedAt" IS NULL
     `;
 
-    for (const [displayOrder, diagnosticResult] of input.diagnosticResults.entries()) {
+    for (const [
+      displayOrder,
+      diagnosticResult,
+    ] of input.diagnosticResults.entries()) {
       const studyPerformedAt = this.parseOptionalDate(
         diagnosticResult.fechaHoraEstudio,
       );
@@ -11096,15 +11803,24 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isEmergencyOrdersRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyOrdersRecord(input.encounter.encounterType, input.tabKey)
+    ) {
       return;
     }
 
     const orderSetId = input.sectionRecordId;
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
-    const medications = this.normalizeObjectArray(input.formData.medicamentosOrdenesUrg);
-    const solutions = this.normalizeObjectArray(input.formData.solucionesIntravenosasOrdenes);
-    const studies = this.normalizeObjectArray(input.formData.estudiosSolicitadosOrdenes);
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const medications = this.normalizeObjectArray(
+      input.formData.medicamentosOrdenesUrg,
+    );
+    const solutions = this.normalizeObjectArray(
+      input.formData.solucionesIntravenosasOrdenes,
+    );
+    const studies = this.normalizeObjectArray(
+      input.formData.estudiosSolicitadosOrdenes,
+    );
     const documentType = this.resolveEmergencyOrderDocumentType({
       noteType: this.readStringValue(input.formData.tipoRegistro),
       formData: input.formData,
@@ -11113,10 +11829,10 @@ export class EncountersService {
     const documentLabel = this.getEmergencyOrderDocumentLabel(documentType);
     const isMedicalOrder = documentType === 'ORDEN_MEDICA';
     const transfusionApplies =
-      isMedicalOrder &&
-      input.formData.transfusionAplica === true ||
+      (isMedicalOrder && input.formData.transfusionAplica === true) ||
       (isMedicalOrder &&
-        this.readStringValue(input.formData.transfusionAplica).toLowerCase() === 'true');
+        this.readStringValue(input.formData.transfusionAplica).toLowerCase() ===
+          'true');
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
 
@@ -11195,9 +11911,13 @@ export class EncountersService {
           await this.insertEmergencyOrderTrace(transaction, {
             tenantId: input.tenantId,
             orderSetId,
-            orderLabel: this.readStringValue(medication.medicamento) || `Medicamento ${index + 1}`,
+            orderLabel:
+              this.readStringValue(medication.medicamento) ||
+              `Medicamento ${index + 1}`,
             status: 'PROGRAMADA',
-            responsibleName: this.readStringValue(input.formData.ordenesLegalMedico),
+            responsibleName: this.readStringValue(
+              input.formData.ordenesLegalMedico,
+            ),
             area: 'ENFERMERIA',
             sourceType: 'MEDICAMENTO',
             sourceIndex: index,
@@ -11223,9 +11943,13 @@ export class EncountersService {
           await this.insertEmergencyOrderTrace(transaction, {
             tenantId: input.tenantId,
             orderSetId,
-            orderLabel: this.readStringValue(solution.tipoSolucion) || `Solución ${index + 1}`,
+            orderLabel:
+              this.readStringValue(solution.tipoSolucion) ||
+              `Solución ${index + 1}`,
             status: 'PROGRAMADA',
-            responsibleName: this.readStringValue(input.formData.ordenesLegalMedico),
+            responsibleName: this.readStringValue(
+              input.formData.ordenesLegalMedico,
+            ),
             area: 'ENFERMERIA',
             sourceType: 'SOLUCION',
             sourceIndex: index,
@@ -11252,9 +11976,12 @@ export class EncountersService {
           await this.insertEmergencyOrderTrace(transaction, {
             tenantId: input.tenantId,
             orderSetId,
-            orderLabel: this.readStringValue(study.estudio) || `Estudio ${index + 1}`,
+            orderLabel:
+              this.readStringValue(study.estudio) || `Estudio ${index + 1}`,
             status: this.normalizeEmergencyOrderTraceStatus(study.estado),
-            responsibleName: this.readStringValue(input.formData.ordenesLegalMedico),
+            responsibleName: this.readStringValue(
+              input.formData.ordenesLegalMedico,
+            ),
             area: studyType === 'LABORATORIO' ? 'LABORATORIO' : 'GABINETE',
             sourceType: 'ESTUDIO',
             sourceIndex: index,
@@ -11319,7 +12046,9 @@ export class EncountersService {
   private normalizeEmergencyOrderTraceStatus(value: unknown) {
     const status = this.readStringValue(value);
 
-    if ((emergencyOrderAllowedTraceStatuses as readonly string[]).includes(status)) {
+    if (
+      (emergencyOrderAllowedTraceStatuses as readonly string[]).includes(status)
+    ) {
       return status;
     }
 
@@ -11346,14 +12075,20 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isEmergencyDischargeRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyDischargeRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const dischargedAt =
-      this.parseOptionalDate(input.formData.fechaHoraEgresoUrg) ?? input.recordedAt;
+      this.parseOptionalDate(input.formData.fechaHoraEgresoUrg) ??
+      input.recordedAt;
     const deathCertificatePreparedAt = this.parseOptionalDate(
       [
         this.readStringValue(input.formData.fechaCertificadoDefuncionUrg),
@@ -11527,11 +12262,17 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isEmergencyDocumentRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyDocumentRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const folio =
       this.readStringValue(input.metadata.folio) ||
       this.readStringValue(input.formData.documentoFolio) ||
@@ -11593,11 +12334,17 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isHospitalDocumentRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalDocumentRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const folio =
       this.readStringValue(input.metadata.folio) ||
       this.readStringValue(input.formData.documentoFolio) ||
@@ -11667,11 +12414,16 @@ export class EncountersService {
     const hospitalDocumentId = storedRows[0]?.id;
     if (!hospitalDocumentId) return;
 
-    await this.prisma.$executeRaw`DELETE FROM "HospitalDocumentLabStudy" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
-    await this.prisma.$executeRaw`DELETE FROM "HospitalDocumentImagingStudy" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
-    await this.prisma.$executeRaw`DELETE FROM "HospitalDocumentSigner" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "HospitalDocumentLabStudy" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "HospitalDocumentImagingStudy" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "HospitalDocumentSigner" WHERE "hospitalDocumentId" = ${hospitalDocumentId}`;
 
-    const labStudies = this.readObjectArray(input.formData.documentoEstudiosLaboratorio);
+    const labStudies = this.readObjectArray(
+      input.formData.documentoEstudiosLaboratorio,
+    );
     for (const [index, study] of labStudies.entries()) {
       const studyType = this.readStringValue(study.tipoEstudio);
       if (!studyType) continue;
@@ -11690,7 +12442,9 @@ export class EncountersService {
       `;
     }
 
-    const imagingStudies = this.readObjectArray(input.formData.documentoEstudiosImagen);
+    const imagingStudies = this.readObjectArray(
+      input.formData.documentoEstudiosImagen,
+    );
     const fallbackImagingStudies =
       imagingStudies.length > 0
         ? imagingStudies
@@ -11702,7 +12456,8 @@ export class EncountersService {
                 regionAnatomica: input.formData.documentoRegionAnatomica,
                 proyeccion: input.formData.documentoProyeccion,
                 prioridad: input.formData.documentoPrioridadImagen,
-                indicacionClinica: input.formData.documentoIndicacionClinicaImagen,
+                indicacionClinica:
+                  input.formData.documentoIndicacionClinicaImagen,
                 alergiaContraste: input.formData.documentoAlergiaContraste,
                 embarazo: input.formData.documentoEmbarazo,
                 funcionRenal: input.formData.documentoFuncionRenal,
@@ -11735,13 +12490,13 @@ export class EncountersService {
         signerName: input.formData.documentoNombrePacienteConsentimiento,
         signatureLabel: null,
       },
-      ...this.readObjectArray(input.formData.documentoTestigosConsentimiento).map(
-        (signer) => ({
-          signerType: 'TESTIGO',
-          signerName: signer.nombre,
-          signatureLabel: signer.firma,
-        }),
-      ),
+      ...this.readObjectArray(
+        input.formData.documentoTestigosConsentimiento,
+      ).map((signer) => ({
+        signerType: 'TESTIGO',
+        signerName: signer.nombre,
+        signatureLabel: signer.firma,
+      })),
     ];
     for (const [index, signer] of signers.entries()) {
       const signerName = this.readStringValue(signer.signerName);
@@ -11784,7 +12539,8 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const folio =
       this.readStringValue(input.metadata.folio) ||
       this.readStringValue(input.formData.documentoFolio) ||
@@ -11851,7 +12607,8 @@ export class EncountersService {
     const supportingDocumentId = storedRows[0]?.id;
     if (!supportingDocumentId) return;
 
-    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureDocumentLabStudy" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "AmbulatoryProcedureDocumentLabStudy" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
 
     if (input.noteType === 'Solicitud de laboratorio') {
       const labStudies = this.readObjectArray(
@@ -11874,11 +12631,16 @@ export class EncountersService {
       }
     }
 
-    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureLabRequest" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
-    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureImagingRequest" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
-    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureReferralDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
-    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureConsentDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
-    await this.prisma.$executeRaw`DELETE FROM "AmbulatoryProcedureCertificateDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "AmbulatoryProcedureLabRequest" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "AmbulatoryProcedureImagingRequest" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "AmbulatoryProcedureReferralDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "AmbulatoryProcedureConsentDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "AmbulatoryProcedureCertificateDocument" WHERE "supportingDocumentId" = ${supportingDocumentId}`;
 
     if (input.noteType === 'Solicitud de laboratorio') {
       await this.prisma.$executeRaw`
@@ -11980,11 +12742,17 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isHospitalAdmissionRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalAdmissionRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const admittedAt = this.parseOptionalDate(
       `${this.readStringValue(input.formData.fechaIngresoHosp)}T${this.readStringValue(input.formData.horaIngresoHosp)}`,
     );
@@ -12135,11 +12903,17 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isHospitalEvolutionRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalEvolutionRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const previousEvolutionRecordId = this.readStringValue(
@@ -12265,9 +13039,9 @@ export class EncountersService {
       DELETE FROM "HospitalEvolutionDiagnosis" WHERE "hospitalEvolutionId" = ${storedEvolutionId}
     `;
 
-    for (const [index, result] of this
-      .readObjectArray(input.formData.resultadosEstudiosEvolHosp)
-      .entries()) {
+    for (const [index, result] of this.readObjectArray(
+      input.formData.resultadosEstudiosEvolHosp,
+    ).entries()) {
       const studyName = this.readStringValue(result.estudio);
       const resultDate = this.parseOptionalDate(result.fecha);
 
@@ -12289,9 +13063,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, diagnosis] of this
-      .readObjectArray(input.formData.diagnosticosActivosEvolHosp)
-      .entries()) {
+    for (const [index, diagnosis] of this.readObjectArray(
+      input.formData.diagnosticosActivosEvolHosp,
+    ).entries()) {
       const diagnosisText = this.readStringValue(diagnosis.diagnostico);
 
       if (!diagnosisText) {
@@ -12334,7 +13108,8 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const orderId = randomUUID();
@@ -12410,9 +13185,9 @@ export class EncountersService {
       DELETE FROM "HospitalOrderTrace" WHERE "orderId" = ${storedOrderId}
     `;
 
-    for (const [index, medication] of this
-      .readObjectArray(input.formData.medicamentosIndicacionesHosp)
-      .entries()) {
+    for (const [index, medication] of this.readObjectArray(
+      input.formData.medicamentosIndicacionesHosp,
+    ).entries()) {
       const medicationName = this.readStringValue(medication.medicamento);
 
       if (!medicationName) {
@@ -12433,9 +13208,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, solution] of this
-      .readObjectArray(input.formData.solucionesIvIndicacionesHosp)
-      .entries()) {
+    for (const [index, solution] of this.readObjectArray(
+      input.formData.solucionesIvIndicacionesHosp,
+    ).entries()) {
       const solutionType = this.readStringValue(solution.tipoSolucion);
       const volumeMl = this.readNumericValue(solution.volumenMl);
 
@@ -12455,9 +13230,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, study] of this
-      .readObjectArray(input.formData.estudiosSolicitadosIndicacionesHosp)
-      .entries()) {
+    for (const [index, study] of this.readObjectArray(
+      input.formData.estudiosSolicitadosIndicacionesHosp,
+    ).entries()) {
       const studyType = this.readStringValue(study.tipoEstudio);
 
       if (!studyType) {
@@ -12478,9 +13253,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, consultation] of this
-      .readObjectArray(input.formData.interconsultasSolicitadasIndicacionesHosp)
-      .entries()) {
+    for (const [index, consultation] of this.readObjectArray(
+      input.formData.interconsultasSolicitadasIndicacionesHosp,
+    ).entries()) {
       const serviceName = this.readStringValue(consultation.servicio);
 
       if (!serviceName) {
@@ -12501,7 +13276,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, trace] of this.buildHospitalOrderTraceRows(input.formData).entries()) {
+    for (const [index, trace] of this.buildHospitalOrderTraceRows(
+      input.formData,
+    ).entries()) {
       await this.prisma.$executeRaw`
         INSERT INTO "HospitalOrderTrace" (
           "id", "tenantId", "encounterId", "patientId", "orderId", "orderLabel",
@@ -12529,14 +13306,26 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isHospitalConsultationRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalConsultationRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
-    const requestDate = this.parseOptionalDate(input.formData.fechaSolicitudInterHosp);
-    const responseDate = this.parseOptionalDate(input.formData.fechaRespuestaInterHosp);
-    const closedAt = this.parseOptionalDate(input.formData.fechaCierreInterHosp);
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const requestDate = this.parseOptionalDate(
+      input.formData.fechaSolicitudInterHosp,
+    );
+    const responseDate = this.parseOptionalDate(
+      input.formData.fechaRespuestaInterHosp,
+    );
+    const closedAt = this.parseOptionalDate(
+      input.formData.fechaCierreInterHosp,
+    );
     const responseTimeMinutes = this.readNumericValueFromTimeLabel(
       input.formData.tiempoRespuestaRealInterHosp,
     );
@@ -12643,7 +13432,8 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
 
@@ -12834,15 +13624,22 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isHospitalNursingShiftRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalNursingShiftRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const nursingShiftId = randomUUID();
     const intake = this.readNumericValue(input.formData.ingresosMlEnfHosp);
     const output = this.readNumericValue(input.formData.egresosMlEnfHosp);
-    const balance = intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : null;
+    const balance =
+      intake !== null || output !== null ? (intake ?? 0) - (output ?? 0) : null;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
 
@@ -12908,11 +13705,16 @@ export class EncountersService {
     const storedShiftId = storedRows[0]?.id;
     if (!storedShiftId) return;
 
-    await this.prisma.$executeRaw`DELETE FROM "HospitalNursingVitalSign" WHERE "nursingShiftId" = ${storedShiftId}`;
-    await this.prisma.$executeRaw`DELETE FROM "HospitalMedicationAdministration" WHERE "nursingShiftId" = ${storedShiftId}`;
-    await this.prisma.$executeRaw`DELETE FROM "HospitalNursingProcedure" WHERE "nursingShiftId" = ${storedShiftId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "HospitalNursingVitalSign" WHERE "nursingShiftId" = ${storedShiftId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "HospitalMedicationAdministration" WHERE "nursingShiftId" = ${storedShiftId}`;
+    await this.prisma
+      .$executeRaw`DELETE FROM "HospitalNursingProcedure" WHERE "nursingShiftId" = ${storedShiftId}`;
 
-    for (const [index, vital] of this.readObjectArray(input.formData.signosVitalesSeriadosEnfHosp).entries()) {
+    for (const [index, vital] of this.readObjectArray(
+      input.formData.signosVitalesSeriadosEnfHosp,
+    ).entries()) {
       const date = this.readStringValue(vital.fecha);
       const time = this.readStringValue(vital.hora);
       const takenAt = this.parseOptionalDate(`${date}T${time}`);
@@ -12933,7 +13735,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, medication] of this.readObjectArray(input.formData.medicamentosMinistradosEnfHosp).entries()) {
+    for (const [index, medication] of this.readObjectArray(
+      input.formData.medicamentosMinistradosEnfHosp,
+    ).entries()) {
       const name = this.readStringValue(medication.medicamento);
       const scheduledTime = this.readStringValue(medication.horaProgramada);
       if (!name || !scheduledTime) continue;
@@ -12953,7 +13757,9 @@ export class EncountersService {
       `;
     }
 
-    for (const [index, procedure] of this.readObjectArray(input.formData.procedimientosEnfermeriaTurnoHosp).entries()) {
+    for (const [index, procedure] of this.readObjectArray(
+      input.formData.procedimientosEnfermeriaTurnoHosp,
+    ).entries()) {
       const name = this.readStringValue(procedure.procedimiento);
       if (!name) continue;
       await this.prisma.$executeRaw`
@@ -12983,14 +13789,24 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isHospitalDischargeRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isHospitalDischargeRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
     const dischargedAt =
-      this.parseOptionalDate(input.formData.fechaHoraEgresoHosp) ?? input.recordedAt;
-    const admittedAt = this.parseOptionalDate(input.formData.fechaIngresoReadonlyHosp);
-    const stayDays = this.readRoundedNumericValue(input.formData.diasEstanciaHosp);
+      this.parseOptionalDate(input.formData.fechaHoraEgresoHosp) ??
+      input.recordedAt;
+    const admittedAt = this.parseOptionalDate(
+      input.formData.fechaIngresoReadonlyHosp,
+    );
+    const stayDays = this.readRoundedNumericValue(
+      input.formData.diasEstanciaHosp,
+    );
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const dischargeType = this.readStringValue(input.formData.tipoEgresoHosp);
@@ -13153,12 +13969,17 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
-    const hasAnesthesia = this.ambulatoryPreprocedureHasAnesthesia(input.formData);
+    const hasAnesthesia = this.ambulatoryPreprocedureHasAnesthesia(
+      input.formData,
+    );
     const documentHash = this.readStringValue(input.formData.hashPreproc);
-    const digitalSeal = this.readStringValue(input.formData.selloDigitalPreproc);
+    const digitalSeal = this.readStringValue(
+      input.formData.selloDigitalPreproc,
+    );
 
     await this.prisma.$executeRaw`
       INSERT INTO "AmbulatoryPreprocedureAssessment" (
@@ -13272,11 +14093,17 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isAmbulatoryProcedureRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isAmbulatoryProcedureRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const hasAnesthesia = this.ambulatoryProcedureHasAnesthesia(input.formData);
@@ -13285,7 +14112,9 @@ export class EncountersService {
       input.recordedAt;
     const documentHash = this.readStringValue(input.formData.hashProc);
     const digitalSeal = this.readStringValue(input.formData.selloDigitalProc);
-    const [preprocedureAssessment] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+    const [preprocedureAssessment] = await this.prisma.$queryRaw<
+      Array<{ id: string }>
+    >`
       SELECT "id" FROM "AmbulatoryPreprocedureAssessment"
       WHERE "encounterId" = ${input.encounter.id} AND "status" = ${EncounterRecordStatus.SIGNED}
       ORDER BY "versionNumber" DESC, "signedAt" DESC NULLS LAST, "createdAt" DESC
@@ -13397,7 +14226,9 @@ export class EncountersService {
         "updatedAt" = NOW()
     `;
 
-    const [procedureDocument] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+    const [procedureDocument] = await this.prisma.$queryRaw<
+      Array<{ id: string }>
+    >`
       SELECT "id" FROM "AmbulatoryProcedureDocument"
       WHERE "sectionRecordId" = ${input.sectionRecordId}
       LIMIT 1
@@ -13417,7 +14248,12 @@ export class EncountersService {
     tabKey: string;
     formData: Record<string, unknown>;
   }) {
-    if (!this.isEmergencyInitialNoteRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isEmergencyInitialNoteRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
 
@@ -13429,19 +14265,30 @@ export class EncountersService {
         patientId: input.encounter.patientId,
         sectionRecordId: input.sectionRecordId,
         sourceTriageRecordId:
-          this.readStringValue(input.formData.notaInicialTriageOrigenId) || null,
-        habitusExterior: this.readStringValue(input.formData.habitusExteriorNota) || null,
+          this.readStringValue(input.formData.notaInicialTriageOrigenId) ||
+          null,
+        habitusExterior:
+          this.readStringValue(input.formData.habitusExteriorNota) || null,
         cardiovascular:
-          this.readStringValue(input.formData.exploracionCardiovascularNota) || null,
+          this.readStringValue(input.formData.exploracionCardiovascularNota) ||
+          null,
         respiratory:
-          this.readStringValue(input.formData.exploracionRespiratoriaNota) || null,
+          this.readStringValue(input.formData.exploracionRespiratoriaNota) ||
+          null,
         neurologic:
-          this.readStringValue(input.formData.exploracionNeurologicaNota) || null,
-        abdomen: this.readStringValue(input.formData.exploracionAbdomenNota) || null,
+          this.readStringValue(input.formData.exploracionNeurologicaNota) ||
+          null,
+        abdomen:
+          this.readStringValue(input.formData.exploracionAbdomenNota) || null,
         extremities:
-          this.readStringValue(input.formData.exploracionExtremidadesNota) || null,
-        systolicBloodPressure: this.readNumericValue(input.formData.taSistolicaNota),
-        diastolicBloodPressure: this.readNumericValue(input.formData.taDiastolicaNota),
+          this.readStringValue(input.formData.exploracionExtremidadesNota) ||
+          null,
+        systolicBloodPressure: this.readNumericValue(
+          input.formData.taSistolicaNota,
+        ),
+        diastolicBloodPressure: this.readNumericValue(
+          input.formData.taDiastolicaNota,
+        ),
         heartRate: this.readNumericValue(input.formData.fcNota),
         respiratoryRate: this.readNumericValue(input.formData.frNota),
         oxygenSaturation: this.readNumericValue(input.formData.spo2Nota),
@@ -13450,27 +14297,41 @@ export class EncountersService {
         glucose: this.readNumericValue(input.formData.glucosaNota),
         glasgow: this.readNumericValue(input.formData.glasgowNota),
         emergencyConsent:
-          this.readStringValue(input.formData.consentimientoUrgenciasNota) || null,
+          this.readStringValue(input.formData.consentimientoUrgenciasNota) ||
+          null,
         consentType:
           this.readStringValue(input.formData.tipoConsentimientoNota) || null,
         consentObservations:
-          this.readStringValue(input.formData.observacionesConsentimientoNota) || null,
+          this.readStringValue(
+            input.formData.observacionesConsentimientoNota,
+          ) || null,
       },
       update: {
         sourceTriageRecordId:
-          this.readStringValue(input.formData.notaInicialTriageOrigenId) || null,
-        habitusExterior: this.readStringValue(input.formData.habitusExteriorNota) || null,
+          this.readStringValue(input.formData.notaInicialTriageOrigenId) ||
+          null,
+        habitusExterior:
+          this.readStringValue(input.formData.habitusExteriorNota) || null,
         cardiovascular:
-          this.readStringValue(input.formData.exploracionCardiovascularNota) || null,
+          this.readStringValue(input.formData.exploracionCardiovascularNota) ||
+          null,
         respiratory:
-          this.readStringValue(input.formData.exploracionRespiratoriaNota) || null,
+          this.readStringValue(input.formData.exploracionRespiratoriaNota) ||
+          null,
         neurologic:
-          this.readStringValue(input.formData.exploracionNeurologicaNota) || null,
-        abdomen: this.readStringValue(input.formData.exploracionAbdomenNota) || null,
+          this.readStringValue(input.formData.exploracionNeurologicaNota) ||
+          null,
+        abdomen:
+          this.readStringValue(input.formData.exploracionAbdomenNota) || null,
         extremities:
-          this.readStringValue(input.formData.exploracionExtremidadesNota) || null,
-        systolicBloodPressure: this.readNumericValue(input.formData.taSistolicaNota),
-        diastolicBloodPressure: this.readNumericValue(input.formData.taDiastolicaNota),
+          this.readStringValue(input.formData.exploracionExtremidadesNota) ||
+          null,
+        systolicBloodPressure: this.readNumericValue(
+          input.formData.taSistolicaNota,
+        ),
+        diastolicBloodPressure: this.readNumericValue(
+          input.formData.taDiastolicaNota,
+        ),
         heartRate: this.readNumericValue(input.formData.fcNota),
         respiratoryRate: this.readNumericValue(input.formData.frNota),
         oxygenSaturation: this.readNumericValue(input.formData.spo2Nota),
@@ -13479,11 +14340,14 @@ export class EncountersService {
         glucose: this.readNumericValue(input.formData.glucosaNota),
         glasgow: this.readNumericValue(input.formData.glasgowNota),
         emergencyConsent:
-          this.readStringValue(input.formData.consentimientoUrgenciasNota) || null,
+          this.readStringValue(input.formData.consentimientoUrgenciasNota) ||
+          null,
         consentType:
           this.readStringValue(input.formData.tipoConsentimientoNota) || null,
         consentObservations:
-          this.readStringValue(input.formData.observacionesConsentimientoNota) || null,
+          this.readStringValue(
+            input.formData.observacionesConsentimientoNota,
+          ) || null,
       },
     });
   }
@@ -13509,11 +14373,14 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const documentHash = this.readStringValue(input.formData.hashRecEval);
-    const digitalSeal = this.readStringValue(input.formData.selloDigitalRecEval);
+    const digitalSeal = this.readStringValue(
+      input.formData.selloDigitalRecEval,
+    );
     const aldreteTotal = this.calculateAldreteTotal(input.formData);
     const alerts = this.buildAmbulatoryRecoveryEvaluationAlerts(
       input.formData,
@@ -13528,7 +14395,9 @@ export class EncountersService {
       aldreteTotal >= 9 &&
       !redAlertActive &&
       this.ambulatoryRecoveryDischargeChecklistComplete(input.formData);
-    const [procedureDocument] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+    const [procedureDocument] = await this.prisma.$queryRaw<
+      Array<{ id: string }>
+    >`
       SELECT "id" FROM "AmbulatoryProcedureDocument"
       WHERE "encounterId" = ${input.encounter.id} AND "status" = ${EncounterRecordStatus.SIGNED}
       ORDER BY "versionNumber" DESC, "signedAt" DESC NULLS LAST, "createdAt" DESC
@@ -13611,7 +14480,9 @@ export class EncountersService {
         "updatedAt" = NOW()
     `;
 
-    const [recoveryEvaluation] = await this.prisma.$queryRaw<Array<{ id: string }>>`
+    const [recoveryEvaluation] = await this.prisma.$queryRaw<
+      Array<{ id: string }>
+    >`
       SELECT "id" FROM "AmbulatoryRecoveryEvaluation"
       WHERE "sectionRecordId" = ${input.sectionRecordId}
       LIMIT 1
@@ -13649,7 +14520,8 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
     const validations = this.buildAmbulatoryDischargePrescriptionValidations({
@@ -13764,13 +14636,21 @@ export class EncountersService {
     formData: Record<string, unknown>;
     metadata: Record<string, unknown>;
   }) {
-    if (!this.isAmbulatoryDischargeRecord(input.encounter.encounterType, input.tabKey)) {
+    if (
+      !this.isAmbulatoryDischargeRecord(
+        input.encounter.encounterType,
+        input.tabKey,
+      )
+    ) {
       return;
     }
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const signedAt =
       input.status === EncounterRecordStatus.SIGNED ? new Date() : null;
-    const completedCriteria = this.ambulatoryDischargeCriteriaComplete(input.formData);
+    const completedCriteria = this.ambulatoryDischargeCriteriaComplete(
+      input.formData,
+    );
 
     await this.prisma.$executeRaw`
       INSERT INTO "AmbulatoryDischargeSummary" (
@@ -13833,7 +14713,11 @@ export class EncountersService {
     if (!summary) {
       return;
     }
-    await this.syncAmbulatoryDischargeSummaryChildren(summary.id, input, completedCriteria);
+    await this.syncAmbulatoryDischargeSummaryChildren(
+      summary.id,
+      input,
+      completedCriteria,
+    );
   }
 
   private async syncAmbulatoryPreprocedureChildren(
@@ -13869,7 +14753,7 @@ export class EncountersService {
       ['antTabaquismoPreproc', 'Tabaquismo'],
     ];
     for (const [conditionKey, label] of historyOptions) {
-      if (!Boolean(input.formData[conditionKey])) {
+      if (!input.formData[conditionKey]) {
         continue;
       }
       await this.prisma.$executeRaw`
@@ -13882,8 +14766,13 @@ export class EncountersService {
       `;
     }
 
-    for (const item of this.readObjectArray(input.formData.comorbilidadesPreproc)) {
-      if (!this.hasCapturedValue(item.diagnostico) && !this.hasCapturedValue(item.cie10)) {
+    for (const item of this.readObjectArray(
+      input.formData.comorbilidadesPreproc,
+    )) {
+      if (
+        !this.hasCapturedValue(item.diagnostico) &&
+        !this.hasCapturedValue(item.cie10)
+      ) {
         continue;
       }
       await this.prisma.$executeRaw`
@@ -13910,7 +14799,9 @@ export class EncountersService {
       `;
     }
 
-    for (const item of this.readObjectArray(input.formData.medicacionActualPreproc)) {
+    for (const item of this.readObjectArray(
+      input.formData.medicacionActualPreproc,
+    )) {
       if (!this.hasCapturedValue(item.farmaco)) {
         continue;
       }
@@ -13975,8 +14866,13 @@ export class EncountersService {
       `;
     }
 
-    for (const item of this.readObjectArray(input.formData.registrosEnfermeriaRecEval)) {
-      if (!this.hasCapturedValue(item.fecha) && !this.hasCapturedValue(item.hora)) {
+    for (const item of this.readObjectArray(
+      input.formData.registrosEnfermeriaRecEval,
+    )) {
+      if (
+        !this.hasCapturedValue(item.fecha) &&
+        !this.hasCapturedValue(item.hora)
+      ) {
         continue;
       }
       await this.prisma.$executeRaw`
@@ -13995,8 +14891,13 @@ export class EncountersService {
       `;
     }
 
-    for (const item of this.readObjectArray(input.formData.serviciosAuxiliaresRecEval)) {
-      if (!this.hasCapturedValue(item.estudioSolicitado) && !this.hasCapturedValue(item.folioEstudio)) {
+    for (const item of this.readObjectArray(
+      input.formData.serviciosAuxiliaresRecEval,
+    )) {
+      if (
+        !this.hasCapturedValue(item.estudioSolicitado) &&
+        !this.hasCapturedValue(item.folioEstudio)
+      ) {
         continue;
       }
       await this.prisma.$executeRaw`
@@ -14035,7 +14936,9 @@ export class EncountersService {
       DELETE FROM "AmbulatoryDischargePrescriptionValidation" WHERE "prescriptionId" = ${prescriptionId}
     `;
 
-    for (const item of this.readObjectArray(input.formData.medicamentosRecetaEgreso)) {
+    for (const item of this.readObjectArray(
+      input.formData.medicamentosRecetaEgreso,
+    )) {
       if (!this.hasCapturedValue(item.medicamento)) {
         continue;
       }
@@ -14130,7 +15033,11 @@ export class EncountersService {
         "completed" = EXCLUDED."completed",
         "updatedAt" = NOW()
     `;
-    if (['TRASLADO', 'REFERENCIA'].includes(this.readStringValue(input.formData.tipoEgresoAmb))) {
+    if (
+      ['TRASLADO', 'REFERENCIA'].includes(
+        this.readStringValue(input.formData.tipoEgresoAmb),
+      )
+    ) {
       await this.prisma.$executeRaw`
         INSERT INTO "AmbulatoryDischargeTransferReference" (
           "id", "dischargeSummaryId", "referenceDateTime", "referralReason",
@@ -14298,10 +15205,18 @@ export class EncountersService {
     `;
 
     const teamMembers = [
-      ['CIRUJANO_PRINCIPAL', input.formData.cirujanoPrincipalProc, input.formData.cedulaCirujanoProc],
+      [
+        'CIRUJANO_PRINCIPAL',
+        input.formData.cirujanoPrincipalProc,
+        input.formData.cedulaCirujanoProc,
+      ],
       ['PRIMER_AYUDANTE', input.formData.primerAyudanteProc, null],
       ['SEGUNDO_AYUDANTE', input.formData.segundoAyudanteProc, null],
-      ['ANESTESIOLOGO', input.formData.anestesiologoProc, input.formData.cedulaAnestesiologoProc],
+      [
+        'ANESTESIOLOGO',
+        input.formData.anestesiologoProc,
+        input.formData.cedulaAnestesiologoProc,
+      ],
       ['INSTRUMENTISTA', input.formData.instrumentistaProc, null],
       ['ENFERMERIA_CIRCULANTE', input.formData.enfermeriaCirculanteProc, null],
     ];
@@ -14334,7 +15249,10 @@ export class EncountersService {
     }
 
     await this.syncAmbulatoryProcedureTimeOut(procedureDocumentId, input);
-    await this.syncAmbulatoryProcedurePostanesthesia(procedureDocumentId, input);
+    await this.syncAmbulatoryProcedurePostanesthesia(
+      procedureDocumentId,
+      input,
+    );
   }
 
   private async syncAmbulatoryProcedureTimeOut(
@@ -14513,9 +15431,13 @@ export class EncountersService {
     const height = this.readNumericValue(input.formData.tallaCmPreproc);
     const bloodPressure = this.readStringValue(input.formData.taPreproc);
     const heartRate = this.readRoundedNumericValue(input.formData.fcPreproc);
-    const respiratoryRate = this.readRoundedNumericValue(input.formData.frPreproc);
+    const respiratoryRate = this.readRoundedNumericValue(
+      input.formData.frPreproc,
+    );
     const oxygenSaturation = this.readNumericValue(input.formData.spo2Preproc);
-    const temperature = this.readNumericValue(input.formData.temperaturaPreproc);
+    const temperature = this.readNumericValue(
+      input.formData.temperaturaPreproc,
+    );
 
     if (
       weight === null ||
@@ -14674,15 +15596,21 @@ export class EncountersService {
       return;
     }
 
-    const versionNumber = this.readNumericValue(input.metadata.versionNumber) ?? 1;
+    const versionNumber =
+      this.readNumericValue(input.metadata.versionNumber) ?? 1;
     const requestedAt =
       this.combineDateAndTime(
         input.formData.fechaInterconsulta,
         input.formData.horaInterconsulta,
       ) ?? input.recordedAt;
-    const receivedAt = this.parseOptionalDate(input.formData.horaRecepcionInterconsulta);
-    const respondedAt = this.parseOptionalDate(input.formData.horaRespuestaInterconsulta);
-    const priority = this.readStringValue(input.formData.prioridadInterconsulta) || 'URGENTE';
+    const receivedAt = this.parseOptionalDate(
+      input.formData.horaRecepcionInterconsulta,
+    );
+    const respondedAt = this.parseOptionalDate(
+      input.formData.horaRespuestaInterconsulta,
+    );
+    const priority =
+      this.readStringValue(input.formData.prioridadInterconsulta) || 'URGENTE';
     const responseTimeMinutes =
       respondedAt && respondedAt >= requestedAt
         ? Math.round((respondedAt.getTime() - requestedAt.getTime()) / 60000)
@@ -14743,18 +15671,26 @@ export class EncountersService {
     `;
   }
 
-  private buildEmergencyExternalResultsSummary(encounter: TenantEncounterRecord) {
+  private buildEmergencyExternalResultsSummary(
+    encounter: TenantEncounterRecord,
+  ) {
     const sections: string[] = [];
 
     if (encounter.labRequests.length > 0) {
-      sections.push(`Laboratorio: ${encounter.labRequests.length} solicitud(es) vinculada(s).`);
+      sections.push(
+        `Laboratorio: ${encounter.labRequests.length} solicitud(es) vinculada(s).`,
+      );
     }
 
     if (encounter.imagingRequests.length > 0) {
-      sections.push(`Imagenología: ${encounter.imagingRequests.length} solicitud(es) vinculada(s).`);
+      sections.push(
+        `Imagenología: ${encounter.imagingRequests.length} solicitud(es) vinculada(s).`,
+      );
     }
 
-    return sections.join('\n') || 'Sin resultados externos vinculados al episodio.';
+    return (
+      sections.join('\n') || 'Sin resultados externos vinculados al episodio.'
+    );
   }
 
   private hasCapturedValue(value: unknown) {
@@ -14894,29 +15830,65 @@ export class EncountersService {
     const temperature = this.readNumericValue(input.formData.temp);
     const painEva = this.readNumericValue(input.formData.eva);
     if (systolicPressure !== null && systolicPressure < 90) {
-      alerts.push({ code: 'LOW_SBP', message: 'Hipotensión — valorar choque', severity: 'CRITICAL' });
+      alerts.push({
+        code: 'LOW_SBP',
+        message: 'Hipotensión — valorar choque',
+        severity: 'CRITICAL',
+      });
     } else if (systolicPressure !== null && systolicPressure > 140) {
-      alerts.push({ code: 'HIGH_SBP', message: 'Evaluar emergencia hipertensiva', severity: 'WARNING' });
+      alerts.push({
+        code: 'HIGH_SBP',
+        message: 'Evaluar emergencia hipertensiva',
+        severity: 'WARNING',
+      });
     }
     if (input.news2Total !== null && input.news2Total >= 6) {
-      alerts.push({ code: 'NEWS2_ESCALATION', message: 'Escalamiento clínico recomendado', severity: 'CRITICAL' });
+      alerts.push({
+        code: 'NEWS2_ESCALATION',
+        message: 'Escalamiento clínico recomendado',
+        severity: 'CRITICAL',
+      });
     } else if (input.news2Total !== null && input.news2Total >= 5) {
-      alerts.push({ code: 'NEWS2_ALERT', message: 'Alerta clínica', severity: 'WARNING' });
+      alerts.push({
+        code: 'NEWS2_ALERT',
+        message: 'Alerta clínica',
+        severity: 'WARNING',
+      });
     }
     if (oxygenSaturation !== null && oxygenSaturation < 95) {
-      alerts.push({ code: 'LOW_SPO2', message: 'Monitorizar oxigenación', severity: 'WARNING' });
+      alerts.push({
+        code: 'LOW_SPO2',
+        message: 'Monitorizar oxigenación',
+        severity: 'WARNING',
+      });
     }
     if (heartRate !== null && heartRate > 120) {
-      alerts.push({ code: 'TACHYCARDIA', message: 'Taquicardia — evaluar causa', severity: 'WARNING' });
+      alerts.push({
+        code: 'TACHYCARDIA',
+        message: 'Taquicardia — evaluar causa',
+        severity: 'WARNING',
+      });
     }
     if (respiratoryRate !== null && respiratoryRate > 22) {
-      alerts.push({ code: 'TACHYPNEA', message: 'Taquipnea — evaluar compromiso respiratorio', severity: 'WARNING' });
+      alerts.push({
+        code: 'TACHYPNEA',
+        message: 'Taquipnea — evaluar compromiso respiratorio',
+        severity: 'WARNING',
+      });
     }
     if (temperature !== null && temperature > 38.5) {
-      alerts.push({ code: 'FEVER', message: 'Fiebre — evaluar foco infeccioso', severity: 'WARNING' });
+      alerts.push({
+        code: 'FEVER',
+        message: 'Fiebre — evaluar foco infeccioso',
+        severity: 'WARNING',
+      });
     }
     if (painEva !== null && painEva >= 7) {
-      alerts.push({ code: 'SEVERE_PAIN', message: 'Dolor severo — manejo analgésico prioritario', severity: 'WARNING' });
+      alerts.push({
+        code: 'SEVERE_PAIN',
+        message: 'Dolor severo — manejo analgésico prioritario',
+        severity: 'WARNING',
+      });
     }
 
     return alerts.sort((left, right) => {
@@ -14938,7 +15910,9 @@ export class EncountersService {
     encounterType: EncounterType,
     tabKey: string,
   ) {
-    return encounterType === EncounterType.OUTPATIENT && tabKey === 'Consulta actual';
+    return (
+      encounterType === EncounterType.OUTPATIENT && tabKey === 'Consulta actual'
+    );
   }
 
   private normalizeConsultationConsentComprehension(value: unknown) {
@@ -14961,7 +15935,9 @@ export class EncountersService {
     );
   }
 
-  private normalizeConsultationPrescriptionPatientComprehension(value: unknown) {
+  private normalizeConsultationPrescriptionPatientComprehension(
+    value: unknown,
+  ) {
     const comprehensionValue = this.readStringValue(value).trim();
 
     if (!comprehensionValue) {
@@ -15016,8 +15992,13 @@ export class EncountersService {
     );
   }
 
-  private isHospitalDocumentRecord(encounterType: EncounterType, tabKey: string) {
-    return encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Documentos';
+  private isHospitalDocumentRecord(
+    encounterType: EncounterType,
+    tabKey: string,
+  ) {
+    return (
+      encounterType === EncounterType.HOSPITALIZATION && tabKey === 'Documentos'
+    );
   }
 
   private isAmbulatoryProcedureSupportingDocumentRecord(
@@ -15051,21 +16032,23 @@ export class EncountersService {
     recordedAt: Date,
     currentRecordId: string | null,
   ) {
-    return [...records]
-      .filter(
-        (record) =>
-          record.tabKey === 'Evolución' &&
-          record.noteType === 'Evolución hospitalaria' &&
-          record.id !== currentRecordId &&
-          record.recordedAt.getTime() <= recordedAt.getTime(),
-      )
-      .sort((left, right) => {
-        if (left.recordedAt.getTime() !== right.recordedAt.getTime()) {
-          return right.recordedAt.getTime() - left.recordedAt.getTime();
-        }
+    return (
+      [...records]
+        .filter(
+          (record) =>
+            record.tabKey === 'Evolución' &&
+            record.noteType === 'Evolución hospitalaria' &&
+            record.id !== currentRecordId &&
+            record.recordedAt.getTime() <= recordedAt.getTime(),
+        )
+        .sort((left, right) => {
+          if (left.recordedAt.getTime() !== right.recordedAt.getTime()) {
+            return right.recordedAt.getTime() - left.recordedAt.getTime();
+          }
 
-        return right.createdAt.getTime() - left.createdAt.getTime();
-      })[0] ?? null;
+          return right.createdAt.getTime() - left.createdAt.getTime();
+        })[0] ?? null
+    );
   }
 
   private buildConsultationReferenceSnapshot(
@@ -15141,10 +16124,12 @@ export class EncountersService {
     incomingFormData: Record<string, unknown>,
     currentRecordFormData: Prisma.JsonValue | null,
   ) {
-    const weightKg = this.readNumericValue(incomingFormData.svPeso)
-      ?? this.readNumericValueFromJson(currentRecordFormData, 'svPeso');
-    const heightCm = this.readNumericValue(incomingFormData.svTalla)
-      ?? this.readNumericValueFromJson(currentRecordFormData, 'svTalla');
+    const weightKg =
+      this.readNumericValue(incomingFormData.svPeso) ??
+      this.readNumericValueFromJson(currentRecordFormData, 'svPeso');
+    const heightCm =
+      this.readNumericValue(incomingFormData.svTalla) ??
+      this.readNumericValueFromJson(currentRecordFormData, 'svTalla');
 
     if (!weightKg || !heightCm) {
       return '';
@@ -15159,7 +16144,9 @@ export class EncountersService {
     return (weightKg / (heightMeters * heightMeters)).toFixed(1);
   }
 
-  private extractHistoryVersionMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {
+  private extractHistoryVersionMetadata(
+    rawMetadata: Prisma.JsonValue | null | undefined,
+  ) {
     const normalizedMetadata = this.normalizeRecordMetadata(rawMetadata);
 
     return {
@@ -15199,12 +16186,15 @@ export class EncountersService {
     rawMetadata: Prisma.JsonValue | null | undefined,
   ) {
     const historyMetadata = this.extractHistoryVersionMetadata(rawMetadata);
-    const consultationMetadata = this.extractConsultationVersionMetadata(rawMetadata);
+    const consultationMetadata =
+      this.extractConsultationVersionMetadata(rawMetadata);
     const normalizedMetadata = this.normalizeRecordMetadata(rawMetadata);
 
     return {
       versionNumber:
-        historyMetadata.versionNumber ?? consultationMetadata.versionNumber ?? null,
+        historyMetadata.versionNumber ??
+        consultationMetadata.versionNumber ??
+        null,
       consultationType: consultationMetadata.consultationType,
       inheritedFromRecordId:
         historyMetadata.inheritedFromRecordId ??
@@ -15283,7 +16273,8 @@ export class EncountersService {
   }
 
   private formatEmergencyEvolutionDiagnosticStudyType(value: unknown) {
-    const studyType = this.normalizeEmergencyEvolutionDiagnosticStudyType(value);
+    const studyType =
+      this.normalizeEmergencyEvolutionDiagnosticStudyType(value);
     const labels: Record<string, string> = {
       ECG: 'ECG',
       TROPONINA: 'Troponina',
@@ -15424,7 +16415,9 @@ export class EncountersService {
       return previousEvolutionDiagnoses;
     }
 
-    return this.readConsultationDiagnosesFromJson(input.latestConsultationFormData);
+    return this.readConsultationDiagnosesFromJson(
+      input.latestConsultationFormData,
+    );
   }
 
   private resolveEvolutionTreatmentBaseline(input: {
@@ -15432,7 +16425,9 @@ export class EncountersService {
     currentRecordFormData: Prisma.JsonValue | null;
     previousEvolutionFormData: Prisma.JsonValue | null;
   }) {
-    const directValue = this.readStringValue(input.incomingFormData.evolucionTratamiento);
+    const directValue = this.readStringValue(
+      input.incomingFormData.evolucionTratamiento,
+    );
 
     if (directValue) {
       return directValue;
@@ -15505,7 +16500,8 @@ export class EncountersService {
       .map((item) => ({
         diagnostico: this.readStringValue(item.diagnostico),
         cie10: this.readStringValue(item.cie10),
-        estado: this.readStringValue(item.estado) || this.readStringValue(item.tipo),
+        estado:
+          this.readStringValue(item.estado) || this.readStringValue(item.tipo),
       }))
       .filter((item) => item.diagnostico || item.cie10 || item.estado);
   }
@@ -15518,7 +16514,9 @@ export class EncountersService {
     const record = rawValue as Record<string, unknown>;
     const diagnoses: Array<Record<string, unknown>> = [];
 
-    const primaryDiagnosis = this.readStringValue(record.idDiagnosticoPrincipal);
+    const primaryDiagnosis = this.readStringValue(
+      record.idDiagnosticoPrincipal,
+    );
     const primaryCie10 = this.readStringValue(record.idCie10);
     const primaryState = this.readStringValue(record.idEstado);
 
@@ -15530,7 +16528,10 @@ export class EncountersService {
       });
     }
 
-    const secondaryDiagnoses = this.readDiagnosesArrayFromJson(rawValue, 'idSecundarios');
+    const secondaryDiagnoses = this.readDiagnosesArrayFromJson(
+      rawValue,
+      'idSecundarios',
+    );
 
     return [...diagnoses, ...secondaryDiagnoses];
   }
@@ -15548,18 +16549,45 @@ export class EncountersService {
       !record ||
       record.tenantId !== tenantId ||
       record.encounterId !== encounterId ||
-      (!this.isConsultationPrescriptionRecord(record.encounterType, record.tabKey) &&
-        !this.isConsultationDocumentRecord(record.encounterType, record.tabKey) &&
+      (!this.isConsultationPrescriptionRecord(
+        record.encounterType,
+        record.tabKey,
+      ) &&
+        !this.isConsultationDocumentRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
         !this.isHospitalAdmissionRecord(record.encounterType, record.tabKey) &&
         !this.isHospitalEvolutionRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalMedicalOrdersRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalConsultationRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalSurgicalDocumentRecord(record.encounterType, record.tabKey) &&
-        !this.isHospitalNursingShiftRecord(record.encounterType, record.tabKey) &&
+        !this.isHospitalMedicalOrdersRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
+        !this.isHospitalConsultationRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
+        !this.isHospitalSurgicalDocumentRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
+        !this.isHospitalNursingShiftRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
         !this.isHospitalDischargeRecord(record.encounterType, record.tabKey) &&
-        !this.isAmbulatoryDischargePrescriptionRecord(record.encounterType, record.tabKey) &&
-        !this.isAmbulatoryDischargeRecord(record.encounterType, record.tabKey) &&
-        !this.isAmbulatoryProcedureSupportingDocumentRecord(record.encounterType, record.tabKey))
+        !this.isAmbulatoryDischargePrescriptionRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
+        !this.isAmbulatoryDischargeRecord(
+          record.encounterType,
+          record.tabKey,
+        ) &&
+        !this.isAmbulatoryProcedureSupportingDocumentRecord(
+          record.encounterType,
+          record.tabKey,
+        ))
     ) {
       throw new NotFoundException('Documento del episodio no encontrado');
     }
@@ -15628,8 +16656,14 @@ export class EncountersService {
         input.currentRecordFormData,
         'recetaSeguimientoFecha',
       ) ||
-      this.readStringValueFromJson(input.evolutionFormData, 'evolucionSeguimiento') ||
-      this.readStringValueFromJson(input.consultationFormData, 'planSeguimiento') ||
+      this.readStringValueFromJson(
+        input.evolutionFormData,
+        'evolucionSeguimiento',
+      ) ||
+      this.readStringValueFromJson(
+        input.consultationFormData,
+        'planSeguimiento',
+      ) ||
       '';
 
     return {
@@ -15654,7 +16688,10 @@ export class EncountersService {
       .join(' | ')
       .toLowerCase();
     const chronicConditionsText = [
-      this.readStringValueFromJson(input.historyFormData, 'appEnfermedadesCronicas'),
+      this.readStringValueFromJson(
+        input.historyFormData,
+        'appEnfermedadesCronicas',
+      ),
       input.encounter.problems.map((problem) => problem.description).join(', '),
     ]
       .filter(Boolean)
@@ -15778,7 +16815,10 @@ export class EncountersService {
     };
   }
 
-  private buildConsultationDocumentTitle(noteType: string, versionNumber: number) {
+  private buildConsultationDocumentTitle(
+    noteType: string,
+    versionNumber: number,
+  ) {
     return `${noteType} V${versionNumber}`;
   }
 
@@ -15793,12 +16833,14 @@ export class EncountersService {
       professionalLicense: string | null;
     } | null;
   }) {
-    const suggestionSnapshot = this.buildConsultationDocumentSuggestionSnapshot({
-      encounter: input.encounter,
-      noteType: input.noteType,
-      incomingFormData: input.incomingFormData,
-      currentRecordFormData: input.currentRecordFormData,
-    });
+    const suggestionSnapshot = this.buildConsultationDocumentSuggestionSnapshot(
+      {
+        encounter: input.encounter,
+        noteType: input.noteType,
+        incomingFormData: input.incomingFormData,
+        currentRecordFormData: input.currentRecordFormData,
+      },
+    );
     const legalSnapshot = this.buildConsultationDocumentLegalSnapshot(
       input.encounter,
       input.responsibleUser,
@@ -15851,19 +16893,28 @@ export class EncountersService {
         latestEmergencyEvolutionRecord?.formDataJson &&
         typeof latestEmergencyEvolutionRecord.formDataJson === 'object' &&
         !Array.isArray(latestEmergencyEvolutionRecord.formDataJson)
-          ? (latestEmergencyEvolutionRecord.formDataJson as Record<string, unknown>)
+          ? (latestEmergencyEvolutionRecord.formDataJson as Record<
+              string,
+              unknown
+            >)
           : {};
       const latestOrdersFormData =
         latestEmergencyOrdersRecord?.formDataJson &&
         typeof latestEmergencyOrdersRecord.formDataJson === 'object' &&
         !Array.isArray(latestEmergencyOrdersRecord.formDataJson)
-          ? (latestEmergencyOrdersRecord.formDataJson as Record<string, unknown>)
+          ? (latestEmergencyOrdersRecord.formDataJson as Record<
+              string,
+              unknown
+            >)
           : {};
-      const emergencyEvolutionDiagnoses = this.normalizeEmergencyEvolutionDiagnoses(
-        latestEvolutionFormData.diagnosticosEvolucionUrg,
-      );
+      const emergencyEvolutionDiagnoses =
+        this.normalizeEmergencyEvolutionDiagnoses(
+          latestEvolutionFormData.diagnosticosEvolucionUrg,
+        );
       const primaryDiagnosis =
-        this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
+        this.readStringValue(
+          input.incomingFormData.documentoDiagnosticoPrincipal,
+        ) ||
         this.readStringValueFromJson(
           input.currentRecordFormData,
           'documentoDiagnosticoPrincipal',
@@ -15879,7 +16930,9 @@ export class EncountersService {
         ) ||
         '';
       const primaryDiagnosisCode =
-        this.readStringValue(input.incomingFormData.documentoDiagnosticoCie10) ||
+        this.readStringValue(
+          input.incomingFormData.documentoDiagnosticoCie10,
+        ) ||
         this.readStringValueFromJson(
           input.currentRecordFormData,
           'documentoDiagnosticoCie10',
@@ -15895,9 +16948,12 @@ export class EncountersService {
         ) ||
         '';
       const diagnosisArray =
-        this.readDiagnosesArrayFromUnknown(input.incomingFormData.documentoDiagnosticos)
-          .length > 0
-          ? this.readDiagnosesArrayFromUnknown(input.incomingFormData.documentoDiagnosticos)
+        this.readDiagnosesArrayFromUnknown(
+          input.incomingFormData.documentoDiagnosticos,
+        ).length > 0
+          ? this.readDiagnosesArrayFromUnknown(
+              input.incomingFormData.documentoDiagnosticos,
+            )
           : emergencyEvolutionDiagnoses.length > 0
             ? emergencyEvolutionDiagnoses.map((diagnosis) => ({
                 diagnostico: this.readStringValue(diagnosis.diagnostico),
@@ -15905,10 +16961,18 @@ export class EncountersService {
                 estado: this.readStringValue(diagnosis.tipo),
               }))
             : primaryDiagnosis || primaryDiagnosisCode
-              ? [{ diagnostico: primaryDiagnosis, cie10: primaryDiagnosisCode, estado: '' }]
+              ? [
+                  {
+                    diagnostico: primaryDiagnosis,
+                    cie10: primaryDiagnosisCode,
+                    estado: '',
+                  },
+                ]
               : [];
       const treatmentSummary =
-        this.readStringValue(input.incomingFormData.documentoTratamientoActual) ||
+        this.readStringValue(
+          input.incomingFormData.documentoTratamientoActual,
+        ) ||
         this.readStringValueFromJson(
           input.currentRecordFormData,
           'documentoTratamientoActual',
@@ -15926,12 +16990,16 @@ export class EncountersService {
         ) ||
         '';
       const studiesSummary =
-        this.readStringValue(input.incomingFormData.documentoEstudiosRealizados) ||
+        this.readStringValue(
+          input.incomingFormData.documentoEstudiosRealizados,
+        ) ||
         this.readStringValueFromJson(
           input.currentRecordFormData,
           'documentoEstudiosRealizados',
         ) ||
-        this.normalizeObjectArray(latestOrdersFormData.estudiosSolicitadosOrdenes)
+        this.normalizeObjectArray(
+          latestOrdersFormData.estudiosSolicitadosOrdenes,
+        )
           .map((study) =>
             [
               this.readStringValue(study.tipo),
@@ -15997,7 +17065,9 @@ export class EncountersService {
       'idSecundarios',
     );
     const primaryDiagnosis =
-      this.readStringValue(input.incomingFormData.documentoDiagnosticoPrincipal) ||
+      this.readStringValue(
+        input.incomingFormData.documentoDiagnosticoPrincipal,
+      ) ||
       this.readStringValueFromJson(
         input.currentRecordFormData,
         'documentoDiagnosticoPrincipal',
@@ -16014,16 +17084,23 @@ export class EncountersService {
         input.currentRecordFormData,
         'documentoDiagnosticoCie10',
       ) ||
-      this.readStringValueFromJson(latestConsultationRecord?.formDataJson ?? null, 'idCie10') ||
+      this.readStringValueFromJson(
+        latestConsultationRecord?.formDataJson ?? null,
+        'idCie10',
+      ) ||
       evolutionDiagnoses[0]?.cie10 ||
       '';
     const diagnosisArray =
-      this.readDiagnosesArrayFromUnknown(input.incomingFormData.documentoDiagnosticos).length > 0
-        ? this.readDiagnosesArrayFromUnknown(input.incomingFormData.documentoDiagnosticos)
+      this.readDiagnosesArrayFromUnknown(
+        input.incomingFormData.documentoDiagnosticos,
+      ).length > 0
+        ? this.readDiagnosesArrayFromUnknown(
+            input.incomingFormData.documentoDiagnosticos,
+          )
         : this.readDiagnosesArrayFromJson(
-            input.currentRecordFormData,
-            'documentoDiagnosticos',
-          ).length > 0
+              input.currentRecordFormData,
+              'documentoDiagnosticos',
+            ).length > 0
           ? this.readDiagnosesArrayFromJson(
               input.currentRecordFormData,
               'documentoDiagnosticos',
@@ -16031,7 +17108,13 @@ export class EncountersService {
           : consultationSecondaryDiagnoses.length > 0
             ? consultationSecondaryDiagnoses
             : primaryDiagnosis || primaryDiagnosisCode
-              ? [{ diagnostico: primaryDiagnosis, cie10: primaryDiagnosisCode, estado: '' }]
+              ? [
+                  {
+                    diagnostico: primaryDiagnosis,
+                    cie10: primaryDiagnosisCode,
+                    estado: '',
+                  },
+                ]
               : [];
     const treatmentSummary =
       this.readStringValue(input.incomingFormData.documentoTratamientoActual) ||
@@ -16053,7 +17136,9 @@ export class EncountersService {
       ) ||
       '';
     const studiesSummary =
-      this.readStringValue(input.incomingFormData.documentoEstudiosRealizados) ||
+      this.readStringValue(
+        input.incomingFormData.documentoEstudiosRealizados,
+      ) ||
       this.readStringValueFromJson(
         input.currentRecordFormData,
         'documentoEstudiosRealizados',
@@ -16149,8 +17234,7 @@ export class EncountersService {
           this.readStringValueFromJson(
             latestPrescriptionRecord?.formDataJson ?? null,
             'recetaIndicacionesGenerales',
-          ) ||
-          treatmentSummary,
+          ) || treatmentSummary,
         documentoPlanSeguimiento: followUpPlan,
       };
     }
@@ -16176,15 +17260,10 @@ export class EncountersService {
         '',
       documentoRfcMedico: encounter.tenant.taxId ?? '',
       documentoLicenciaSanitaria:
-        encounter.facility?.legalName ??
-        encounter.facility?.code ??
-        '',
-      documentoNombreProfesional:
-        responsibleUser?.fullName ?? '',
-      documentoCedulaProfesional:
-        responsibleUser?.professionalLicense ?? '',
-      documentoEspecialidadProfesional:
-        encounter.specialty?.name ?? '',
+        encounter.facility?.legalName ?? encounter.facility?.code ?? '',
+      documentoNombreProfesional: responsibleUser?.fullName ?? '',
+      documentoCedulaProfesional: responsibleUser?.professionalLicense ?? '',
+      documentoEspecialidadProfesional: encounter.specialty?.name ?? '',
       documentoLugarAtencion:
         [encounter.facility?.name, encounter.serviceArea?.name]
           .filter(Boolean)
@@ -16286,7 +17365,9 @@ export class EncountersService {
       !Array.isArray(input.record.formDataJson)
         ? (input.record.formDataJson as Record<string, unknown>)
         : {};
-    const metadata = this.extractRecordVersionMetadata(input.record.metadataJson);
+    const metadata = this.extractRecordVersionMetadata(
+      input.record.metadataJson,
+    );
     const pdfBuffer = this.buildPrescriptionPdfDocument({
       encounter: input.encounter,
       recordTitle: input.record.title,
@@ -16328,7 +17409,9 @@ export class EncountersService {
       !Array.isArray(input.record.formDataJson)
         ? (input.record.formDataJson as Record<string, unknown>)
         : {};
-    const metadata = this.extractRecordVersionMetadata(input.record.metadataJson);
+    const metadata = this.extractRecordVersionMetadata(
+      input.record.metadataJson,
+    );
     if (
       this.isHospitalAdmissionRecord(
         input.record.encounterType,
@@ -16675,12 +17758,18 @@ export class EncountersService {
         item.dosis ? `Dosis: ${item.dosis}` : null,
         item.via ? `Vía: ${item.via}` : null,
         item.frecuencia ? `Frecuencia: ${item.frecuencia}` : null,
-        item.duracionDias ? `Duración: ${item.duracionDias} días` : item.duracion ? `Duración: ${item.duracion}` : null,
+        item.duracionDias
+          ? `Duración: ${item.duracionDias} días`
+          : item.duracion
+            ? `Duración: ${item.duracion}`
+            : null,
       ]
         .filter(Boolean)
         .join(' · '),
     );
-    const signsOfAlarm = this.readStringArray(input.formData.recetaSignosAlarma).join(', ');
+    const signsOfAlarm = this.readStringArray(
+      input.formData.recetaSignosAlarma,
+    ).join(', ');
     const legalFields = [
       `Institución: ${this.readStringValue(input.formData.recetaInstitucionEmisora)}`,
       `Profesional: ${this.readStringValue(input.formData.recetaNombreProfesional)}`,
@@ -16700,7 +17789,9 @@ export class EncountersService {
       `Indicaciones generales: ${this.readStringValue(input.formData.recetaIndicacionesGenerales)}`,
       `Indicaciones diagnósticas: ${this.readStringValue(input.formData.recetaIndicacionesDiagnosticas)}`,
       'Medicamentos:',
-      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      ...(medicationLines.length > 0
+        ? medicationLines
+        : ['Sin medicamentos capturados']),
       `Signos de alarma: ${signsOfAlarm || 'Sin signos de alarma capturados'}`,
       `Seguimiento: ${this.readStringValue(input.formData.recetaSeguimientoFecha)} ${this.readStringValue(input.formData.recetaSeguimientoTipo)}`.trim(),
       `Instrucciones: ${this.readStringValue(input.formData.recetaSeguimientoInstrucciones)}`,
@@ -16728,8 +17819,9 @@ export class EncountersService {
   }) {
     const diagnoses = this.normalizeEmergencyEvolutionDiagnoses(
       input.formData.diagnosticosEvolucionUrg,
-    ).map((diagnosis, index) =>
-      `${index + 1}. ${diagnosis.diagnostico || 'Diagnóstico sin capturar'}${diagnosis.cie10 ? ` · ${diagnosis.cie10}` : ''}${diagnosis.tipo ? ` · ${diagnosis.tipo}` : ''}`,
+    ).map(
+      (diagnosis, index) =>
+        `${index + 1}. ${diagnosis.diagnostico || 'Diagnóstico sin capturar'}${diagnosis.cie10 ? ` · ${diagnosis.cie10}` : ''}${diagnosis.tipo ? ` · ${diagnosis.tipo}` : ''}`,
     );
     const diagnosticResultLines =
       this.normalizeEmergencyEvolutionDiagnosticResults(
@@ -16833,13 +17925,15 @@ export class EncountersService {
     );
     const labStudyLines = this.readObjectArray(
       input.formData.documentoEstudiosLaboratorio,
-    ).map((item, index) =>
-      `${index + 1}. ${this.readStringValue(item.tipoEstudio) || 'Estudio sin capturar'} · ${this.readStringValue(item.prioridad) || 'Sin prioridad'} · ${this.readStringValue(item.indicacionClinica)}`,
+    ).map(
+      (item, index) =>
+        `${index + 1}. ${this.readStringValue(item.tipoEstudio) || 'Estudio sin capturar'} · ${this.readStringValue(item.prioridad) || 'Sin prioridad'} · ${this.readStringValue(item.indicacionClinica)}`,
     );
     const consentWitnessLines = this.readObjectArray(
       input.formData.documentoTestigosConsentimiento,
-    ).map((item, index) =>
-      `${index + 1}. ${this.readStringValue(item.nombre) || 'Testigo sin capturar'} · Firma: ${this.readStringValue(item.firma) || 'Sin firma'}`,
+    ).map(
+      (item, index) =>
+        `${index + 1}. ${this.readStringValue(item.nombre) || 'Testigo sin capturar'} · Firma: ${this.readStringValue(item.firma) || 'Sin firma'}`,
     );
     const commonHeader = [
       input.recordTitle,
@@ -16868,7 +17962,9 @@ export class EncountersService {
         'Estudios solicitados:',
         ...(labStudyLines.length > 0
           ? labStudyLines
-          : [this.readStringValue(input.formData.documentoEstudiosSolicitados)]),
+          : [
+              this.readStringValue(input.formData.documentoEstudiosSolicitados),
+            ]),
         `Diagnóstico: ${this.readStringValue(input.formData.documentoDiagnosticoPrincipal)}`,
         `CIE-10: ${this.readStringValue(input.formData.documentoDiagnosticoCie10)}`,
         `Prioridad: ${this.readStringValue(input.formData.documentoPrioridad)}`,
@@ -16895,7 +17991,9 @@ export class EncountersService {
         `Motivo de envío: ${this.readStringValue(input.formData.documentoMotivoEnvio)}`,
         `Resumen clínico: ${this.readStringValue(input.formData.documentoResumenClinico)}`,
         'Diagnósticos:',
-        ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos capturados']),
+        ...(diagnosisLines.length > 0
+          ? diagnosisLines
+          : ['Sin diagnósticos capturados']),
         `Tratamiento actual: ${this.readStringValue(input.formData.documentoTratamientoActual)}`,
         `Estudios realizados: ${this.readStringValue(input.formData.documentoEstudiosRealizados)}`,
         `Recomendaciones: ${this.readStringValue(input.formData.documentoRecomendaciones)}`,
@@ -16912,7 +18010,9 @@ export class EncountersService {
         `Relación: ${this.readStringValue(input.formData.documentoRelacionTutor)}`,
         `Firma paciente: ${this.readStringValue(input.formData.documentoFirmaPaciente)}`,
         'Testigos:',
-        ...(consentWitnessLines.length > 0 ? consentWitnessLines : ['Sin testigos capturados']),
+        ...(consentWitnessLines.length > 0
+          ? consentWitnessLines
+          : ['Sin testigos capturados']),
       ],
       'Resumen clínico': [
         `Motivo de atención: ${this.readStringValue(input.formData.documentoMotivoAtencion)}`,
@@ -16964,7 +18064,9 @@ export class EncountersService {
         `Motivo de cierre: ${this.readStringValue(input.formData.documentoMotivoCierre)}`,
         `Resumen clínico final: ${this.readStringValue(input.formData.documentoResumenClinicoFinal)}`,
         'Diagnósticos finales:',
-        ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos capturados']),
+        ...(diagnosisLines.length > 0
+          ? diagnosisLines
+          : ['Sin diagnósticos capturados']),
         `Estado final: ${this.readStringValue(input.formData.documentoEstadoFinal)}`,
         `Indicaciones al egreso: ${this.readStringValue(input.formData.documentoIndicacionesEgreso)}`,
         `Plan de seguimiento: ${this.readStringValue(input.formData.documentoPlanSeguimiento)}`,
@@ -17022,7 +18124,9 @@ export class EncountersService {
       value(input.verificationCode) ||
       value(input.formData.documentoCodigoVerificacion);
     const professionalName = value(input.formData.documentoNombreProfesional);
-    const professionalLicense = value(input.formData.documentoCedulaProfesional);
+    const professionalLicense = value(
+      input.formData.documentoCedulaProfesional,
+    );
     const professionalSpecialty = value(
       input.formData.documentoEspecialidadProfesional,
     );
@@ -17040,11 +18144,14 @@ export class EncountersService {
           line('Especialidad', professionalSpecialty),
           line('Cédula profesional', professionalLicense),
         );
-    const labStudyLines = objectListLines(input.formData.documentoEstudiosLaboratorio, [
-      ['Estudio', 'tipoEstudio'],
-      ['Prioridad', 'prioridad'],
-      ['Indicación clínica', 'indicacionClinica'],
-    ]);
+    const labStudyLines = objectListLines(
+      input.formData.documentoEstudiosLaboratorio,
+      [
+        ['Estudio', 'tipoEstudio'],
+        ['Prioridad', 'prioridad'],
+        ['Indicación clínica', 'indicacionClinica'],
+      ],
+    );
     const consentWitnessLines = objectListLines(
       input.formData.documentoTestigosConsentimiento,
       [['Testigo', 'nombre']],
@@ -17052,8 +18159,13 @@ export class EncountersService {
     const clinicalLinesByDocument: Record<string, string[]> = {
       'Solicitud de laboratorio': lines(
         line('Servicio', input.formData.documentoServicioSolicitud),
-        ...(labStudyLines.length ? ['Estudios solicitados:', ...labStudyLines] : []),
-        line('Diagnóstico relacionado', input.formData.documentoDiagnosticoPrincipal),
+        ...(labStudyLines.length
+          ? ['Estudios solicitados:', ...labStudyLines]
+          : []),
+        line(
+          'Diagnóstico relacionado',
+          input.formData.documentoDiagnosticoPrincipal,
+        ),
         line('CIE-10', input.formData.documentoDiagnosticoCie10),
         line('Observaciones', input.formData.documentoObservaciones),
       ),
@@ -17064,7 +18176,10 @@ export class EncountersService {
         line('Región anatómica', input.formData.documentoRegionAnatomica),
         line('Proyección', input.formData.documentoProyeccion),
         line('Prioridad', input.formData.documentoPrioridadImagen),
-        line('Indicación clínica', input.formData.documentoIndicacionClinicaImagen),
+        line(
+          'Indicación clínica',
+          input.formData.documentoIndicacionClinicaImagen,
+        ),
         line('Diagnóstico', input.formData.documentoDiagnosticoPrincipal),
         line('CIE-10', input.formData.documentoDiagnosticoCie10),
         line('Alergia a contraste', input.formData.documentoAlergiaContraste),
@@ -17072,20 +18187,37 @@ export class EncountersService {
         line('Función renal', input.formData.documentoFuncionRenal),
       ),
       'Consentimiento informado': lines(
-        line('Nombre del procedimiento', input.formData.documentoProcedimientoNombre),
+        line(
+          'Nombre del procedimiento',
+          input.formData.documentoProcedimientoNombre,
+        ),
         line('Descripción', input.formData.documentoProcedimientoDescripcion),
         line('Riesgos generales', input.formData.documentoRiesgosGenerales),
         line('Riesgos específicos', input.formData.documentoRiesgosEspecificos),
         line('Beneficios', input.formData.documentoBeneficios),
         line('Alternativas', input.formData.documentoAlternativas),
-        line('Riesgos de no tratamiento', input.formData.documentoRiesgosNoTratamiento),
-        line('Nombre del paciente', input.formData.documentoNombrePacienteConsentimiento),
-        ...(consentWitnessLines.length ? ['Testigos:', ...consentWitnessLines] : []),
+        line(
+          'Riesgos de no tratamiento',
+          input.formData.documentoRiesgosNoTratamiento,
+        ),
+        line(
+          'Nombre del paciente',
+          input.formData.documentoNombrePacienteConsentimiento,
+        ),
+        ...(consentWitnessLines.length
+          ? ['Testigos:', ...consentWitnessLines]
+          : []),
       ),
       'Resumen clínico': lines(
         line('Motivo de atención', input.formData.documentoMotivoAtencion),
-        line('Diagnósticos iniciales', input.formData.documentoDiagnosticosIniciales),
-        line('Diagnósticos finales', input.formData.documentoDiagnosticosFinales),
+        line(
+          'Diagnósticos iniciales',
+          input.formData.documentoDiagnosticosIniciales,
+        ),
+        line(
+          'Diagnósticos finales',
+          input.formData.documentoDiagnosticosFinales,
+        ),
         line('Evolución', input.formData.documentoEvolucion),
         line('Estudios relevantes', input.formData.documentoEstudiosRelevantes),
         line('Tratamientos', input.formData.documentoTratamientos),
@@ -17098,16 +18230,25 @@ export class EncountersService {
         line('Hospital destino', input.formData.documentoHospitalDestino),
         line('Servicio', input.formData.documentoServicioDestino),
         line('Motivo de traslado', input.formData.documentoMotivoTraslado),
-        line('Resumen clínico breve', input.formData.documentoResumenClinicoBreve),
+        line(
+          'Resumen clínico breve',
+          input.formData.documentoResumenClinicoBreve,
+        ),
         line('Signos vitales', input.formData.documentoSignosVitalesTraslado),
         line('Estabilidad', input.formData.documentoEstabilidadPaciente),
         line('Manejo previo', input.formData.documentoManejoPrevio),
-        line('Tratamiento durante traslado', input.formData.documentoTratamientoTraslado),
+        line(
+          'Tratamiento durante traslado',
+          input.formData.documentoTratamientoTraslado,
+        ),
         line('Ambulancia', input.formData.documentoAmbulanciaTraslado),
         line('Tipo de ambulancia', input.formData.documentoTipoAmbulancia),
       ),
       Defunción: lines(
-        line('Datos del paciente', input.formData.documentoDatosPacienteDefuncion),
+        line(
+          'Datos del paciente',
+          input.formData.documentoDatosPacienteDefuncion,
+        ),
         line('Fecha de muerte', input.formData.documentoFechaMuerte),
         line('Hora de muerte', input.formData.documentoHoraMuerte),
         line('Lugar', input.formData.documentoLugarMuerte),
@@ -17117,7 +18258,10 @@ export class EncountersService {
         line('Otros estados', input.formData.documentoOtrosEstadosDefuncion),
         line('Comorbilidades', input.formData.documentoComorbilidadesDefuncion),
         line('Tipo de muerte', input.formData.documentoTipoMuerte),
-        line('Aviso institucional', input.formData.documentoAvisoInstitucionalDefuncion),
+        line(
+          'Aviso institucional',
+          input.formData.documentoAvisoInstitucionalDefuncion,
+        ),
       ),
     };
     const legalLines = lines(
@@ -17150,11 +18294,17 @@ export class EncountersService {
       ...section('Encabezado PDF', headerLines),
       line('Tipo de documento', input.noteType),
       line('Estado', input.formData.documentoEstado),
-      line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+      line(
+        'Fecha clínica del registro',
+        `${documentDate} ${documentTime}`.trim(),
+      ),
       line('Título / versión', input.recordTitle),
       line('Paciente', input.encounter.patient.fullName),
       line('Expediente', input.formData.documentoExpediente),
-      ...section('Contenido clínico', clinicalLinesByDocument[input.noteType] ?? []),
+      ...section(
+        'Contenido clínico',
+        clinicalLinesByDocument[input.noteType] ?? [],
+      ),
       ...section('Datos legales y firma', legalLines),
       ...section('Pie del PDF', footerLines),
     );
@@ -17221,7 +18371,9 @@ export class EncountersService {
       value(input.verificationCode) ||
       value(input.formData.documentoCodigoVerificacion);
     const professionalName = value(input.formData.documentoNombreProfesional);
-    const professionalLicense = value(input.formData.documentoCedulaProfesional);
+    const professionalLicense = value(
+      input.formData.documentoCedulaProfesional,
+    );
     const professionalSpecialty = value(
       input.formData.documentoEspecialidadProfesional,
     );
@@ -17278,7 +18430,9 @@ export class EncountersService {
       .join(' al ');
     const clinicalLinesByDocument: Record<string, string[]> = {
       'Historia clínica': lines(
-        ...(priorStudyLines.length ? ['Estudios previos:', ...priorStudyLines] : []),
+        ...(priorStudyLines.length
+          ? ['Estudios previos:', ...priorStudyLines]
+          : []),
         line(
           'Resumen de estudios relevantes',
           value(input.formData.resultadosPreviosResumen) ||
@@ -17287,8 +18441,14 @@ export class EncountersService {
       ),
       'Solicitud de laboratorio': lines(
         line('Motivo de solicitud', input.formData.documentoMotivoSolicitud),
-        line('Estudios solicitados', input.formData.documentoEstudiosSolicitados),
-        line('Diagnóstico asociado', input.formData.documentoDiagnosticoPrincipal),
+        line(
+          'Estudios solicitados',
+          input.formData.documentoEstudiosSolicitados,
+        ),
+        line(
+          'Diagnóstico asociado',
+          input.formData.documentoDiagnosticoPrincipal,
+        ),
         line('CIE-10', input.formData.documentoDiagnosticoCie10),
         line('Observaciones', input.formData.documentoObservaciones),
         line('Prioridad', input.formData.documentoPrioridad),
@@ -17301,9 +18461,15 @@ export class EncountersService {
             value(input.formData.documentoEstudiosSolicitados),
         ),
         line('Región anatómica', input.formData.documentoRegionAnatomica),
-        line('Diagnóstico presuntivo', input.formData.documentoDiagnosticoPrincipal),
+        line(
+          'Diagnóstico presuntivo',
+          input.formData.documentoDiagnosticoPrincipal,
+        ),
         line('CIE-10', input.formData.documentoDiagnosticoCie10),
-        line('Indicaciones especiales', input.formData.documentoIndicacionesEspeciales),
+        line(
+          'Indicaciones especiales',
+          input.formData.documentoIndicacionesEspeciales,
+        ),
         line('Prioridad', input.formData.documentoPrioridad),
       ),
       'Referencia / contrarreferencia': lines(
@@ -17317,7 +18483,10 @@ export class EncountersService {
         line('Recomendaciones', input.formData.documentoRecomendaciones),
       ),
       'Consentimiento informado': lines(
-        line('Tipo de procedimiento', input.formData.documentoProcedimientoTipo),
+        line(
+          'Tipo de procedimiento',
+          input.formData.documentoProcedimientoTipo,
+        ),
         line(
           'Descripción del procedimiento',
           input.formData.documentoProcedimientoDescripcion,
@@ -17332,7 +18501,9 @@ export class EncountersService {
         line('Nombre paciente / tutor', input.formData.documentoNombreTutor),
         line('Relación', input.formData.documentoRelacionTutor),
         line('Firma paciente / tutor', input.formData.documentoFirmaPaciente),
-        ...(consentWitnessLines.length ? ['Testigos:', ...consentWitnessLines] : []),
+        ...(consentWitnessLines.length
+          ? ['Testigos:', ...consentWitnessLines]
+          : []),
       ),
       'Certificado / constancia': lines(
         line('Tipo', input.formData.documentoTipoCertificado),
@@ -17345,10 +18516,18 @@ export class EncountersService {
       ),
       'Nota de cierre': lines(
         line('Motivo de cierre', input.formData.documentoMotivoCierre),
-        line('Resumen clínico final', input.formData.documentoResumenClinicoFinal),
-        ...(diagnosisLines.length ? ['Diagnósticos finales:', ...diagnosisLines] : []),
+        line(
+          'Resumen clínico final',
+          input.formData.documentoResumenClinicoFinal,
+        ),
+        ...(diagnosisLines.length
+          ? ['Diagnósticos finales:', ...diagnosisLines]
+          : []),
         line('Estado final', input.formData.documentoEstadoFinal),
-        line('Indicaciones al egreso', input.formData.documentoIndicacionesEgreso),
+        line(
+          'Indicaciones al egreso',
+          input.formData.documentoIndicacionesEgreso,
+        ),
         line('Plan de seguimiento', input.formData.documentoPlanSeguimiento),
       ),
     };
@@ -17373,7 +18552,10 @@ export class EncountersService {
       ...headerLines,
       line('Tipo de documento', input.noteType),
       line('Estado', input.formData.documentoEstado),
-      line('Fecha clínica del registro', `${documentDate} ${documentTime}`.trim()),
+      line(
+        'Fecha clínica del registro',
+        `${documentDate} ${documentTime}`.trim(),
+      ),
       line('Título / versión', input.recordTitle),
       line('Paciente', input.encounter.patient.fullName),
       line('Expediente', input.formData.documentoExpediente),
@@ -17423,8 +18605,12 @@ export class EncountersService {
     downloadCount: number;
   }) {
     const listLines = (value: unknown, fields: string[]) =>
-      this.readObjectArray(value).map((item, index) =>
-        `${index + 1}. ${fields.map((field) => this.readStringValue(item[field])).filter(Boolean).join(' · ')}`,
+      this.readObjectArray(value).map(
+        (item, index) =>
+          `${index + 1}. ${fields
+            .map((field) => this.readStringValue(item[field]))
+            .filter(Boolean)
+            .join(' · ')}`,
       );
     const comorbidityLines = listLines(input.formData.comorbilidadesPreproc, [
       'diagnostico',
@@ -17460,11 +18646,15 @@ export class EncountersService {
       `Evolución: ${this.readStringValue(input.formData.evolucionPadecimientoPreproc)}`,
       `Antecedentes: ${this.readStringValue(input.formData.detalleAntecedentesPreproc)}`,
       'Comorbilidades:',
-      ...(comorbidityLines.length > 0 ? comorbidityLines : ['Sin comorbilidades agregadas']),
+      ...(comorbidityLines.length > 0
+        ? comorbidityLines
+        : ['Sin comorbilidades agregadas']),
       'Alergias:',
       ...(allergyLines.length > 0 ? allergyLines : ['Sin alergias agregadas']),
       'Medicación actual:',
-      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicación agregada']),
+      ...(medicationLines.length > 0
+        ? medicationLines
+        : ['Sin medicación agregada']),
       'Objetivo',
       `Peso/Talla/IMC: ${this.readStringValue(input.formData.pesoKgPreproc)} kg / ${this.readStringValue(input.formData.tallaCmPreproc)} cm / ${this.readStringValue(input.formData.imcPreproc)}`,
       `TA/FC/FR/SpO2/T: ${this.readStringValue(input.formData.taPreproc)} / ${this.readStringValue(input.formData.fcPreproc)} / ${this.readStringValue(input.formData.frPreproc)} / ${this.readStringValue(input.formData.spo2Preproc)} / ${this.readStringValue(input.formData.temperaturaPreproc)}`,
@@ -17514,9 +18704,10 @@ export class EncountersService {
     formData: Record<string, unknown>;
     downloadCount: number;
   }) {
-    const materialLines = this.readObjectArray(input.formData.materialesProc).map(
-      (item, index) =>
-        `${index + 1}. ${this.readStringValue(item.nombre)} ${this.readStringValue(item.cantidad)} ${this.readStringValue(item.loteSerie)}`.trim(),
+    const materialLines = this.readObjectArray(
+      input.formData.materialesProc,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.nombre)} ${this.readStringValue(item.cantidad)} ${this.readStringValue(item.loteSerie)}`.trim(),
     );
     const lines = [
       input.recordTitle,
@@ -17533,11 +18724,11 @@ export class EncountersService {
       `Anestesiólogo: ${this.readStringValue(input.formData.anestesiologoProc)} · Cédula ${this.readStringValue(input.formData.cedulaAnestesiologoProc)}`,
       `Instrumentista / circulante: ${this.readStringValue(input.formData.instrumentistaProc)} / ${this.readStringValue(input.formData.enfermeriaCirculanteProc)}`,
       'Time-Out',
-      `Paciente verificado: ${Boolean(input.formData.toPacienteVerificadoProc) ? 'Sí' : 'No'}`,
-      `Procedimiento confirmado: ${Boolean(input.formData.toProcedimientoConfirmadoProc) ? 'Sí' : 'No'}`,
-      `Sitio marcado: ${Boolean(input.formData.toSitioConfirmadoProc) ? 'Sí' : 'No'}`,
-      `Time-Out antes de incisión: ${Boolean(input.formData.toRealizadoAntesIncisionProc) ? 'Sí' : 'No'}`,
-      `Profilaxis/equipo/consentimiento/imágenes: ${Boolean(input.formData.toProfilaxisAntibioticaProc) ? 'Sí' : 'No'} / ${Boolean(input.formData.toEquipoInstrumentalProc) ? 'Sí' : 'No'} / ${Boolean(input.formData.toConsentimientoVerificadoProc) ? 'Sí' : 'No'} / ${Boolean(input.formData.toImagenesDisponiblesProc) ? 'Sí' : 'No'}`,
+      `Paciente verificado: ${input.formData.toPacienteVerificadoProc ? 'Sí' : 'No'}`,
+      `Procedimiento confirmado: ${input.formData.toProcedimientoConfirmadoProc ? 'Sí' : 'No'}`,
+      `Sitio marcado: ${input.formData.toSitioConfirmadoProc ? 'Sí' : 'No'}`,
+      `Time-Out antes de incisión: ${input.formData.toRealizadoAntesIncisionProc ? 'Sí' : 'No'}`,
+      `Profilaxis/equipo/consentimiento/imágenes: ${input.formData.toProfilaxisAntibioticaProc ? 'Sí' : 'No'} / ${input.formData.toEquipoInstrumentalProc ? 'Sí' : 'No'} / ${input.formData.toConsentimientoVerificadoProc ? 'Sí' : 'No'} / ${input.formData.toImagenesDisponiblesProc ? 'Sí' : 'No'}`,
       'Descripción',
       `Fecha: ${this.readStringValue(input.formData.fechaProcedimientoProc)} ${this.readStringValue(input.formData.horaInicioRealProc)}-${this.readStringValue(input.formData.horaFinRealProc)}`,
       `Duración: ${this.readStringValue(input.formData.duracionMinutosProc)} min`,
@@ -17561,7 +18752,9 @@ export class EncountersService {
       `Transfusiones: ${this.readStringValue(input.formData.transfusionesProc)}`,
       `Drenajes: ${this.readStringValue(input.formData.drenajesColocadosProc)}`,
       'Materiales:',
-      ...(materialLines.length > 0 ? materialLines : ['Sin materiales estructurados']),
+      ...(materialLines.length > 0
+        ? materialLines
+        : ['Sin materiales estructurados']),
       `Implantes/dispositivos: ${this.readStringValue(input.formData.implantesDispositivosProc)}`,
       `Lotes/series: ${this.readStringValue(input.formData.lotesSeriesProc)}`,
       `Cuenta gasas/instrumental: ${this.readStringValue(input.formData.cuentaGasasInstrumentalProc)}`,
@@ -17612,16 +18805,28 @@ export class EncountersService {
     );
     const checklistLines = [
       ['Tolera vía oral', input.formData.altaToleraViaOralRecEval],
-      ['Deambulación independiente', input.formData.altaDeambulacionIndependienteRecEval],
+      [
+        'Deambulación independiente',
+        input.formData.altaDeambulacionIndependienteRecEval,
+      ],
       ['Micción espontánea', input.formData.altaMiccionEspontaneaRecEval],
       ['Dolor controlado', input.formData.altaDolorControladoRecEval],
       ['Sin náusea/vómito', input.formData.altaSinNauseaVomitoRecEval],
-      ['Signos vitales estables', input.formData.altaSignosVitalesEstablesRecEval],
+      [
+        'Signos vitales estables',
+        input.formData.altaSignosVitalesEstablesRecEval,
+      ],
       ['Heridas sin sangrado', input.formData.altaHeridasSinSangradoRecEval],
       ['Aldrete >= 9', input.formData.altaAldreteMayorIgual9RecEval],
-      ['Acompañante responsable', input.formData.altaAcompananteResponsableRecEval],
-      ['Instrucciones entregadas', input.formData.altaInstruccionesEntregadasRecEval],
-    ].map(([label, value]) => `${label}: ${Boolean(value) ? 'Sí' : 'No'}`);
+      [
+        'Acompañante responsable',
+        input.formData.altaAcompananteResponsableRecEval,
+      ],
+      [
+        'Instrucciones entregadas',
+        input.formData.altaInstruccionesEntregadasRecEval,
+      ],
+    ].map(([label, value]) => `${label}: ${value ? 'Sí' : 'No'}`);
     const lines = [
       input.recordTitle,
       'Tipo: Recuperación / Evaluación',
@@ -17654,9 +18859,13 @@ export class EncountersService {
       `Destino: ${this.readStringValue(input.formData.destinoPostRecuperacionRecEval)}`,
       `Cambios: ${this.readStringValue(input.formData.cambiosValoracionInmediataRecEval)}`,
       'Registros de enfermería:',
-      ...(nursingLines.length > 0 ? nursingLines : ['Sin registros de enfermería agregados']),
+      ...(nursingLines.length > 0
+        ? nursingLines
+        : ['Sin registros de enfermería agregados']),
       'Servicios auxiliares:',
-      ...(auxiliaryLines.length > 0 ? auxiliaryLines : ['Sin servicios auxiliares vinculados']),
+      ...(auxiliaryLines.length > 0
+        ? auxiliaryLines
+        : ['Sin servicios auxiliares vinculados']),
       'Datos legales',
       `Profesional: ${this.readStringValue(input.formData.profesionalNombreRecEval)}`,
       `Cédula: ${this.readStringValue(input.formData.profesionalCedulaRecEval)}`,
@@ -17697,7 +18906,9 @@ export class EncountersService {
       `RFC médico: ${this.readStringValue(input.formData.rfcMedicoRecetaEgreso)}`,
       `Licencia sanitaria: ${this.readStringValue(input.formData.licenciaSanitariaRecetaEgreso)}`,
       'Medicamentos:',
-      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      ...(medicationLines.length > 0
+        ? medicationLines
+        : ['Sin medicamentos capturados']),
       `Alertas alergias: ${this.readStringValue(input.formData.alertasAlergiasRecetaEgreso)}`,
       `Validaciones: ${this.readStringValue(input.formData.validacionesMedicamentosRecetaEgreso)}`,
       'INDICACIONES DE EGRESO',
@@ -17708,7 +18919,7 @@ export class EncountersService {
       `Signos de alarma: ${this.readStringValue(input.formData.signosAlarmaEgreso)}`,
       `Seguimiento: ${this.readStringValue(input.formData.fechaCitaSeguimientoEgreso)} · ${this.readStringValue(input.formData.tipoCitaSeguimientoEgreso)} · ${this.readStringValue(input.formData.motivoCitaSeguimientoEgreso)}`,
       `Educación otorgada: ${this.readStringValue(input.formData.educacionOtorgadaEgreso)}`,
-      `Comprensión paciente/familiar: ${Boolean(input.formData.pacienteComprendeIndicacionesEgreso) ? 'Sí' : 'No'} / ${Boolean(input.formData.familiarInformadoEgreso) ? 'Sí' : 'No'}`,
+      `Comprensión paciente/familiar: ${input.formData.pacienteComprendeIndicacionesEgreso ? 'Sí' : 'No'} / ${input.formData.familiarInformadoEgreso ? 'Sí' : 'No'}`,
       'Datos legales',
       `Profesional: ${this.readStringValue(input.formData.profesionalNombreRecetaEgreso)}`,
       `Cédula: ${this.readStringValue(input.formData.profesionalCedulaRecetaEgreso)}`,
@@ -17736,9 +18947,12 @@ export class EncountersService {
       ['Heridas sin sangrado', input.formData.altaHeridasSinSangradoEgresoAmb],
       ['Aldrete >= 9', input.formData.altaAldreteMayor9EgresoAmb],
       ['Acompañante', input.formData.altaAcompananteEgresoAmb],
-      ['Indicaciones entregadas', input.formData.altaIndicacionesEntregadasEgresoAmb],
+      [
+        'Indicaciones entregadas',
+        input.formData.altaIndicacionesEntregadasEgresoAmb,
+      ],
       ['Receta entregada', input.formData.altaRecetaEntregadaEgresoAmb],
-    ].map(([label, value]) => `${label}: ${Boolean(value) ? 'Sí' : 'No'}`);
+    ].map(([label, value]) => `${label}: ${value ? 'Sí' : 'No'}`);
     const lines = [
       input.recordTitle,
       'Tipo: Egreso',
@@ -17770,7 +18984,7 @@ export class EncountersService {
       `Seguimiento: ${this.readStringValue(input.formData.seguimientoEgresoAmb)}`,
       `Incapacidad: ${this.readStringValue(input.formData.diasIncapacidadEgresoAmb)} días · ${this.readStringValue(input.formData.tipoIncapacidadEgresoAmb)}`,
       `Educación: ${this.readStringValue(input.formData.educacionPacienteEgresoAmb)}`,
-      `Comprensión paciente/familiar: ${Boolean(input.formData.pacienteComprendeEgresoAmb) ? 'Sí' : 'No'} / ${Boolean(input.formData.familiarInformadoEgresoAmb) ? 'Sí' : 'No'}`,
+      `Comprensión paciente/familiar: ${input.formData.pacienteComprendeEgresoAmb ? 'Sí' : 'No'} / ${input.formData.familiarInformadoEgresoAmb ? 'Sí' : 'No'}`,
       `Referencia/traslado: ${this.readStringValue(input.formData.referenciaEstablecimientoReceptorEgresoAmb)} ${this.readStringValue(input.formData.referenciaMotivoEnvioEgresoAmb)}`.trim(),
       'Responsable',
       `Médico: ${this.readStringValue(input.formData.medicoAutorizaEgresoAmb)} · ${this.readStringValue(input.formData.cedulaAutorizaEgresoAmb)}`,
@@ -17790,13 +19004,15 @@ export class EncountersService {
     verificationCode: string;
     downloadCount: number;
   }) {
-    const medicationLines = this.readObjectArray(input.formData.medicamentosHosp).map(
-      (item, index) =>
-        `${index + 1}. ${this.readStringValue(item.medicamento)} ${this.readStringValue(item.dosis)} ${this.readStringValue(item.via)} ${this.readStringValue(item.frecuencia)}`.trim(),
+    const medicationLines = this.readObjectArray(
+      input.formData.medicamentosHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.medicamento)} ${this.readStringValue(item.dosis)} ${this.readStringValue(item.via)} ${this.readStringValue(item.frecuencia)}`.trim(),
     );
-    const comorbidityLines = this.readObjectArray(input.formData.comorbilidadesHosp).map(
-      (item, index) =>
-        `${index + 1}. ${this.readStringValue(item.comorbilidad)} - ${this.readStringValue(item.estado)}`.trim(),
+    const comorbidityLines = this.readObjectArray(
+      input.formData.comorbilidadesHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.comorbilidad)} - ${this.readStringValue(item.estado)}`.trim(),
     );
     const diagnosisLines = this.readObjectArray(
       input.formData.diagnosticosSecundariosHosp,
@@ -17835,13 +19051,19 @@ export class EncountersService {
       `Diagnóstico principal: ${this.readStringValue(input.formData.diagnosticoPrincipalHosp)}`,
       `CIE-10: ${this.readStringValue(input.formData.cie10Hosp)}`,
       'Diagnósticos secundarios:',
-      ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos secundarios']),
+      ...(diagnosisLines.length > 0
+        ? diagnosisLines
+        : ['Sin diagnósticos secundarios']),
       'Comorbilidades:',
-      ...(comorbidityLines.length > 0 ? comorbidityLines : ['Sin comorbilidades agregadas']),
+      ...(comorbidityLines.length > 0
+        ? comorbidityLines
+        : ['Sin comorbilidades agregadas']),
       `Dieta inicial: ${this.readStringValue(input.formData.dietaInicialHosp)}`,
       `Aislamiento: ${this.readStringValue(input.formData.aislamientoRequeridoHosp)}`,
       'Medicamentos:',
-      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      ...(medicationLines.length > 0
+        ? medicationLines
+        : ['Sin medicamentos capturados']),
       `Estudios: ${this.readStringValue(input.formData.estudiosPlanHosp)}`,
       `Procedimientos: ${this.readStringValue(input.formData.procedimientosPlanHosp)}`,
       `Interconsultas: ${this.readStringValue(input.formData.interconsultasPlanHosp)}`,
@@ -17898,7 +19120,9 @@ export class EncountersService {
       `Cambios clínicos: ${this.readStringValue(input.formData.cambiosClinicosEvolHosp)}`,
       `Justificación NOM-004: ${this.readStringValue(input.formData.justificacionNom004EvolHosp)}`,
       'Diagnósticos activos:',
-      ...(diagnosisLines.length > 0 ? diagnosisLines : ['Sin diagnósticos activos']),
+      ...(diagnosisLines.length > 0
+        ? diagnosisLines
+        : ['Sin diagnósticos activos']),
       `Eventos adversos: ${this.readStringValue(input.formData.eventosAdversosEvolHosp)}`,
       `Complicaciones: ${this.readStringValue(input.formData.complicacionesEvolHosp)}`,
       `Tratamiento: ${this.readStringValue(input.formData.tratamientoEvolHosp)}`,
@@ -17958,9 +19182,13 @@ export class EncountersService {
       `Fecha: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
       `Código verificación: ${input.verificationCode}`,
       'Medicamentos:',
-      ...(medicationLines.length > 0 ? medicationLines : ['Sin medicamentos capturados']),
+      ...(medicationLines.length > 0
+        ? medicationLines
+        : ['Sin medicamentos capturados']),
       'Soluciones IV:',
-      ...(solutionLines.length > 0 ? solutionLines : ['Sin soluciones IV capturadas']),
+      ...(solutionLines.length > 0
+        ? solutionLines
+        : ['Sin soluciones IV capturadas']),
       `Dieta: ${this.readStringValue(input.formData.dietaIndicacionesHosp)}`,
       `Reposo / actividad: ${this.readStringValue(input.formData.reposoActividadIndicacionesHosp)}`,
       `Posición: ${this.readStringValue(input.formData.posicionIndicacionesHosp)}`,
@@ -17968,7 +19196,9 @@ export class EncountersService {
       'Estudios solicitados:',
       ...(studyLines.length > 0 ? studyLines : ['Sin estudios solicitados']),
       'Interconsultas solicitadas:',
-      ...(consultationLines.length > 0 ? consultationLines : ['Sin interconsultas solicitadas']),
+      ...(consultationLines.length > 0
+        ? consultationLines
+        : ['Sin interconsultas solicitadas']),
       `Monitoreo enfermería: ${this.readStringValue(input.formData.monitoreoEnfermeriaIndicacionesHosp)}`,
       `Oxígeno: ${this.readStringValue(input.formData.oxigenoIndicacionesHosp)}`,
       `Control de líquidos: ${this.readStringValue(input.formData.controlLiquidosIndicacionesHosp)}`,
@@ -18133,18 +19363,22 @@ export class EncountersService {
     formData: Record<string, unknown>;
     downloadCount: number;
   }) {
-    const vitalLines = this.readObjectArray(input.formData.signosVitalesSeriadosEnfHosp)
-      .map((item, index) =>
+    const vitalLines = this.readObjectArray(
+      input.formData.signosVitalesSeriadosEnfHosp,
+    ).map(
+      (item, index) =>
         `${index + 1}. ${this.readStringValue(item.fecha)} ${this.readStringValue(item.hora)} · TA sistólica (mmHg): ${this.readStringValue(item.taSistolica)} · TA diastólica (mmHg): ${this.readStringValue(item.taDiastolica)} · FC (lpm): ${this.readStringValue(item.fc)} · FR (rpm): ${this.readStringValue(item.fr)} · Temperatura (°C): ${this.readStringValue(item.temperatura)} · SpO₂ (%): ${this.readStringValue(item.spo2)} · Glucosa capilar (mg/dL): ${this.readStringValue(item.glucosaCapilar)} · Dolor EVA (0–10): ${this.readStringValue(item.dolorEva)}`,
-      );
-    const medicationLines = this.readObjectArray(input.formData.medicamentosMinistradosEnfHosp)
-      .map((item, index) =>
-        `${index + 1}. ${this.readStringValue(item.medicamento)} ${this.readStringValue(item.horaProgramada)} ${this.readStringValue(item.estado)} ${this.readStringValue(item.motivoNoAdministracion)}`.trim(),
-      );
-    const procedureLines = this.readObjectArray(input.formData.procedimientosEnfermeriaTurnoHosp)
-      .map((item, index) =>
-        `${index + 1}. ${this.readStringValue(item.procedimiento)} ${this.readStringValue(item.hora)} ${this.readStringValue(item.realizadoPor)}`.trim(),
-      );
+    );
+    const medicationLines = this.readObjectArray(
+      input.formData.medicamentosMinistradosEnfHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.medicamento)} ${this.readStringValue(item.horaProgramada)} ${this.readStringValue(item.estado)} ${this.readStringValue(item.motivoNoAdministracion)}`.trim(),
+    );
+    const procedureLines = this.readObjectArray(
+      input.formData.procedimientosEnfermeriaTurnoHosp,
+    ).map((item, index) =>
+      `${index + 1}. ${this.readStringValue(item.procedimiento)} ${this.readStringValue(item.hora)} ${this.readStringValue(item.realizadoPor)}`.trim(),
+    );
 
     return this.renderSimplePdf([
       input.recordTitle,
@@ -18158,9 +19392,13 @@ export class EncountersService {
       'Signos vitales seriados:',
       ...(vitalLines.length > 0 ? vitalLines : ['Sin signos capturados']),
       'Ministración de medicamentos:',
-      ...(medicationLines.length > 0 ? medicationLines : ['Sin ministración capturada']),
+      ...(medicationLines.length > 0
+        ? medicationLines
+        : ['Sin ministración capturada']),
       'Procedimientos:',
-      ...(procedureLines.length > 0 ? procedureLines : ['Sin procedimientos capturados']),
+      ...(procedureLines.length > 0
+        ? procedureLines
+        : ['Sin procedimientos capturados']),
       `Balance hídrico: ingresos ${this.readStringValue(input.formData.ingresosMlEnfHosp)} ml / egresos ${this.readStringValue(input.formData.egresosMlEnfHosp)} ml / total ${this.readStringValue(input.formData.balanceTotalEnfHosp)} ml`,
       `Cuidados: curaciones ${this.readStringValue(input.formData.curacionesEnfHosp)} / movilización ${this.readStringValue(input.formData.movilizacionEnfHosp)} / higiene ${this.readStringValue(input.formData.higieneEnfHosp)}`,
       `Vigilancia: ${this.readStringValue(input.formData.vigilanciaEnfHosp)}`,
@@ -18186,7 +19424,9 @@ export class EncountersService {
   }) {
     const dischargeType = this.readStringValue(input.formData.tipoEgresoHosp);
     const optionalPdfLine = (label: string, value: unknown) =>
-      this.hasCapturedValue(value) ? `${label}: ${this.readStringValue(value)}` : null;
+      this.hasCapturedValue(value)
+        ? `${label}: ${this.readStringValue(value)}`
+        : null;
     const compactPdfLine = (label: string, values: unknown[]) => {
       const renderedValue = values
         .map((value) => this.readStringValue(value))
@@ -18203,7 +19443,9 @@ export class EncountersService {
       `Fecha registro: ${input.recordedAt.toISOString().slice(0, 16).replace('T', ' ')}`,
       `Tipo de egreso: ${this.formatHospitalDischargeTypeLabel(input.formData.tipoEgresoHosp)}`,
       ...(this.hasCapturedValue(input.formData.destinoPacienteEgresoHosp)
-        ? [`Destino del paciente: ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}`]
+        ? [
+            `Destino del paciente: ${this.readStringValue(input.formData.destinoPacienteEgresoHosp)}`,
+          ]
         : []),
       `Egreso: ${this.readStringValue(input.formData.fechaHoraEgresoHosp)}`,
       `Ingreso: ${this.readStringValue(input.formData.fechaIngresoReadonlyHosp)}`,
@@ -18211,9 +19453,18 @@ export class EncountersService {
       `Estado al egreso: ${this.readStringValue(input.formData.estadoAlEgresoHosp)}`,
       ...(dischargeType === 'ALTA_VOLUNTARIA'
         ? [
-            optionalPdfLine('Motivo alta voluntaria', input.formData.motivoAltaVoluntariaEgresoHosp),
-            optionalPdfLine('Riesgos explicados', input.formData.riesgosExplicadosAltaVoluntariaEgresoHosp),
-            optionalPdfLine('Profesional responsable', input.formData.profesionalResponsableAltaVoluntariaEgresoHosp),
+            optionalPdfLine(
+              'Motivo alta voluntaria',
+              input.formData.motivoAltaVoluntariaEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Riesgos explicados',
+              input.formData.riesgosExplicadosAltaVoluntariaEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Profesional responsable',
+              input.formData.profesionalResponsableAltaVoluntariaEgresoHosp,
+            ),
             compactPdfLine('Conformidad', [
               input.formData.firmanteConformidadNombreEgresoHosp,
               input.formData.firmanteConformidadCalidadEgresoHosp,
@@ -18224,28 +19475,58 @@ export class EncountersService {
         : []),
       ...(dischargeType === 'TRASLADO' || dischargeType === 'REFERENCIA'
         ? [
-            optionalPdfLine('Unidad receptora', input.formData.unidadReceptoraEgresoHosp),
+            optionalPdfLine(
+              'Unidad receptora',
+              input.formData.unidadReceptoraEgresoHosp,
+            ),
             compactPdfLine('Médico receptor', [
               input.formData.medicoReceptorEgresoHosp,
               input.formData.cedulaMedicoReceptorEgresoHosp,
             ]),
-            optionalPdfLine('Servicio receptor', input.formData.servicioReceptorEgresoHosp),
-            optionalPdfLine('Medio de traslado', input.formData.medioTrasladoEgresoHosp),
+            optionalPdfLine(
+              'Servicio receptor',
+              input.formData.servicioReceptorEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Medio de traslado',
+              input.formData.medioTrasladoEgresoHosp,
+            ),
           ].filter((line): line is string => Boolean(line))
         : []),
       ...(dischargeType === 'DEFUNCION'
         ? [
-            optionalPdfLine('Hora de defunción', input.formData.horaDefuncionEgresoHosp),
-            optionalPdfLine('Causa de defunción', input.formData.causaDefuncionEgresoHosp),
-            optionalPdfLine('Certificado relacionado', input.formData.certificadoDefuncionRelacionadoEgresoHosp),
+            optionalPdfLine(
+              'Hora de defunción',
+              input.formData.horaDefuncionEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Causa de defunción',
+              input.formData.causaDefuncionEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Certificado relacionado',
+              input.formData.certificadoDefuncionRelacionadoEgresoHosp,
+            ),
           ].filter((line): line is string => Boolean(line))
         : []),
       ...(dischargeType === 'FUGA_ABANDONO'
         ? [
-            optionalPdfLine('Último contacto', input.formData.horaUltimoContactoEgresoHosp),
-            optionalPdfLine('Circunstancias', input.formData.circunstanciasAbandonoEgresoHosp),
-            optionalPdfLine('Profesional que documenta', input.formData.profesionalDocumentaAbandonoEgresoHosp),
-            optionalPdfLine('Fecha documentación', input.formData.fechaHoraDocumentacionAbandonoEgresoHosp),
+            optionalPdfLine(
+              'Último contacto',
+              input.formData.horaUltimoContactoEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Circunstancias',
+              input.formData.circunstanciasAbandonoEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Profesional que documenta',
+              input.formData.profesionalDocumentaAbandonoEgresoHosp,
+            ),
+            optionalPdfLine(
+              'Fecha documentación',
+              input.formData.fechaHoraDocumentacionAbandonoEgresoHosp,
+            ),
           ].filter((line): line is string => Boolean(line))
         : []),
       `Motivo ingreso: ${this.readStringValue(input.formData.motivoIngresoEgresoHosp)}`,
@@ -18333,11 +19614,20 @@ export class EncountersService {
       return [];
     }
 
-    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    return value.filter(
+      (item): item is string =>
+        typeof item === 'string' && item.trim().length > 0,
+    );
   }
 
-  private normalizeRecordMetadata(rawMetadata: Prisma.JsonValue | null | undefined) {
-    if (!rawMetadata || typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
+  private normalizeRecordMetadata(
+    rawMetadata: Prisma.JsonValue | null | undefined,
+  ) {
+    if (
+      !rawMetadata ||
+      typeof rawMetadata !== 'object' ||
+      Array.isArray(rawMetadata)
+    ) {
       return null;
     }
 
@@ -18426,7 +19716,10 @@ export class EncountersService {
         'documentoRiesgos',
         'documentoFirmaPaciente',
       ],
-      'Certificado / constancia': ['documentoTipoCertificado', 'documentoMotivo'],
+      'Certificado / constancia': [
+        'documentoTipoCertificado',
+        'documentoMotivo',
+      ],
       'Nota de cierre': [
         'documentoMotivoCierre',
         'documentoResumenClinicoFinal',
@@ -18464,30 +19757,28 @@ export class EncountersService {
           'aislamientoRequerido',
         ]
       : [];
-    const emergencyInitialNoteRequiredFields = this.isEmergencyInitialNoteRecord(
-      input.encounterType,
-      input.tabKey,
-    )
-      ? [
-          'motivoAtencion',
-          'horaInicioSintomas',
-          'habitusExteriorNota',
-          'exploracionCardiovascularNota',
-          'exploracionRespiratoriaNota',
-          'exploracionNeurologicaNota',
-          'consentimientoUrgenciasNota',
-          'tipoConsentimientoNota',
-          'riesgoVitalNota',
-          'estudiosAnalisis',
-          'diagnosticoNota',
-          'cie10Nota',
-          'estadoClinicoNota',
-          'medicamentosPlan',
-          'destinoPlan',
-          'pronosticoNota',
-          'resumenPronostico',
-        ]
-      : [];
+    const emergencyInitialNoteRequiredFields =
+      this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)
+        ? [
+            'motivoAtencion',
+            'horaInicioSintomas',
+            'habitusExteriorNota',
+            'exploracionCardiovascularNota',
+            'exploracionRespiratoriaNota',
+            'exploracionNeurologicaNota',
+            'consentimientoUrgenciasNota',
+            'tipoConsentimientoNota',
+            'riesgoVitalNota',
+            'estudiosAnalisis',
+            'diagnosticoNota',
+            'cie10Nota',
+            'estadoClinicoNota',
+            'medicamentosPlan',
+            'destinoPlan',
+            'pronosticoNota',
+            'resumenPronostico',
+          ]
+        : [];
     const emergencyEvolutionRequiredFields = this.isEmergencyEvolutionRecord(
       input.encounterType,
       input.tabKey,
@@ -18629,30 +19920,34 @@ export class EncountersService {
       this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
         ? this.resolveHospitalSurgicalRequiredFields(input.noteType)
         : [];
-    const hospitalNursingRequiredFields =
-      this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)
-        ? [
-            'turnoEnfermeriaHosp',
-            'signosVitalesSeriadosEnfHosp',
-            'medicamentosMinistradosEnfHosp',
+    const hospitalNursingRequiredFields = this.isHospitalNursingShiftRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? [
+          'turnoEnfermeriaHosp',
+          'signosVitalesSeriadosEnfHosp',
+          'medicamentosMinistradosEnfHosp',
         ]
-        : [];
-    const hospitalDischargeRequiredFields =
-      this.isHospitalDischargeRecord(input.encounterType, input.tabKey)
-        ? [
-            'tipoEgresoHosp',
-            'fechaHoraEgresoHosp',
-            'estadoAlEgresoHosp',
-            'diagnosticoFinalEgresoHosp',
-            'cie10EgresoHosp',
-            'cuidadosDomicilioEgresoHosp',
-            'seguimientoEgresoHosp',
-            'signosAlarmaEgresoHosp',
-            'pronosticoEgresoHosp',
-            'medicoResponsableEgresoHosp',
-            'cedulaResponsableEgresoHosp',
-          ]
-        : [];
+      : [];
+    const hospitalDischargeRequiredFields = this.isHospitalDischargeRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? [
+          'tipoEgresoHosp',
+          'fechaHoraEgresoHosp',
+          'estadoAlEgresoHosp',
+          'diagnosticoFinalEgresoHosp',
+          'cie10EgresoHosp',
+          'cuidadosDomicilioEgresoHosp',
+          'seguimientoEgresoHosp',
+          'signosAlarmaEgresoHosp',
+          'pronosticoEgresoHosp',
+          'medicoResponsableEgresoHosp',
+          'cedulaResponsableEgresoHosp',
+        ]
+      : [];
     const hospitalDocumentRequiredFields = this.isHospitalDocumentRecord(
       input.encounterType,
       input.tabKey,
@@ -18672,22 +19967,32 @@ export class EncountersService {
       this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
         ? this.resolveAmbulatoryPreprocedureRequiredFields(formData)
         : [];
-    const ambulatoryProcedureRequiredFields =
-      this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
-        ? this.resolveAmbulatoryProcedureRequiredFields(formData)
-        : [];
+    const ambulatoryProcedureRequiredFields = this.isAmbulatoryProcedureRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? this.resolveAmbulatoryProcedureRequiredFields(formData)
+      : [];
     const ambulatoryRecoveryEvaluationRequiredFields =
-      this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        input.encounterType,
+        input.tabKey,
+      )
         ? this.resolveAmbulatoryRecoveryEvaluationRequiredFields(formData)
         : [];
     const ambulatoryDischargePrescriptionRequiredFields =
-      this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)
+      this.isAmbulatoryDischargePrescriptionRecord(
+        input.encounterType,
+        input.tabKey,
+      )
         ? this.resolveAmbulatoryDischargePrescriptionRequiredFields()
         : [];
-    const ambulatoryDischargeRequiredFields =
-      this.isAmbulatoryDischargeRecord(input.encounterType, input.tabKey)
-        ? this.resolveAmbulatoryDischargeRequiredFields(formData)
-        : [];
+    const ambulatoryDischargeRequiredFields = this.isAmbulatoryDischargeRecord(
+      input.encounterType,
+      input.tabKey,
+    )
+      ? this.resolveAmbulatoryDischargeRequiredFields(formData)
+      : [];
 
     if (this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)) {
       this.assertEmergencyEvolutionDiagnosesCanBeSigned(formData);
@@ -18734,45 +20039,102 @@ export class EncountersService {
           ? 'Completa los campos obligatorios del triage antes de firmarlo'
           : this.isEmergencyInitialNoteRecord(input.encounterType, input.tabKey)
             ? 'Completa los campos obligatorios de la nota inicial antes de firmarla'
-            : this.isEmergencyNursingSheetRecord(input.encounterType, input.tabKey)
+            : this.isEmergencyNursingSheetRecord(
+                  input.encounterType,
+                  input.tabKey,
+                )
               ? 'Completa los campos obligatorios de la hoja de enfermería antes de firmarla'
-              : this.isEmergencyEvolutionRecord(input.encounterType, input.tabKey)
-              ? 'Completa los campos obligatorios de la evolución antes de firmarla'
-              : this.isEmergencyOrdersRecord(input.encounterType, input.tabKey)
-                ? 'Completa medicamentos y estudios solicitados antes de firmar las órdenes'
-                : this.isEmergencyConsultationRecord(input.encounterType, input.tabKey)
-                  ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
-                  : this.isEmergencyDischargeRecord(input.encounterType, input.tabKey)
-                    ? 'Completa los campos obligatorios del egreso de urgencias antes de firmarlo'
-                    : this.isHospitalAdmissionRecord(input.encounterType, input.tabKey)
-                      ? 'Completa los campos obligatorios del ingreso hospitalario antes de firmarlo'
-                      : this.isHospitalEvolutionRecord(input.encounterType, input.tabKey)
-                        ? 'Completa los campos obligatorios de la evolución hospitalaria antes de firmarla'
-                        : this.isHospitalMedicalOrdersRecord(input.encounterType, input.tabKey)
-                          ? 'Completa los campos obligatorios de indicaciones médicas antes de firmarlas'
-                          : this.isHospitalConsultationRecord(input.encounterType, input.tabKey)
-                            ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
-                            : this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
-                              ? 'Completa los campos obligatorios del subdocumento quirúrgico antes de firmarlo'
-                              : this.isHospitalNursingShiftRecord(input.encounterType, input.tabKey)
-                                ? 'Completa los signos vitales y medicamentos del turno antes de firmarlo'
-                                : this.isHospitalDischargeRecord(input.encounterType, input.tabKey)
-                                  ? 'Completa los campos obligatorios del egreso antes de firmarlo'
-                                  : this.isHospitalDocumentRecord(input.encounterType, input.tabKey)
-                                    ? 'Completa los campos obligatorios del documento hospitalario antes de firmarlo'
-                                    : this.isAmbulatoryProcedureSupportingDocumentRecord(input.encounterType, input.tabKey)
-                                      ? 'Completa los campos obligatorios del documento ambulatorio antes de firmarlo'
-                                      : this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
-                                      ? 'Completa los campos obligatorios de la valoración preprocedimiento antes de firmarla'
-                                      : this.isAmbulatoryProcedureRecord(input.encounterType, input.tabKey)
-                                        ? 'Completa los campos obligatorios del procedimiento antes de firmarlo'
-                                        : this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)
-                                          ? 'Completa los campos obligatorios de Recuperación / Evaluación antes de firmarla'
-                                          : this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)
-                                            ? 'Completa los campos obligatorios de receta e indicaciones de egreso antes de firmar'
-                                            : this.isAmbulatoryDischargeRecord(input.encounterType, input.tabKey)
-                                              ? 'Completa los campos obligatorios de Egreso antes de firmar'
-                  : 'Completa los campos obligatorios del documento antes de firmarlo',
+              : this.isEmergencyEvolutionRecord(
+                    input.encounterType,
+                    input.tabKey,
+                  )
+                ? 'Completa los campos obligatorios de la evolución antes de firmarla'
+                : this.isEmergencyOrdersRecord(
+                      input.encounterType,
+                      input.tabKey,
+                    )
+                  ? 'Completa medicamentos y estudios solicitados antes de firmar las órdenes'
+                  : this.isEmergencyConsultationRecord(
+                        input.encounterType,
+                        input.tabKey,
+                      )
+                    ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
+                    : this.isEmergencyDischargeRecord(
+                          input.encounterType,
+                          input.tabKey,
+                        )
+                      ? 'Completa los campos obligatorios del egreso de urgencias antes de firmarlo'
+                      : this.isHospitalAdmissionRecord(
+                            input.encounterType,
+                            input.tabKey,
+                          )
+                        ? 'Completa los campos obligatorios del ingreso hospitalario antes de firmarlo'
+                        : this.isHospitalEvolutionRecord(
+                              input.encounterType,
+                              input.tabKey,
+                            )
+                          ? 'Completa los campos obligatorios de la evolución hospitalaria antes de firmarla'
+                          : this.isHospitalMedicalOrdersRecord(
+                                input.encounterType,
+                                input.tabKey,
+                              )
+                            ? 'Completa los campos obligatorios de indicaciones médicas antes de firmarlas'
+                            : this.isHospitalConsultationRecord(
+                                  input.encounterType,
+                                  input.tabKey,
+                                )
+                              ? 'Completa los campos obligatorios de la interconsulta antes de firmarla'
+                              : this.isHospitalSurgicalDocumentRecord(
+                                    input.encounterType,
+                                    input.tabKey,
+                                  )
+                                ? 'Completa los campos obligatorios del subdocumento quirúrgico antes de firmarlo'
+                                : this.isHospitalNursingShiftRecord(
+                                      input.encounterType,
+                                      input.tabKey,
+                                    )
+                                  ? 'Completa los signos vitales y medicamentos del turno antes de firmarlo'
+                                  : this.isHospitalDischargeRecord(
+                                        input.encounterType,
+                                        input.tabKey,
+                                      )
+                                    ? 'Completa los campos obligatorios del egreso antes de firmarlo'
+                                    : this.isHospitalDocumentRecord(
+                                          input.encounterType,
+                                          input.tabKey,
+                                        )
+                                      ? 'Completa los campos obligatorios del documento hospitalario antes de firmarlo'
+                                      : this.isAmbulatoryProcedureSupportingDocumentRecord(
+                                            input.encounterType,
+                                            input.tabKey,
+                                          )
+                                        ? 'Completa los campos obligatorios del documento ambulatorio antes de firmarlo'
+                                        : this.isAmbulatoryPreprocedureRecord(
+                                              input.encounterType,
+                                              input.tabKey,
+                                            )
+                                          ? 'Completa los campos obligatorios de la valoración preprocedimiento antes de firmarla'
+                                          : this.isAmbulatoryProcedureRecord(
+                                                input.encounterType,
+                                                input.tabKey,
+                                              )
+                                            ? 'Completa los campos obligatorios del procedimiento antes de firmarlo'
+                                            : this.isAmbulatoryRecoveryEvaluationRecord(
+                                                  input.encounterType,
+                                                  input.tabKey,
+                                                )
+                                              ? 'Completa los campos obligatorios de Recuperación / Evaluación antes de firmarla'
+                                              : this.isAmbulatoryDischargePrescriptionRecord(
+                                                    input.encounterType,
+                                                    input.tabKey,
+                                                  )
+                                                ? 'Completa los campos obligatorios de receta e indicaciones de egreso antes de firmar'
+                                                : this.isAmbulatoryDischargeRecord(
+                                                      input.encounterType,
+                                                      input.tabKey,
+                                                    )
+                                                  ? 'Completa los campos obligatorios de Egreso antes de firmar'
+                                                  : 'Completa los campos obligatorios del documento antes de firmarlo',
       );
     }
 
@@ -18780,11 +20142,24 @@ export class EncountersService {
       this.assertAmbulatoryDischargeReadyForSignature(formData);
     }
 
-    if (this.isAmbulatoryDischargePrescriptionRecord(input.encounterType, input.tabKey)) {
-      this.assertAmbulatoryDischargePrescriptionReadyForSignature(input, formData);
+    if (
+      this.isAmbulatoryDischargePrescriptionRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+    ) {
+      this.assertAmbulatoryDischargePrescriptionReadyForSignature(
+        input,
+        formData,
+      );
     }
 
-    if (this.isAmbulatoryRecoveryEvaluationRecord(input.encounterType, input.tabKey)) {
+    if (
+      this.isAmbulatoryRecoveryEvaluationRecord(
+        input.encounterType,
+        input.tabKey,
+      )
+    ) {
       this.assertAmbulatoryRecoveryEvaluationReadyForSignature(formData);
     }
 
@@ -18792,7 +20167,9 @@ export class EncountersService {
       this.assertAmbulatoryProcedureReadyForSignature(formData);
     }
 
-    if (this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)) {
+    if (
+      this.isAmbulatoryPreprocedureRecord(input.encounterType, input.tabKey)
+    ) {
       this.assertAmbulatoryPreprocedureReadyForSignature(formData);
     }
 
@@ -18820,8 +20197,13 @@ export class EncountersService {
       this.assertHospitalNursingShiftReadyForSignature(formData);
     }
 
-    if (this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)) {
-      this.assertHospitalSurgicalDocumentReadyForSignature(input.noteType, formData);
+    if (
+      this.isHospitalSurgicalDocumentRecord(input.encounterType, input.tabKey)
+    ) {
+      this.assertHospitalSurgicalDocumentReadyForSignature(
+        input.noteType,
+        formData,
+      );
     }
 
     if (this.isHospitalConsultationRecord(input.encounterType, input.tabKey)) {
@@ -18960,7 +20342,9 @@ export class EncountersService {
     const professionalLicense = this.readStringValue(formData.cedulaEnfUrg);
 
     if (painEva === null || painEva < 0 || painEva > 10) {
-      throw new BadRequestException('Captura una valoración EVA válida de 0 a 10');
+      throw new BadRequestException(
+        'Captura una valoración EVA válida de 0 a 10',
+      );
     }
     if (
       !emergencyNursingFallRiskAllowedValues.some(
@@ -19112,7 +20496,8 @@ export class EncountersService {
       'profesionalEspecialidadProc',
       'lugarAtencionProc',
     ];
-    const hasComplications = this.readStringValue(formData.huboComplicacionesProc) === 'SI';
+    const hasComplications =
+      this.readStringValue(formData.huboComplicacionesProc) === 'SI';
     const hasAnesthesia = this.ambulatoryProcedureHasAnesthesia(formData);
 
     return [
@@ -19148,13 +20533,16 @@ export class EncountersService {
       'toConsentimientoVerificadoProc',
       'toImagenesDisponiblesProc',
     ];
-    if (timeOutFields.some((fieldKey) => !Boolean(formData[fieldKey]))) {
+    if (timeOutFields.some((fieldKey) => !formData[fieldKey])) {
       throw new BadRequestException(
         'Completa todo el Time-Out antes de firmar el procedimiento',
       );
     }
 
-    if (this.readStringValue(formData.cuentaGasasInstrumentalProc) === 'INCOMPLETA') {
+    if (
+      this.readStringValue(formData.cuentaGasasInstrumentalProc) ===
+      'INCOMPLETA'
+    ) {
       throw new BadRequestException(
         'No se puede firmar con cuenta de gasas e instrumental incompleta',
       );
@@ -19217,8 +20605,9 @@ export class EncountersService {
 
     return [
       ...baseRequiredFields,
-      ...(this.readStringValue(formData.complicacionesPostprocedimientoRecEval) ===
-      'SI'
+      ...(this.readStringValue(
+        formData.complicacionesPostprocedimientoRecEval,
+      ) === 'SI'
         ? ['manejoComplicacionRecEval']
         : []),
       ...(this.readStringValue(formData.eventoAdversoRecEval) === 'SI'
@@ -19310,7 +20699,9 @@ export class EncountersService {
         'No se puede firmar el egreso si no cumple criterios de alta',
       );
     }
-    const finalAldrete = this.readRoundedNumericValue(formData.aldreteFinalEgresoAmb);
+    const finalAldrete = this.readRoundedNumericValue(
+      formData.aldreteFinalEgresoAmb,
+    );
     if (
       this.readStringValue(formData.tipoEgresoAmb) === 'ALTA_MEDICA' &&
       (finalAldrete === null || finalAldrete < 9)
@@ -19320,8 +20711,8 @@ export class EncountersService {
       );
     }
     if (
-      !Boolean(formData.pacienteComprendeEgresoAmb) &&
-      !Boolean(formData.familiarInformadoEgresoAmb)
+      !formData.pacienteComprendeEgresoAmb &&
+      !formData.familiarInformadoEgresoAmb
     ) {
       throw new BadRequestException(
         'Marca comprensión del paciente o familiar informado antes de firmar el egreso',
@@ -19334,7 +20725,9 @@ export class EncountersService {
     }
   }
 
-  private ambulatoryDischargeCriteriaComplete(formData: Record<string, unknown>) {
+  private ambulatoryDischargeCriteriaComplete(
+    formData: Record<string, unknown>,
+  ) {
     return [
       'altaSignosEstablesEgresoAmb',
       'altaDolorControladoEgresoAmb',
@@ -19390,8 +20783,8 @@ export class EncountersService {
       );
     }
     if (
-      !Boolean(formData.pacienteComprendeIndicacionesEgreso) &&
-      !Boolean(formData.familiarInformadoEgreso)
+      !formData.pacienteComprendeIndicacionesEgreso &&
+      !formData.familiarInformadoEgreso
     ) {
       throw new BadRequestException(
         'Marca comprensión del paciente o familiar informado antes de firmar',
@@ -19433,7 +20826,9 @@ export class EncountersService {
       aldreteTotal,
     );
     const hasRedAlert = alerts.some((alert) => alert.severity === 'ROJO');
-    const destination = this.readStringValue(formData.destinoPostRecuperacionRecEval);
+    const destination = this.readStringValue(
+      formData.destinoPostRecuperacionRecEval,
+    );
     if (destination === 'ALTA_AMBULATORIA') {
       if (aldreteTotal < 9) {
         throw new BadRequestException(
@@ -19488,13 +20883,16 @@ export class EncountersService {
       'omsAyunoVerificadoPreproc',
       'omsProfilaxisAntibioticaIndicadaPreproc',
     ];
-    if (checklistFields.some((fieldKey) => !Boolean(formData[fieldKey]))) {
+    if (checklistFields.some((fieldKey) => !formData[fieldKey])) {
       throw new BadRequestException(
         'Completa todo el checklist de seguridad quirúrgica OMS antes de firmar',
       );
     }
 
-    if (this.readStringValue(formData.consentimientoQuirurgicoPreproc) !== 'FIRMADO') {
+    if (
+      this.readStringValue(formData.consentimientoQuirurgicoPreproc) !==
+      'FIRMADO'
+    ) {
       throw new BadRequestException(
         'El consentimiento quirúrgico debe estar firmado para firmar la valoración',
       );
@@ -19502,20 +20900,21 @@ export class EncountersService {
 
     if (
       this.ambulatoryPreprocedureHasAnesthesia(formData) &&
-      this.readStringValue(formData.consentimientoAnestesicoPreproc) !== 'FIRMADO'
+      this.readStringValue(formData.consentimientoAnestesicoPreproc) !==
+        'FIRMADO'
     ) {
       throw new BadRequestException(
         'El consentimiento anestésico debe estar firmado cuando aplica anestesia',
       );
     }
 
-    if (!Boolean(formData.pacienteComprendePreproc)) {
+    if (!formData.pacienteComprendePreproc) {
       throw new BadRequestException(
         'Confirma que el paciente comprende la información otorgada',
       );
     }
 
-    if (!Boolean(formData.responsableInformadoPreproc)) {
+    if (!formData.responsableInformadoPreproc) {
       throw new BadRequestException(
         'Confirma que el responsable fue informado',
       );
@@ -19528,7 +20927,9 @@ export class EncountersService {
     }
   }
 
-  private ambulatoryPreprocedureHasAnesthesia(formData: Record<string, unknown>) {
+  private ambulatoryPreprocedureHasAnesthesia(
+    formData: Record<string, unknown>,
+  ) {
     const anesthesiaType = this.readStringValue(
       formData.tipoAnestesiaPrevistaPreproc,
     );
@@ -19667,7 +21068,9 @@ export class EncountersService {
     formData: Record<string, unknown>,
   ) {
     if (noteType === 'Solicitud de laboratorio') {
-      const studies = this.readObjectArray(formData.documentoEstudiosLaboratorio);
+      const studies = this.readObjectArray(
+        formData.documentoEstudiosLaboratorio,
+      );
       if (
         studies.length === 0 ||
         studies.some(
@@ -19699,11 +21102,19 @@ export class EncountersService {
     noteType: string,
   ) {
     if (noteType === 'Solicitud de laboratorio') {
-      return ['documentoTipoSolicitud', 'documentoPrioridad', 'documentoMotivoSolicitud'];
+      return [
+        'documentoTipoSolicitud',
+        'documentoPrioridad',
+        'documentoMotivoSolicitud',
+      ];
     }
 
     if (noteType === 'Solicitud de imagenología') {
-      return ['documentoTipoImagen', 'documentoRegionAnatomica', 'documentoMotivoSolicitud'];
+      return [
+        'documentoTipoImagen',
+        'documentoRegionAnatomica',
+        'documentoMotivoSolicitud',
+      ];
     }
 
     if (noteType === 'Referencia / contrarreferencia') {
@@ -19744,7 +21155,9 @@ export class EncountersService {
     }
 
     if (noteType === 'Solicitud de laboratorio') {
-      const studies = this.readObjectArray(formData.documentoEstudiosLaboratorio);
+      const studies = this.readObjectArray(
+        formData.documentoEstudiosLaboratorio,
+      );
       if (
         studies.length === 0 &&
         !this.hasCapturedValue(formData.documentoEstudiosSolicitados)
@@ -19757,7 +21170,8 @@ export class EncountersService {
 
     if (
       noteType === 'Solicitud de imagenología' &&
-      this.readStringValue(formData.documentoConContraste) === 'Con contraste' &&
+      this.readStringValue(formData.documentoConContraste) ===
+        'Con contraste' &&
       this.hasCapturedValue(formData.documentoAlertaContraste)
     ) {
       throw new BadRequestException(
@@ -19766,7 +21180,9 @@ export class EncountersService {
     }
 
     if (noteType === 'Certificado / constancia') {
-      const certificateType = this.readStringValue(formData.documentoTipoCertificado);
+      const certificateType = this.readStringValue(
+        formData.documentoTipoCertificado,
+      );
       if (
         certificateType === 'Incapacidad' &&
         (!this.hasCapturedValue(formData.documentoDiasIncapacidad) ||
@@ -19836,7 +21252,9 @@ export class EncountersService {
       );
     }
 
-    const medications = this.readObjectArray(formData.medicamentosMinistradosEnfHosp);
+    const medications = this.readObjectArray(
+      formData.medicamentosMinistradosEnfHosp,
+    );
     if (
       medications.length === 0 ||
       medications.some(
@@ -19875,8 +21293,12 @@ export class EncountersService {
     }
   }
 
-  private assertHospitalDischargeReadyForSignature(formData: Record<string, unknown>) {
-    const admittedAt = this.parseOptionalDate(formData.fechaIngresoReadonlyHosp);
+  private assertHospitalDischargeReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
+    const admittedAt = this.parseOptionalDate(
+      formData.fechaIngresoReadonlyHosp,
+    );
     const dischargedAt = this.parseOptionalDate(formData.fechaHoraEgresoHosp);
     const dischargeType = this.readStringValue(formData.tipoEgresoHosp);
 
@@ -19895,8 +21317,12 @@ export class EncountersService {
     if (
       dischargeType === 'ALTA_VOLUNTARIA' &&
       (!this.hasCapturedValue(formData.motivoAltaVoluntariaEgresoHosp) ||
-        !this.hasCapturedValue(formData.riesgosExplicadosAltaVoluntariaEgresoHosp) ||
-        !this.hasCapturedValue(formData.profesionalResponsableAltaVoluntariaEgresoHosp) ||
+        !this.hasCapturedValue(
+          formData.riesgosExplicadosAltaVoluntariaEgresoHosp,
+        ) ||
+        !this.hasCapturedValue(
+          formData.profesionalResponsableAltaVoluntariaEgresoHosp,
+        ) ||
         !this.hasCapturedValue(formData.firmanteConformidadNombreEgresoHosp) ||
         !this.isHospitalConformitySigner(
           this.readStringValue(formData.firmanteConformidadCalidadEgresoHosp),
@@ -19927,7 +21353,10 @@ export class EncountersService {
     if (dischargeType === 'DEFUNCION') {
       const deathAt = this.parseOptionalDate(formData.horaDefuncionEgresoHosp);
 
-      if (!deathAt || !this.hasCapturedValue(formData.causaDefuncionEgresoHosp)) {
+      if (
+        !deathAt ||
+        !this.hasCapturedValue(formData.causaDefuncionEgresoHosp)
+      ) {
         throw new BadRequestException(
           'Captura hora y causa de defunción antes de firmar',
         );
@@ -19985,7 +21414,9 @@ export class EncountersService {
     }
   }
 
-  private assertHospitalEvolutionReadyForSignature(formData: Record<string, unknown>) {
+  private assertHospitalEvolutionReadyForSignature(
+    formData: Record<string, unknown>,
+  ) {
     if (!this.readPositiveIntegerValue(formData.diaEstanciaHosp)) {
       throw new BadRequestException(
         'El día de estancia hospitalaria debe ser un entero positivo',
@@ -20008,15 +21439,15 @@ export class EncountersService {
       );
     }
 
-    const resultsMissingDate = this
-      .readObjectArray(formData.resultadosEstudiosEvolHosp)
-      .some((result) => {
-        const hasAnyResultValue =
-          this.hasCapturedValue(result.estudio) ||
-          this.hasCapturedValue(result.resultado);
+    const resultsMissingDate = this.readObjectArray(
+      formData.resultadosEstudiosEvolHosp,
+    ).some((result) => {
+      const hasAnyResultValue =
+        this.hasCapturedValue(result.estudio) ||
+        this.hasCapturedValue(result.resultado);
 
-        return hasAnyResultValue && !this.hasCapturedValue(result.fecha);
-      });
+      return hasAnyResultValue && !this.hasCapturedValue(result.fecha);
+    });
 
     if (resultsMissingDate) {
       throw new BadRequestException(
@@ -20024,7 +21455,9 @@ export class EncountersService {
       );
     }
 
-    const diagnoses = this.readObjectArray(formData.diagnosticosActivosEvolHosp);
+    const diagnoses = this.readObjectArray(
+      formData.diagnosticosActivosEvolHosp,
+    );
     const hasIncompleteDiagnosis = diagnoses.some(
       (diagnosis) =>
         !this.hasCapturedValue(diagnosis.diagnostico) ||
@@ -20041,7 +21474,9 @@ export class EncountersService {
   private assertHospitalMedicalOrdersReadyForSignature(
     formData: Record<string, unknown>,
   ) {
-    const medications = this.readObjectArray(formData.medicamentosIndicacionesHosp);
+    const medications = this.readObjectArray(
+      formData.medicamentosIndicacionesHosp,
+    );
     const invalidMedication = medications.some(
       (medication) =>
         !this.hasCapturedValue(medication.medicamento) ||
@@ -20057,13 +21492,13 @@ export class EncountersService {
       );
     }
 
-    const invalidSolution = this
-      .readObjectArray(formData.solucionesIvIndicacionesHosp)
-      .some(
-        (solution) =>
-          this.hasCapturedValue(solution.tipoSolucion) &&
-          !this.hasCapturedValue(solution.volumenMl),
-      );
+    const invalidSolution = this.readObjectArray(
+      formData.solucionesIvIndicacionesHosp,
+    ).some(
+      (solution) =>
+        this.hasCapturedValue(solution.tipoSolucion) &&
+        !this.hasCapturedValue(solution.volumenMl),
+    );
 
     if (invalidSolution) {
       throw new BadRequestException(
@@ -20071,13 +21506,13 @@ export class EncountersService {
       );
     }
 
-    const invalidStudy = this
-      .readObjectArray(formData.estudiosSolicitadosIndicacionesHosp)
-      .some(
-        (study) =>
-          this.hasCapturedValue(study.indicacion) &&
-          !this.hasCapturedValue(study.tipoEstudio),
-      );
+    const invalidStudy = this.readObjectArray(
+      formData.estudiosSolicitadosIndicacionesHosp,
+    ).some(
+      (study) =>
+        this.hasCapturedValue(study.indicacion) &&
+        !this.hasCapturedValue(study.tipoEstudio),
+    );
 
     if (invalidStudy) {
       throw new BadRequestException(
@@ -20085,13 +21520,13 @@ export class EncountersService {
       );
     }
 
-    const invalidConsultation = this
-      .readObjectArray(formData.interconsultasSolicitadasIndicacionesHosp)
-      .some(
-        (consultation) =>
-          this.hasCapturedValue(consultation.motivo) &&
-          !this.hasCapturedValue(consultation.servicio),
-      );
+    const invalidConsultation = this.readObjectArray(
+      formData.interconsultasSolicitadasIndicacionesHosp,
+    ).some(
+      (consultation) =>
+        this.hasCapturedValue(consultation.motivo) &&
+        !this.hasCapturedValue(consultation.servicio),
+    );
 
     if (invalidConsultation) {
       throw new BadRequestException(
@@ -20136,7 +21571,10 @@ export class EncountersService {
         ? consultationPrescriptionTabKey
         : tabKey;
 
-    if (!allowedTabs.includes(normalizedTabKey) || normalizedTabKey === 'Resumen') {
+    if (
+      !allowedTabs.includes(normalizedTabKey) ||
+      normalizedTabKey === 'Resumen'
+    ) {
       throw new BadRequestException(
         'La pestaña seleccionada no es válida para este tipo de episodio',
       );
@@ -20147,15 +21585,21 @@ export class EncountersService {
     return `${noteType} · ${encounterNumber}`;
   }
 
-  private normalizeProfileAlerts(rawAlerts: Prisma.JsonValue | null | undefined) {
+  private normalizeProfileAlerts(
+    rawAlerts: Prisma.JsonValue | null | undefined,
+  ) {
     if (!Array.isArray(rawAlerts)) {
       return [];
     }
 
-    return rawAlerts.filter((value): value is string => typeof value === 'string');
+    return rawAlerts.filter(
+      (value): value is string => typeof value === 'string',
+    );
   }
 
-  private summarizeVitalSigns(vitalSign: TenantEncounterRecord['vitalSigns'][number]) {
+  private summarizeVitalSigns(
+    vitalSign: TenantEncounterRecord['vitalSigns'][number],
+  ) {
     const parts = [
       vitalSign.systolicBp && vitalSign.diastolicBp
         ? `PA ${vitalSign.systolicBp}/${vitalSign.diastolicBp}`
@@ -20176,9 +21620,15 @@ export class EncountersService {
     formData: Record<string, unknown>,
   ) {
     const documentType = this.resolveEmergencyOrderDocumentType({ formData });
-    const medications = this.normalizeObjectArray(formData.medicamentosOrdenesUrg);
-    const solutions = this.normalizeObjectArray(formData.solucionesIntravenosasOrdenes);
-    const studies = this.normalizeObjectArray(formData.estudiosSolicitadosOrdenes);
+    const medications = this.normalizeObjectArray(
+      formData.medicamentosOrdenesUrg,
+    );
+    const solutions = this.normalizeObjectArray(
+      formData.solucionesIntravenosasOrdenes,
+    );
+    const studies = this.normalizeObjectArray(
+      formData.estudiosSolicitadosOrdenes,
+    );
     const medicationRequiredFields = [
       'medicamento',
       'dosis',
@@ -20187,7 +21637,12 @@ export class EncountersService {
       'duracion',
       'prioridad',
     ];
-    const studyRequiredFields = ['tipo', 'estudio', 'prioridad', 'justificacion'];
+    const studyRequiredFields = [
+      'tipo',
+      'estudio',
+      'prioridad',
+      'justificacion',
+    ];
     const solutionRequiredFields = ['tipoSolucion', 'volumen', 'velocidad'];
     const hasMeaningfulRow = (item: Record<string, unknown>) =>
       Object.values(item).some((value) => this.hasCapturedValue(value));
@@ -20213,7 +21668,11 @@ export class EncountersService {
         ),
       );
 
-    if (hasIncompleteMedication || hasIncompleteStudy || hasIncompleteSolution) {
+    if (
+      hasIncompleteMedication ||
+      hasIncompleteStudy ||
+      hasIncompleteSolution
+    ) {
       throw new BadRequestException(
         'Completa los renglones capturados de medicamentos, soluciones y estudios antes de firmar',
       );
@@ -20264,30 +21723,41 @@ export class EncountersService {
       return;
     }
 
-    const productType = this.readStringValue(formData.transfusionTipoHemoderivado);
+    const productType = this.readStringValue(
+      formData.transfusionTipoHemoderivado,
+    );
     const units = this.readNumericValue(formData.transfusionUnidades);
     const volume = this.readNumericValue(formData.transfusionVolumen);
     const startedAt = this.parseOptionalDate(formData.transfusionHoraInicio);
     const endedAt = this.parseOptionalDate(formData.transfusionHoraFin);
-    const reaction = this.readStringValue(formData.transfusionReaccionAdversa) || 'NO';
+    const reaction =
+      this.readStringValue(formData.transfusionReaccionAdversa) || 'NO';
 
     if (!productType) {
-      throw new BadRequestException('Selecciona el hemoderivado de la transfusión');
+      throw new BadRequestException(
+        'Selecciona el hemoderivado de la transfusión',
+      );
     }
 
     if (
       productType === 'OTRO' &&
       !this.hasCapturedValue(formData.transfusionOtroHemoderivado)
     ) {
-      throw new BadRequestException('Especifica el hemoderivado cuando selecciones Otro');
+      throw new BadRequestException(
+        'Especifica el hemoderivado cuando selecciones Otro',
+      );
     }
 
     if (!units || units <= 0 || !Number.isInteger(units)) {
-      throw new BadRequestException('Captura unidades de transfusión como entero positivo');
+      throw new BadRequestException(
+        'Captura unidades de transfusión como entero positivo',
+      );
     }
 
     if (!volume || volume <= 0) {
-      throw new BadRequestException('Captura volumen de transfusión mayor a cero');
+      throw new BadRequestException(
+        'Captura volumen de transfusión mayor a cero',
+      );
     }
 
     if (startedAt && endedAt && endedAt < startedAt) {
@@ -20355,7 +21825,10 @@ export class EncountersService {
       );
     }
 
-    if (dischargeType === 'HOSPITALIZACION' && !this.hasCapturedValue(formData.servicioReceptorUrg)) {
+    if (
+      dischargeType === 'HOSPITALIZACION' &&
+      !this.hasCapturedValue(formData.servicioReceptorUrg)
+    ) {
       throw new BadRequestException(
         'No se puede firmar el egreso: hospitalización requiere servicio receptor.',
       );
@@ -20466,13 +21939,13 @@ export class EncountersService {
       'relacionAutorizaConsentimientoUrg',
       'testigo1ConsentimientoUrg',
       'testigo2ConsentimientoUrg',
-    ].some((fieldKey) =>
-      this.hasCapturedValue(formData[fieldKey]),
-    );
+    ].some((fieldKey) => this.hasCapturedValue(formData[fieldKey]));
 
     if (
       hasConsentCapture &&
-      consentFields.some((fieldKey) => !this.hasCapturedValue(formData[fieldKey]))
+      consentFields.some(
+        (fieldKey) => !this.hasCapturedValue(formData[fieldKey]),
+      )
     ) {
       throw new BadRequestException(
         'No se puede firmar el egreso: completa el consentimiento informado iniciado.',
@@ -20492,9 +21965,7 @@ export class EncountersService {
       'actoNotificadoAvisoMpUrg',
       'agenciaMinisterioPublicoUrg',
       'descripcionClinicaLegalAvisoMpUrg',
-    ].some((fieldKey) =>
-      this.hasCapturedValue(formData[fieldKey]),
-    );
+    ].some((fieldKey) => this.hasCapturedValue(formData[fieldKey]));
 
     if (
       hasPublicMinistryCapture &&
@@ -20508,9 +21979,9 @@ export class EncountersService {
     }
   }
 
-    private toVitalSignsSummary(
-      vitalSign: TenantEncounterRecord['vitalSigns'][number],
-    ) {
+  private toVitalSignsSummary(
+    vitalSign: TenantEncounterRecord['vitalSigns'][number],
+  ) {
     return [
       {
         label: 'PA',
@@ -20548,147 +22019,163 @@ export class EncountersService {
         label: 'Peso',
         value: vitalSign.weightKg ? String(vitalSign.weightKg) : '--',
         unit: 'kg',
-        },
-      ];
-    }
+      },
+    ];
+  }
 
-    private buildConsultationSummaryResponse(
-      encounter: TenantEncounterRecord,
-      sectionRecords: EncounterDetailResponse['sectionRecords'],
-      latestVitalSign: TenantEncounterRecord['vitalSigns'][number] | null,
-    ): EncounterDetailResponse['consultationSummary'] {
-      const latestConsultationRecord = this.getLatestSummaryRecordByTab(
-        sectionRecords,
-        ['Consulta actual'],
-      );
-      const latestHistoryRecord = this.getLatestSummaryRecordByTab(sectionRecords, [
-        'Historia clínica',
-      ]);
-      const latestPrescriptionRecord = this.getLatestSummaryRecordByTab(
-        sectionRecords,
-        [consultationPrescriptionTabKey, legacyConsultationPrescriptionTabKey],
-      );
-      const consultationPrimaryDiagnosis = {
-        description: this.readSummaryFormText(
-          latestConsultationRecord?.formData,
-          'idDiagnosticoPrincipal',
-        ),
-        cie10: this.readSummaryFormText(latestConsultationRecord?.formData, 'idCie10'),
-        status: this.readSummaryFormText(latestConsultationRecord?.formData, 'idEstado'),
-      };
-      const historyPrimaryDiagnosis = {
-        description: this.readSummaryFormText(
-          latestHistoryRecord?.formData,
-          'dbiDiagnosticoPrincipal',
-        ),
-        cie10: this.readSummaryFormText(latestHistoryRecord?.formData, 'dbiCie10'),
-      };
-      const primaryEncounterDiagnosis =
-        encounter.diagnoses.find((diagnosis) => diagnosis.isPrimary) ??
-        encounter.diagnoses[0] ??
-        null;
-      const primaryDiagnosis =
-        consultationPrimaryDiagnosis.description || consultationPrimaryDiagnosis.cie10
+  private buildConsultationSummaryResponse(
+    encounter: TenantEncounterRecord,
+    sectionRecords: EncounterDetailResponse['sectionRecords'],
+    latestVitalSign: TenantEncounterRecord['vitalSigns'][number] | null,
+  ): EncounterDetailResponse['consultationSummary'] {
+    const latestConsultationRecord = this.getLatestSummaryRecordByTab(
+      sectionRecords,
+      ['Consulta actual'],
+    );
+    const latestHistoryRecord = this.getLatestSummaryRecordByTab(
+      sectionRecords,
+      ['Historia clínica'],
+    );
+    const latestPrescriptionRecord = this.getLatestSummaryRecordByTab(
+      sectionRecords,
+      [consultationPrescriptionTabKey, legacyConsultationPrescriptionTabKey],
+    );
+    const consultationPrimaryDiagnosis = {
+      description: this.readSummaryFormText(
+        latestConsultationRecord?.formData,
+        'idDiagnosticoPrincipal',
+      ),
+      cie10: this.readSummaryFormText(
+        latestConsultationRecord?.formData,
+        'idCie10',
+      ),
+      status: this.readSummaryFormText(
+        latestConsultationRecord?.formData,
+        'idEstado',
+      ),
+    };
+    const historyPrimaryDiagnosis = {
+      description: this.readSummaryFormText(
+        latestHistoryRecord?.formData,
+        'dbiDiagnosticoPrincipal',
+      ),
+      cie10: this.readSummaryFormText(
+        latestHistoryRecord?.formData,
+        'dbiCie10',
+      ),
+    };
+    const primaryEncounterDiagnosis =
+      encounter.diagnoses.find((diagnosis) => diagnosis.isPrimary) ??
+      encounter.diagnoses[0] ??
+      null;
+    const primaryDiagnosis =
+      consultationPrimaryDiagnosis.description ||
+      consultationPrimaryDiagnosis.cie10
+        ? {
+            description: consultationPrimaryDiagnosis.description,
+            cie10: consultationPrimaryDiagnosis.cie10 || null,
+          }
+        : historyPrimaryDiagnosis.description || historyPrimaryDiagnosis.cie10
           ? {
-              description: consultationPrimaryDiagnosis.description,
-              cie10: consultationPrimaryDiagnosis.cie10 || null,
+              description: historyPrimaryDiagnosis.description,
+              cie10: historyPrimaryDiagnosis.cie10 || null,
             }
-          : historyPrimaryDiagnosis.description || historyPrimaryDiagnosis.cie10
+          : primaryEncounterDiagnosis
             ? {
-                description: historyPrimaryDiagnosis.description,
-                cie10: historyPrimaryDiagnosis.cie10 || null,
+                description: primaryEncounterDiagnosis.description,
+                cie10: primaryEncounterDiagnosis.code,
               }
-            : primaryEncounterDiagnosis
-              ? {
-                  description: primaryEncounterDiagnosis.description,
-                  cie10: primaryEncounterDiagnosis.code,
-                }
-              : null;
-      const secondaryDiagnoses = this.readObjectArray(
-        latestConsultationRecord?.formData.idSecundarios,
+            : null;
+    const secondaryDiagnoses = this.readObjectArray(
+      latestConsultationRecord?.formData.idSecundarios,
+    )
+      .filter((item) =>
+        this.isActiveConsultationSummaryStatus(
+          this.readSummaryFormText(item, 'estado'),
+        ),
       )
-        .filter((item) =>
-          this.isActiveConsultationSummaryStatus(
-            this.readSummaryFormText(item, 'estado'),
-          ),
-        )
-        .map((item) =>
-          this.formatConsultationSummaryDiagnosis(
-            this.readSummaryFormText(item, 'diagnostico'),
-            this.readSummaryFormText(item, 'cie10'),
-          ),
-        )
-        .filter(Boolean);
-      const activeProblems = this.uniqueConsultationSummaryItems([
-        consultationPrimaryDiagnosis.description &&
-        this.isActiveConsultationSummaryStatus(consultationPrimaryDiagnosis.status)
-          ? this.formatConsultationSummaryDiagnosis(
-              consultationPrimaryDiagnosis.description,
-              consultationPrimaryDiagnosis.cie10,
-            )
-          : '',
-        ...secondaryDiagnoses,
-        ...encounter.problems
-          .filter((problem) =>
-            this.isActiveConsultationSummaryStatus(problem.status ?? ''),
+      .map((item) =>
+        this.formatConsultationSummaryDiagnosis(
+          this.readSummaryFormText(item, 'diagnostico'),
+          this.readSummaryFormText(item, 'cie10'),
+        ),
+      )
+      .filter(Boolean);
+    const activeProblems = this.uniqueConsultationSummaryItems([
+      consultationPrimaryDiagnosis.description &&
+      this.isActiveConsultationSummaryStatus(
+        consultationPrimaryDiagnosis.status,
+      )
+        ? this.formatConsultationSummaryDiagnosis(
+            consultationPrimaryDiagnosis.description,
+            consultationPrimaryDiagnosis.cie10,
           )
-          .map((problem) => problem.description),
-      ]);
-      const medications = this.readObjectArray(
-        latestPrescriptionRecord?.formData.recetaMedicamentos,
-      )
-        .map((medication) =>
-          [
-            this.readSummaryFormText(medication, 'medicamento'),
-            this.readSummaryFormText(medication, 'dosis'),
-            this.readSummaryFormText(medication, 'via'),
-            this.readSummaryFormText(medication, 'frecuencia'),
-            this.readSummaryFormText(medication, 'duracion'),
-            this.readSummaryFormText(medication, 'indicaciones'),
-          ]
-            .filter(Boolean)
-            .join(' · '),
+        : '',
+      ...secondaryDiagnoses,
+      ...encounter.problems
+        .filter((problem) =>
+          this.isActiveConsultationSummaryStatus(problem.status ?? ''),
         )
-        .filter(Boolean);
-      const currentTreatment = this.uniqueConsultationSummaryItems([
-        ...medications,
-        this.firstSummaryFormText(latestPrescriptionRecord?.formData, [
-          'recetaIndicacionesGenerales',
-          'recetaIndicacionesNoFarmacologicas',
-        ]),
-      ]);
+        .map((problem) => problem.description),
+    ]);
+    const medications = this.readObjectArray(
+      latestPrescriptionRecord?.formData.recetaMedicamentos,
+    )
+      .map((medication) =>
+        [
+          this.readSummaryFormText(medication, 'medicamento'),
+          this.readSummaryFormText(medication, 'dosis'),
+          this.readSummaryFormText(medication, 'via'),
+          this.readSummaryFormText(medication, 'frecuencia'),
+          this.readSummaryFormText(medication, 'duracion'),
+          this.readSummaryFormText(medication, 'indicaciones'),
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      )
+      .filter(Boolean);
+    const currentTreatment = this.uniqueConsultationSummaryItems([
+      ...medications,
+      this.firstSummaryFormText(latestPrescriptionRecord?.formData, [
+        'recetaIndicacionesGenerales',
+        'recetaIndicacionesNoFarmacologicas',
+      ]),
+    ]);
 
-      return {
-        motive:
-          this.firstSummaryFormText(latestConsultationRecord?.formData, [
-            'motivoConsultaPrincipal',
-            'pcDescripcion',
-            'paDescripcion',
-          ]) ||
-          this.firstSummaryFormText(latestHistoryRecord?.formData, [
-            'motivoConsultaPrincipal',
-            'motivoConsulta',
-            'pcDescripcion',
-            'paDescripcion',
-          ]) ||
-          encounter.reasonForVisit ||
-          null,
-        primaryDiagnosis,
-        activeProblems,
-        currentTreatment,
-        latestVitalSigns: {
-          values: latestVitalSign ? this.toVitalSignsSummary(latestVitalSign) : [],
-          recordedAt: latestVitalSign?.takenAt.toISOString() ?? null,
-          source: latestVitalSign ? 'Signos vitales' : null,
-        },
-      };
-    }
+    return {
+      motive:
+        this.firstSummaryFormText(latestConsultationRecord?.formData, [
+          'motivoConsultaPrincipal',
+          'pcDescripcion',
+          'paDescripcion',
+        ]) ||
+        this.firstSummaryFormText(latestHistoryRecord?.formData, [
+          'motivoConsultaPrincipal',
+          'motivoConsulta',
+          'pcDescripcion',
+          'paDescripcion',
+        ]) ||
+        encounter.reasonForVisit ||
+        null,
+      primaryDiagnosis,
+      activeProblems,
+      currentTreatment,
+      latestVitalSigns: {
+        values: latestVitalSign
+          ? this.toVitalSignsSummary(latestVitalSign)
+          : [],
+        recordedAt: latestVitalSign?.takenAt.toISOString() ?? null,
+        source: latestVitalSign ? 'Signos vitales' : null,
+      },
+    };
+  }
 
-    private getLatestSummaryRecordByTab(
-      sectionRecords: EncounterDetailResponse['sectionRecords'],
-      tabKeys: string[],
-    ) {
-      return [...sectionRecords]
+  private getLatestSummaryRecordByTab(
+    sectionRecords: EncounterDetailResponse['sectionRecords'],
+    tabKeys: string[],
+  ) {
+    return (
+      [...sectionRecords]
         .filter(
           (record) =>
             tabKeys.includes(record.tabKey) &&
@@ -20696,57 +22183,66 @@ export class EncountersService {
               record.status.toUpperCase(),
             ),
         )
-        .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt))[0] ?? null;
+        .sort((left, right) =>
+          right.recordedAt.localeCompare(left.recordedAt),
+        )[0] ?? null
+    );
+  }
+
+  private readSummaryFormText(
+    formData: Record<string, unknown> | null | undefined,
+    fieldKey: string,
+  ) {
+    const value = formData?.[fieldKey];
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value))
+      return String(value);
+    if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+    return '';
+  }
+
+  private firstSummaryFormText(
+    formData: Record<string, unknown> | null | undefined,
+    fieldKeys: string[],
+  ) {
+    for (const fieldKey of fieldKeys) {
+      const value = this.readSummaryFormText(formData, fieldKey);
+      if (value) return value;
     }
 
-    private readSummaryFormText(
-      formData: Record<string, unknown> | null | undefined,
-      fieldKey: string,
-    ) {
-      const value = formData?.[fieldKey];
-      if (typeof value === 'string') return value.trim();
-      if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-      if (typeof value === 'boolean') return value ? 'Sí' : 'No';
-      return '';
-    }
+    return '';
+  }
 
-    private firstSummaryFormText(
-      formData: Record<string, unknown> | null | undefined,
-      fieldKeys: string[],
-    ) {
-      for (const fieldKey of fieldKeys) {
-        const value = this.readSummaryFormText(formData, fieldKey);
-        if (value) return value;
-      }
+  private isActiveConsultationSummaryStatus(status: string) {
+    return !['RESUELTO', 'DESCARTADO', 'INACTIVO', 'ELIMINADO'].includes(
+      status.trim().toUpperCase(),
+    );
+  }
 
-      return '';
-    }
+  private formatConsultationSummaryDiagnosis(
+    description: string,
+    cie10: string,
+  ) {
+    return [description, cie10 ? `CIE-10 ${cie10}` : '']
+      .filter(Boolean)
+      .join(' · ');
+  }
 
-    private isActiveConsultationSummaryStatus(status: string) {
-      return !['RESUELTO', 'DESCARTADO', 'INACTIVO', 'ELIMINADO'].includes(
-        status.trim().toUpperCase(),
-      );
-    }
+  private uniqueConsultationSummaryItems(values: string[]) {
+    const seen = new Set<string>();
 
-    private formatConsultationSummaryDiagnosis(description: string, cie10: string) {
-      return [description, cie10 ? `CIE-10 ${cie10}` : ''].filter(Boolean).join(' · ');
-    }
+    return values
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .filter((value) => {
+        const key = value.toLocaleLowerCase('es-MX');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
 
-    private uniqueConsultationSummaryItems(values: string[]) {
-      const seen = new Set<string>();
-
-      return values
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .filter((value) => {
-          const key = value.toLocaleLowerCase('es-MX');
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-    }
-
-    private buildAgeLabel(birthDate: Date | null, ageSnapshot: number | null) {
+  private buildAgeLabel(birthDate: Date | null, ageSnapshot: number | null) {
     if (birthDate) {
       const today = new Date();
       let age = today.getFullYear() - birthDate.getFullYear();

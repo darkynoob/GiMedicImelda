@@ -21,8 +21,7 @@ export class S3StorageService {
     this.s3 = new S3Client({
       region: this.configService.get<string>('AWS_REGION') ?? 'us-east-1',
       credentials: {
-        accessKeyId:
-          this.configService.get<string>('AWS_ACCESS_KEY_ID') ?? '',
+        accessKeyId: this.configService.get<string>('AWS_ACCESS_KEY_ID') ?? '',
         secretAccessKey:
           this.configService.get<string>('AWS_SECRET_ACCESS_KEY') ?? '',
       },
@@ -73,7 +72,9 @@ export class S3StorageService {
 
       this.logger.debug(`Archivo eliminado de S3: ${key}`);
     } catch (error) {
-      this.logger.warn(`No se pudo eliminar el archivo de S3 (${key}): ${error}`);
+      this.logger.warn(
+        `No se pudo eliminar el archivo de S3 (${key}): ${error}`,
+      );
     }
   }
 }

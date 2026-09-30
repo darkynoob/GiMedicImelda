@@ -4,22 +4,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { PatientDemographicProfileModel } from '../models/patientDemographicProfile.model';
 import type { IBaseRepository } from './base.repository';
 
-export interface PatientDemographicProfileRepository
-  extends IBaseRepository<
-    PatientDemographicProfileModel,
-    Prisma.PatientDemographicProfileCreateInput,
-    Prisma.PatientDemographicProfileUpdateInput,
-    Prisma.PatientDemographicProfileFindManyArgs,
-    Prisma.PatientDemographicProfileCountArgs,
-    Prisma.PatientDemographicProfileUpsertArgs
-  > {
-  findByPatient(patientId: string): Promise<PatientDemographicProfileModel | null>;
+export interface PatientDemographicProfileRepository extends IBaseRepository<
+  PatientDemographicProfileModel,
+  Prisma.PatientDemographicProfileCreateInput,
+  Prisma.PatientDemographicProfileUpdateInput,
+  Prisma.PatientDemographicProfileFindManyArgs,
+  Prisma.PatientDemographicProfileCountArgs,
+  Prisma.PatientDemographicProfileUpsertArgs
+> {
+  findByPatient(
+    patientId: string,
+  ): Promise<PatientDemographicProfileModel | null>;
 }
 
 @Injectable()
-export class PrismaPatientDemographicProfileRepository
-  implements PatientDemographicProfileRepository
-{
+export class PrismaPatientDemographicProfileRepository implements PatientDemographicProfileRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findById(id: string): Promise<PatientDemographicProfileModel | null> {
@@ -46,7 +45,10 @@ export class PrismaPatientDemographicProfileRepository
     id: string,
     data: Prisma.PatientDemographicProfileUpdateInput,
   ): Promise<PatientDemographicProfileModel> {
-    return this.prisma.patientDemographicProfile.update({ where: { id }, data });
+    return this.prisma.patientDemographicProfile.update({
+      where: { id },
+      data,
+    });
   }
 
   delete(id: string): Promise<PatientDemographicProfileModel> {

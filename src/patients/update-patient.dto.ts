@@ -390,41 +390,53 @@ class UpdateBillingProfileDto {
   @Transform(booleanValue)
   requiresInvoice!: boolean;
 
-  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @ValidateIf(
+    (input: UpdateBillingProfileDto) => input.requiresInvoice === true,
+  )
   @IsString()
   @MinLength(1)
   @MaxLength(160)
   @Transform(trimValue)
   businessName?: string;
 
-  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @ValidateIf(
+    (input: UpdateBillingProfileDto) => input.requiresInvoice === true,
+  )
   @IsString()
   @MaxLength(13)
   @Transform(trimUppercaseToUndefined)
   @Matches(RFC_REGEX, { message: 'RFC fiscal invalido' })
   taxRfc?: string;
 
-  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @ValidateIf(
+    (input: UpdateBillingProfileDto) => input.requiresInvoice === true,
+  )
   @IsString()
   @MinLength(1)
   @MaxLength(120)
   @Transform(trimValue)
   taxRegime?: string;
 
-  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @ValidateIf(
+    (input: UpdateBillingProfileDto) => input.requiresInvoice === true,
+  )
   @IsString()
   @MinLength(1)
   @MaxLength(12)
   @Transform(trimValue)
   taxPostalCode?: string;
 
-  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @ValidateIf(
+    (input: UpdateBillingProfileDto) => input.requiresInvoice === true,
+  )
   @IsEmail()
   @MaxLength(160)
   @Transform(trimToUndefined)
   billingEmail?: string;
 
-  @ValidateIf((input: UpdateBillingProfileDto) => input.requiresInvoice === true)
+  @ValidateIf(
+    (input: UpdateBillingProfileDto) => input.requiresInvoice === true,
+  )
   @IsString()
   @MinLength(1)
   @MaxLength(120)

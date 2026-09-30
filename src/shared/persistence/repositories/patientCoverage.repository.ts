@@ -4,15 +4,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { PatientCoverageModel } from '../models/patientCoverage.model';
 import type { IBaseRepository } from './base.repository';
 
-export interface PatientCoverageRepository
-  extends IBaseRepository<
-    PatientCoverageModel,
-    Prisma.PatientCoverageCreateInput,
-    Prisma.PatientCoverageUpdateInput,
-    Prisma.PatientCoverageFindManyArgs,
-    Prisma.PatientCoverageCountArgs,
-    Prisma.PatientCoverageUpsertArgs
-  > {
+export interface PatientCoverageRepository extends IBaseRepository<
+  PatientCoverageModel,
+  Prisma.PatientCoverageCreateInput,
+  Prisma.PatientCoverageUpdateInput,
+  Prisma.PatientCoverageFindManyArgs,
+  Prisma.PatientCoverageCountArgs,
+  Prisma.PatientCoverageUpsertArgs
+> {
   findManyByPatient(
     tenantId: string,
     patientId: string,
@@ -20,9 +19,7 @@ export interface PatientCoverageRepository
 }
 
 @Injectable()
-export class PrismaPatientCoverageRepository
-  implements PatientCoverageRepository
-{
+export class PrismaPatientCoverageRepository implements PatientCoverageRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findById(id: string): Promise<PatientCoverageModel | null> {
@@ -39,7 +36,9 @@ export class PrismaPatientCoverageRepository
     return this.prisma.patientCoverage.count(args);
   }
 
-  create(data: Prisma.PatientCoverageCreateInput): Promise<PatientCoverageModel> {
+  create(
+    data: Prisma.PatientCoverageCreateInput,
+  ): Promise<PatientCoverageModel> {
     return this.prisma.patientCoverage.create({ data });
   }
 

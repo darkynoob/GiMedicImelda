@@ -28,9 +28,9 @@ export async function apiRequest<T>(
     const contentType = response.headers.get('content-type') ?? '';
 
     if (contentType.includes('application/json')) {
-      const payload = (await response.json().catch(() => null)) as
-        | { message?: string | string[] }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string | string[];
+      } | null;
       const message = Array.isArray(payload?.message)
         ? payload.message.join(', ')
         : payload?.message;

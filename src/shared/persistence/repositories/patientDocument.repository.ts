@@ -4,15 +4,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { PatientDocumentModel } from '../models/patientDocument.model';
 import type { IBaseRepository } from './base.repository';
 
-export interface PatientDocumentRepository
-  extends IBaseRepository<
-    PatientDocumentModel,
-    Prisma.PatientDocumentCreateInput,
-    Prisma.PatientDocumentUpdateInput,
-    Prisma.PatientDocumentFindManyArgs,
-    Prisma.PatientDocumentCountArgs,
-    Prisma.PatientDocumentUpsertArgs
-  > {
+export interface PatientDocumentRepository extends IBaseRepository<
+  PatientDocumentModel,
+  Prisma.PatientDocumentCreateInput,
+  Prisma.PatientDocumentUpdateInput,
+  Prisma.PatientDocumentFindManyArgs,
+  Prisma.PatientDocumentCountArgs,
+  Prisma.PatientDocumentUpsertArgs
+> {
   findManyByPatient(
     tenantId: string,
     patientId: string,
@@ -20,9 +19,7 @@ export interface PatientDocumentRepository
 }
 
 @Injectable()
-export class PrismaPatientDocumentRepository
-  implements PatientDocumentRepository
-{
+export class PrismaPatientDocumentRepository implements PatientDocumentRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findById(id: string): Promise<PatientDocumentModel | null> {
@@ -39,7 +36,9 @@ export class PrismaPatientDocumentRepository
     return this.prisma.patientDocument.count(args);
   }
 
-  create(data: Prisma.PatientDocumentCreateInput): Promise<PatientDocumentModel> {
+  create(
+    data: Prisma.PatientDocumentCreateInput,
+  ): Promise<PatientDocumentModel> {
     return this.prisma.patientDocument.create({ data });
   }
 
@@ -54,7 +53,9 @@ export class PrismaPatientDocumentRepository
     return this.prisma.patientDocument.delete({ where: { id } });
   }
 
-  upsert(args: Prisma.PatientDocumentUpsertArgs): Promise<PatientDocumentModel> {
+  upsert(
+    args: Prisma.PatientDocumentUpsertArgs,
+  ): Promise<PatientDocumentModel> {
     return this.prisma.patientDocument.upsert(args);
   }
 

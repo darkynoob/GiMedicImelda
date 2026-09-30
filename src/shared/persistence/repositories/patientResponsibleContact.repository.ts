@@ -4,22 +4,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { PatientResponsibleContactModel } from '../models/patientResponsibleContact.model';
 import type { IBaseRepository } from './base.repository';
 
-export interface PatientResponsibleContactRepository
-  extends IBaseRepository<
-    PatientResponsibleContactModel,
-    Prisma.PatientResponsibleContactCreateInput,
-    Prisma.PatientResponsibleContactUpdateInput,
-    Prisma.PatientResponsibleContactFindManyArgs,
-    Prisma.PatientResponsibleContactCountArgs,
-    Prisma.PatientResponsibleContactUpsertArgs
-  > {
-  findByPatient(patientId: string): Promise<PatientResponsibleContactModel | null>;
+export interface PatientResponsibleContactRepository extends IBaseRepository<
+  PatientResponsibleContactModel,
+  Prisma.PatientResponsibleContactCreateInput,
+  Prisma.PatientResponsibleContactUpdateInput,
+  Prisma.PatientResponsibleContactFindManyArgs,
+  Prisma.PatientResponsibleContactCountArgs,
+  Prisma.PatientResponsibleContactUpsertArgs
+> {
+  findByPatient(
+    patientId: string,
+  ): Promise<PatientResponsibleContactModel | null>;
 }
 
 @Injectable()
-export class PrismaPatientResponsibleContactRepository
-  implements PatientResponsibleContactRepository
-{
+export class PrismaPatientResponsibleContactRepository implements PatientResponsibleContactRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   findById(id: string): Promise<PatientResponsibleContactModel | null> {
@@ -46,7 +45,10 @@ export class PrismaPatientResponsibleContactRepository
     id: string,
     data: Prisma.PatientResponsibleContactUpdateInput,
   ): Promise<PatientResponsibleContactModel> {
-    return this.prisma.patientResponsibleContact.update({ where: { id }, data });
+    return this.prisma.patientResponsibleContact.update({
+      where: { id },
+      data,
+    });
   }
 
   delete(id: string): Promise<PatientResponsibleContactModel> {

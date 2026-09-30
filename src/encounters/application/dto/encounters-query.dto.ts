@@ -1,4 +1,8 @@
-import { AdmissionSource, EncounterStatus, EncounterType } from '@prisma/client';
+import {
+  AdmissionSource,
+  EncounterStatus,
+  EncounterType,
+} from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
