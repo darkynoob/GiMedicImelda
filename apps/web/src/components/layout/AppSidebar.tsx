@@ -1,17 +1,12 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Activity,
   Calendar,
   ChevronLeft,
   ChevronRight,
-  ClipboardList,
   FileText,
-  FlaskConical,
   FolderOpen,
   LayoutDashboard,
-  LogOut as LogOutIcon,
-  ScanLine,
   Settings,
   ShieldCheck,
   Stethoscope,
@@ -19,32 +14,26 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
+const ADMIN_ROLES = ['Administrador del Tenant'];
+
+// Clinico section (Enfermeria, Laboratorio, Imagenologia, Consentimientos, Egresos) kept out of the
+// visible menu per navigation redesign; routes/components/permissions remain untouched.
 const navSections = [
   {
     label: 'Principal',
     items: [
       { title: 'Inicio', icon: LayoutDashboard, path: '/' },
       { title: 'Pacientes', icon: Users, path: '/pacientes' },
-      { title: 'Expedientes', icon: FolderOpen, path: '/expedientes' },
       { title: 'Episodios', icon: Calendar, path: '/episodios' },
+      { title: 'Expedientes', icon: FolderOpen, path: '/expedientes' },
       { title: 'Documentos', icon: FileText, path: '/documentos' },
-    ],
-  },
-  {
-    label: 'Clinico',
-    items: [
-      { title: 'Enfermeria', icon: Activity, path: '/enfermeria' },
-      { title: 'Laboratorio', icon: FlaskConical, path: '/laboratorio' },
-      { title: 'Imagenologia', icon: ScanLine, path: '/imagenologia' },
-      { title: 'Consentimientos', icon: ClipboardList, path: '/consentimientos' },
-      { title: 'Egresos', icon: LogOutIcon, path: '/egresos' },
     ],
   },
   {
     label: 'Sistema',
     items: [
-      { title: 'Auditoria', icon: ShieldCheck, path: '/auditoria', hidden: true, roles: ['Administrador del Tenant'] },
-      { title: 'Administracion', icon: Settings, path: '/administracion' },
+      { title: 'Auditoria', icon: ShieldCheck, path: '/auditoria', hidden: true, roles: ADMIN_ROLES },
+      { title: 'Administracion', icon: Settings, path: '/administracion', roles: ADMIN_ROLES },
     ],
   },
 ];
