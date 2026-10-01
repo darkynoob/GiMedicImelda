@@ -330,6 +330,8 @@ export function PatientsPage() {
                       <Button
                         size="icon"
                         variant="ghost"
+                        title="Ver paciente"
+                        aria-label="Ver paciente"
                         onClick={(e) => {
                           e.stopPropagation()
                           navigate(`/pacientes/${patient.id}`)

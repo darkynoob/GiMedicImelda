@@ -56,6 +56,26 @@ const statusLabels: Record<string, string> = {
   PENDING: 'Pendiente',
 };
 
+type BadgeVariant = 'alert' | 'warning' | 'success' | 'secondary';
+
+const problemStatusMeta: Record<string, { label: string; badgeVariant: BadgeVariant; borderClass: string }> = {
+  ACTIVO: { label: 'Activo', badgeVariant: 'alert', borderClass: 'border-red-300' },
+  CONTROLADO: { label: 'Controlado', badgeVariant: 'success', borderClass: 'border-emerald-400' },
+  RESUELTO: { label: 'Resuelto', badgeVariant: 'secondary', borderClass: 'border-gray-300' },
+};
+
+const getProblemStatusMeta = (status: string | null) =>
+  (status ? problemStatusMeta[status] : undefined) ?? {
+    label: status ?? 'Sin estado',
+    badgeVariant: 'warning' as BadgeVariant,
+    borderClass: 'border-amber-400',
+  };
+
+const getFileExtension = (fileName: string) => {
+  const parts = fileName.split('.');
+  return parts.length > 1 ? parts[parts.length - 1].toUpperCase() : 'Archivo';
+};
+
 export function PatientDetailPage() {
   const { patientId = '' } = useParams();
   const navigate = useNavigate();
@@ -71,6 +91,7 @@ export function PatientDetailPage() {
   const patient = patientQuery.data;
   const age = calculateAge(patient?.birthDate)
   const record = patient?.medicalRecords?.[0]
+  const recentAttachments = patient?.attachments.slice(0, 5) ?? []
 
   const getInitials = (name?: string) =>
                                       name
@@ -132,14 +153,6 @@ export function PatientDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs text-gray-400">
-              <span
-                className="cursor-pointer text-xs text-muted-foreground"
-                onClick={() => navigator.clipboard.writeText(patient?.id ?? '')}
-                title="Copiar ID completo"
-              >
-                ID: {patient?.id?.slice(0, 8)}
-              </span>
-              <span>•</span>
               <span>
                 Actualizado:{' '}
                 {patient?.updatedAt
@@ -269,79 +282,37 @@ export function PatientDetailPage() {
                 </Button>
               </div>
 
-              <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
-                <p>No hay problemas activos registrados</p>
-                <Button size="sm" variant="outline">
-                  Agregar problema
-                </Button>
-              </div>
-              <div className="py-3 px-5 flex items-center justify-between gap-4">
-                <div className="py-3 flex items-start justify-between gap-4 border-l-4 border-red-300 pl-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Hipertensión arterial
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Detectado: 12 Mar 2023
-                    </p>
-                  </div>
+              {patient?.problems.length ? (
+                <div className="divide-y">
+                  {patient.problems.map((problem) => {
+                    const meta = getProblemStatusMeta(problem.status);
+
+                    return (
+                      <div
+                        className="py-3 px-5 flex items-center justify-between gap-4"
+                        key={problem.id}
+                      >
+                        <div
+                          className={`py-3 flex items-start justify-between gap-4 border-l-4 ${meta.borderClass} pl-3`}
+                        >
+                          <p className="text-sm font-medium text-gray-900">
+                            {problem.description}
+                          </p>
+                        </div>
+
+                        <Badge variant={meta.badgeVariant}>{meta.label}</Badge>
+                      </div>
+                    );
+                  })}
                 </div>
-
-                <Badge variant="alert">
-                  Activo
-                </Badge>
-              </div>
-
-              <div className="py-3 px-5 flex items-center justify-between gap-4">
-                <div className="py-3 flex items-start justify-between gap-4 border-l-4 border-amber-400 pl-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Hipertensión arterial
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Detectado: 12 Mar 2023
-                    </p>
-                  </div>
+              ) : (
+                <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+                  <p>No hay problemas activos registrados</p>
+                  <Button size="sm" variant="outline">
+                    Agregar problema
+                  </Button>
                 </div>
-
-                <Badge variant="warning">
-                  En seguimiento
-                </Badge>
-              </div>
-
-              <div className="py-3 px-5 flex items-center justify-between gap-4">
-                <div className="py-3 flex items-start justify-between gap-4 border-l-4 border-emerald-400 pl-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Hipertensión arterial
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Detectado: 12 Mar 2023
-                    </p>
-                  </div>
-                </div>
-
-                <Badge variant="success">
-                  Controlado
-                </Badge>
-              </div>
-
-              <div className="py-3 px-5 flex items-center justify-between gap-4">
-                <div className="py-3 flex items-start justify-between gap-4 border-l-4 border-gray-300 pl-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      Hipertensión arterial
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Detectado: 12 Mar 2023
-                    </p>
-                  </div>
-                </div>
-
-                <Badge variant="secondary">
-                  Resuelto
-                </Badge>
-              </div>
+              )}
             </div>
 
             <div className="clinical-card">
@@ -415,45 +386,37 @@ export function PatientDetailPage() {
                   + Crear
                 </Button>
               </div>
-              <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
-                <p>No hay documentos disponibles</p>
-                <Button size="sm" variant="outline">
-                  Crear documento
-                </Button>
-              </div>
-              <div className="px-4 py-6 text-sm text-muted-foreground px-4 py-2 text-sm gap-2">
+              {recentAttachments.length ? (
                 <div className="divide-y">
-                  <div className="py-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        Resultado laboratorio.pdf
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        12 Mar 2026 · PDF
-                      </p>
+                  {recentAttachments.map((attachment) => (
+                    <div
+                      className="px-4 py-3 flex items-center justify-between"
+                      key={attachment.id}
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {attachment.fileName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(attachment.uploadedAt)} ·{' '}
+                          {getFileExtension(attachment.fileName)}
+                        </p>
+                      </div>
+
+                      <Button size="icon" variant="ghost">
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </div>
-
-                    <Button size="icon" variant="ghost">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  <div className="py-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        Resultado laboratorio.pdf
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        12 Mar 2026 · PDF
-                      </p>
-                    </div>
-
-                    <Button size="icon" variant="ghost">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  ))}
                 </div>
-              </div>
+              ) : (
+                <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+                  <p>No hay documentos disponibles</p>
+                  <Button size="sm" variant="outline">
+                    Crear documento
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -472,12 +435,18 @@ export function PatientDetailPage() {
                 </Button>
               </div>
 
-              <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
-                <p>No hay medicamentos activos registrados</p>
-                <Button size="sm" variant="outline">
-                  Agregar medicamento
-                </Button>
-              </div>
+              {patient?.clinicalProfile?.currentMedicationsNotes ? (
+                <div className="px-4 py-4 text-sm text-gray-700 whitespace-pre-line">
+                  {patient.clinicalProfile.currentMedicationsNotes}
+                </div>
+              ) : (
+                <div className="px-4 py-6 text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
+                  <p>No hay medicamentos activos registrados</p>
+                  <Button size="sm" variant="outline">
+                    Agregar medicamento
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="clinical-card">

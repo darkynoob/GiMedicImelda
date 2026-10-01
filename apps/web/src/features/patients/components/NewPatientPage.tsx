@@ -775,6 +775,19 @@ export function NewPatientPage() {
     }
   };
 
+  const updateIdentifierType = (value: string) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      identifierType: value,
+      // "Sin identificador" no debe dejar un valor huerfano capturado antes
+      identifierValue: value ? currentForm.identifierValue : '',
+    }));
+
+    if (clientError) {
+      setClientError(null);
+    }
+  };
+
   /**
    * Duplicate detection reuses the real patients search so admission staff gets
    * a warning based on persisted data instead of static mocks.
@@ -1307,13 +1320,18 @@ export function NewPatientPage() {
               <SelectField
                 helper="Opcional. Se guarda como identificador principal del paciente."
                 label="Tipo de identificador"
-                onChange={(value) => updateField('identifierType', value)}
+                onChange={updateIdentifierType}
                 options={identifierTypeOptions}
                 value={form.identifierType}
               />
               <TextField
+                disabled={!form.identifierType}
                 error={formErrors.identifierValue}
-                helper="Ejemplo: NSS, folio de poliza o identificador legado."
+                helper={
+                  form.identifierType
+                    ? 'Ejemplo: NSS, folio de poliza o identificador legado.'
+                    : 'Selecciona un tipo de identificador para capturar su valor.'
+                }
                 label="Valor del identificador"
                 onChange={(value) => updateField('identifierValue', value)}
                 placeholder="NSS-5544-9988"
@@ -1516,14 +1534,6 @@ export function NewPatientPage() {
                 Buscando posibles duplicados...
               </div>
             ) : null}
-
-            <div className="flex items-start gap-3 rounded-md border border-primary/15 bg-primary/[0.04] px-4 py-3 text-xs">
-              <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-primary/70" />
-              <p className="text-muted-foreground">
-                La unidad médica de captura puede diferir de la sede del expediente. 
-                El alta siempre se realiza en la sede activa del usuario.
-              </p>
-            </div>
           </aside>
         </div>
       </div>

@@ -1551,6 +1551,18 @@ export class PatientsService {
       );
     }
 
+    const hasInvalidCoverageDateRange = input.coverages?.some(
+      (coverage) =>
+        coverage.validFrom &&
+        coverage.validUntil &&
+        new Date(coverage.validUntil) < new Date(coverage.validFrom),
+    );
+    if (hasInvalidCoverageDateRange) {
+      throw new BadRequestException(
+        'La vigencia final de la cobertura debe ser posterior a la inicial',
+      );
+    }
+
     const primaryDocumentCount =
       input.documents?.filter((document) => document.isPrimary).length ?? 0;
     if (primaryDocumentCount > 1) {

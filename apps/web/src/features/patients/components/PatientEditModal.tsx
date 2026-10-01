@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode, type ComponentType } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -26,6 +26,7 @@ import type {
   UpdatePatientRequest,
 } from '../../../shared/types/contracts';
 import { useAuth } from '../../auth/hooks/auth-context';
+import { fetchEncounterMeta } from '../../episodes/api/encounters.service';
 import {
   deletePatientAttachment,
   updatePatient,
@@ -795,11 +796,14 @@ function validateForm(form: FormState): FormErrors {
     errors.identifierValue = 'Captura tipo y valor del identificador';
   }
 
-  if (
-    hasAnyValue(Object.values(form.responsible)) &&
-    !form.responsible.phone.trim()
-  ) {
-    errors.responsiblePhone = 'El telefono del responsable es obligatorio';
+  if (hasAnyValue(Object.values(form.responsible))) {
+    if (!form.responsible.fullName.trim()) {
+      errors.responsibleFullName = 'El nombre del responsable es obligatorio';
+    }
+
+    if (!form.responsible.phone.trim()) {
+      errors.responsiblePhone = 'El telefono del responsable es obligatorio';
+    }
   }
 
   if (
@@ -858,6 +862,19 @@ function validateForm(form: FormState): FormErrors {
   if (primaryCoverages.length > 1) {
     errors.coverages = 'Solo puede haber una cobertura primaria';
   }
+
+  form.coverages.forEach((coverage, index) => {
+    if (
+      coverage.validFrom.trim() &&
+      coverage.validUntil.trim() &&
+      coverage.validUntil.trim() < coverage.validFrom.trim()
+    ) {
+      errors[`coverageValidUntil-${index}`] =
+        'La vigencia final debe ser posterior a la inicial';
+      errors.coverages =
+        errors.coverages ?? 'Revisa las fechas de vigencia de la cobertura';
+    }
+  });
 
   const primaryDocuments = form.documents.filter(
     (document) => document.isPrimary,
@@ -1279,6 +1296,12 @@ export function PatientEditModal({
 }: PatientEditModalProps) {
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const facilitiesQuery = useQuery({
+    queryKey: ['encounters-meta'],
+    queryFn: () => fetchEncounterMeta(session!.accessToken),
+    enabled: Boolean(session),
+    staleTime: 5 * 60 * 1000,
+  });
   const [form, setForm] = useState<FormState>(() => buildInitialState(patient));
   const [clientError, setClientError] = useState<string | null>(null);
   const [activeSection, setActiveSection] =
@@ -1314,11 +1337,39 @@ export function PatientEditModal({
   const formErrors = useMemo(() => validateForm(form), [form]);
   const isValid = Object.keys(formErrors).length === 0;
 
+  const medicalUnitOptions = useMemo(() => {
+    const catalogFacilities = facilitiesQuery.data?.facilities ?? [];
+    const options = catalogFacilities.map((facility) => ({
+      value: facility.name,
+      label: facility.name,
+    }));
+
+    // conserva el valor guardado aunque la sede ya no exista en el catalogo activo
+    if (form.medicalUnit && !options.some((option) => option.value === form.medicalUnit)) {
+      options.push({ value: form.medicalUnit, label: form.medicalUnit });
+    }
+
+    return [{ value: '', label: 'Selecciona una sede' }, ...options];
+  }, [facilitiesQuery.data?.facilities, form.medicalUnit]);
+
   const updateField = <K extends keyof FormState>(
     key: K,
     value: FormState[K],
   ) => {
     setForm((currentForm) => ({ ...currentForm, [key]: value }));
+
+    if (clientError) {
+      setClientError(null);
+    }
+  };
+
+  const updateIdentifierType = (value: string) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      identifierType: value,
+      // "Sin identificador" no debe dejar un valor huerfano capturado antes
+      identifierValue: value ? currentForm.identifierValue : '',
+    }));
 
     if (clientError) {
       setClientError(null);
@@ -1782,10 +1833,12 @@ export function PatientEditModal({
                 required
                 value={form.patientType}
               />
-              <TextField
+              <SelectField
                 error={formErrors.medicalUnit}
+                helper="Se toma del catalogo de sedes del tenant."
                 label="Unidad medica"
                 onChange={(value) => updateField('medicalUnit', value)}
+                options={medicalUnitOptions}
                 required
                 value={form.medicalUnit}
               />
@@ -1808,12 +1861,18 @@ export function PatientEditModal({
               />
               <SelectField
                 label="Tipo de identificador principal"
-                onChange={(value) => updateField('identifierType', value)}
+                onChange={updateIdentifierType}
                 options={identifierTypeOptions}
                 value={form.identifierType}
               />
               <TextField
+                disabled={!form.identifierType}
                 error={formErrors.identifierValue}
+                helper={
+                  form.identifierType
+                    ? undefined
+                    : 'Selecciona un tipo de identificador para capturar su valor.'
+                }
                 label="Valor del identificador principal"
                 onChange={(value) => updateField('identifierValue', value)}
                 value={form.identifierValue}
@@ -2008,6 +2067,7 @@ export function PatientEditModal({
               icon={UserCheck}
             >
               <TextField
+                error={formErrors.responsibleFullName}
                 label="Nombre completo"
                 onChange={(value) => updateResponsibleField('fullName', value)}
                 value={form.responsible.fullName}
@@ -2249,6 +2309,7 @@ export function PatientEditModal({
                       value={coverage.validFrom}
                     />
                     <TextField
+                      error={formErrors[`coverageValidUntil-${index}`]}
                       label="Vigencia final"
                       onChange={(value) =>
                         updateCollectionItem(
