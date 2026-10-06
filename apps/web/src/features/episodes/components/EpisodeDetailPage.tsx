@@ -87,6 +87,12 @@ import {
   encounterRecordStatusConfig,
   getEpisodeRecordPanelConfig,
 } from './episode-record-config';
+import { HistoriaClinicaTab } from './HistoriaClinicaTab';
+import { ConsultaActualTab } from './ConsultaActualTab';
+import { EvolucionTab } from './EvolucionTab';
+import { RecetaTab } from './RecetaTab';
+import { DocumentosTab } from './DocumentosTab';
+import { ResumenTab } from './ResumenTab';
 
 type FormState = {
   facilityId: string;
@@ -8901,6 +8907,15 @@ export function EpisodeDetailPage() {
       : null;
   const isOutpatientDocument =
     isConsultationDocumentsSection && detail.encounterType === 'OUTPATIENT';
+  /// Las 5 secciones clínicas de Consulta/Episodio ambulatorio migradas al sistema nuevo
+  /// (Refactor/plan-episodio-consulta.md); reemplazan por completo el formulario genérico
+  /// data-driven de abajo solo para estas combinaciones encounterType+tab.
+  const isOutpatientNewClinicalTab =
+    isConsultationHistorySection ||
+    isConsultationCurrentSection ||
+    isConsultationEvolutionSection ||
+    isConsultationPrescriptionSection ||
+    isOutpatientDocument;
 
   const submitPendingFiles = () => {
     if (isEpisodeClosed) {
@@ -10017,120 +10032,144 @@ export function EpisodeDetailPage() {
                     </label>
                   </SectionCard>
 
-                  <SectionCard
-                    description="Lectura consolidada desde Historia clínica, Consulta actual y Receta e indicaciones."
-                    title="Resumen clínico"
-                    icon={Stethoscope}
-                    >
-                      {outpatientClinicalSummary &&
-                      (outpatientClinicalSummary.motive ||
-                        outpatientClinicalSummary.primaryDiagnosis ||
-                        outpatientClinicalSummary.activeProblems.length > 0 ||
-                        outpatientClinicalSummary.currentTreatment.length > 0) ? (
-                        <div className="space-y-4">
-                          {outpatientClinicalSummary.motive ? (
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                Motivo de consulta
-                              </p>
-                              <p className="mt-1 text-sm leading-relaxed text-slate-900">
-                                {outpatientClinicalSummary.motive}
-                              </p>
-                            </div>
-                          ) : null}
+                  {detail.encounterType === 'OUTPATIENT' ? (
+                    <ResumenTab encounterNumber={episodeNumber} />
+                  ) : (
+                    <>
+                      <SectionCard
+                        description="Lectura consolidada desde Historia clínica, Consulta actual y Receta e indicaciones."
+                        title="Resumen clínico"
+                        icon={Stethoscope}
+                      >
+                        {outpatientClinicalSummary &&
+                        (outpatientClinicalSummary.motive ||
+                          outpatientClinicalSummary.primaryDiagnosis ||
+                          outpatientClinicalSummary.activeProblems.length > 0 ||
+                          outpatientClinicalSummary.currentTreatment.length > 0) ? (
+                          <div className="space-y-4">
+                            {outpatientClinicalSummary.motive ? (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  Motivo de consulta
+                                </p>
+                                <p className="mt-1 text-sm leading-relaxed text-slate-900">
+                                  {outpatientClinicalSummary.motive}
+                                </p>
+                              </div>
+                            ) : null}
 
-                        {outpatientClinicalSummary.primaryDiagnosis ? (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                Diagnóstico principal
-                              </p>
-                              <p className="mt-1 text-sm leading-relaxed text-slate-900">
-                                {formatConsultationSummaryDiagnosis(
-                                  outpatientClinicalSummary.primaryDiagnosis,
-                                )}
-                              </p>
-                            </div>
-                          ) : null}
+                            {outpatientClinicalSummary.primaryDiagnosis ? (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  Diagnóstico principal
+                                </p>
+                                <p className="mt-1 text-sm leading-relaxed text-slate-900">
+                                  {formatConsultationSummaryDiagnosis(
+                                    outpatientClinicalSummary.primaryDiagnosis,
+                                  )}
+                                </p>
+                              </div>
+                            ) : null}
 
-                        {outpatientClinicalSummary.activeProblems.length > 0 ? (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                              Problemas activos
-                            </p>
-                            <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
-                              {outpatientClinicalSummary.activeProblems.map((problem) => (
-                                <li key={problem}>{problem}</li>
-                              ))}
-                            </ul>
+                            {outpatientClinicalSummary.activeProblems.length > 0 ? (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  Problemas activos
+                                </p>
+                                <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
+                                  {outpatientClinicalSummary.activeProblems.map((problem) => (
+                                    <li key={problem}>{problem}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+
+                            {outpatientClinicalSummary.currentTreatment.length > 0 ? (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                  Tratamiento actual
+                                </p>
+                                <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
+                                  {outpatientClinicalSummary.currentTreatment.map((item) => (
+                                    <li key={item}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            Sin información clínica consolidada todavía.
+                          </p>
+                        )}
+                      </SectionCard>
 
-                          {outpatientClinicalSummary.currentTreatment.length > 0 ? (
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                Tratamiento actual
-                              </p>
-                              <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-900">
-                                {outpatientClinicalSummary.currentTreatment.map((item) => (
-                                  <li key={item}>{item}</li>
-                                ))}
-                              </ul>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Sin información clínica consolidada todavía.
-                      </p>
-                    )}
-                  </SectionCard>
-
-                  <SectionCard
-                    description="Último registro clínico disponible para el episodio."
-                    title="Signos vitales"
-                    icon={HeartPulse}
-                    >
+                      <SectionCard
+                        description="Último registro clínico disponible para el episodio."
+                        title="Signos vitales"
+                        icon={HeartPulse}
+                      >
                         {outpatientClinicalSummary &&
                         outpatientClinicalSummary.latestVitalSigns.values.length > 0 ? (
-                        <div className="space-y-3">
-                          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                            {outpatientClinicalSummary.latestVitalSigns.values.map((item) => (
-                              <div
-                              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
-                              key={item.label}
-                            >
-                              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                {item.label}
-                              </p>
-                              <div className="flex items-end gap-1.5">
-                                <p className="mt-2 text-xl font-semibold text-slate-900">
-                                  {item.value}
-                                </p>
-                                <span className="pb-1 text-xs font-medium text-slate-500">
-                                  {item.unit}
-                                </span>
-                              </div>
+                          <div className="space-y-3">
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                              {outpatientClinicalSummary.latestVitalSigns.values.map((item) => (
+                                <div
+                                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
+                                  key={item.label}
+                                >
+                                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                    {item.label}
+                                  </p>
+                                  <div className="flex items-end gap-1.5">
+                                    <p className="mt-2 text-xl font-semibold text-slate-900">
+                                      {item.value}
+                                    </p>
+                                    <span className="pb-1 text-xs font-medium text-slate-500">
+                                      {item.unit}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                          {outpatientClinicalSummary.latestVitalSigns.recordedAt ? (
-                            <p className="text-xs text-muted-foreground">
-                              {outpatientClinicalSummary.latestVitalSigns.source} ·{' '}
-                              {formatDateTime(outpatientClinicalSummary.latestVitalSigns.recordedAt)}
-                            </p>
-                          ) : null}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                      No hay signos vitales asociados a este episodio todavia.
-                    </p>
+                            {outpatientClinicalSummary.latestVitalSigns.recordedAt ? (
+                              <p className="text-xs text-muted-foreground">
+                                {outpatientClinicalSummary.latestVitalSigns.source} ·{' '}
+                                {formatDateTime(outpatientClinicalSummary.latestVitalSigns.recordedAt)}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No hay signos vitales asociados a este episodio todavia.
+                          </p>
+                        )}
+                      </SectionCard>
+                    </>
                   )}
-                </SectionCard>
-              </>
+                </>
               )
             ) : null}
 
-            {activeTabDefinition ? (
+            {isOutpatientNewClinicalTab ? (
+              <SectionCard
+                description={activeTabDefinition?.description ?? ''}
+                icon={activeTabDefinition?.icon ?? FileText}
+                title={activeTab}
+              >
+                {isConsultationHistorySection ? (
+                  <HistoriaClinicaTab encounterNumber={episodeNumber} />
+                ) : isConsultationCurrentSection ? (
+                  <ConsultaActualTab encounterNumber={episodeNumber} />
+                ) : isConsultationEvolutionSection ? (
+                  <EvolucionTab encounterNumber={episodeNumber} />
+                ) : isConsultationPrescriptionSection ? (
+                  <RecetaTab encounterNumber={episodeNumber} />
+                ) : isOutpatientDocument ? (
+                  <DocumentosTab encounterNumber={episodeNumber} />
+                ) : null}
+              </SectionCard>
+            ) : activeTabDefinition ? (
               <>
                 <SectionCard
                   description={activeTabDefinition.description}
