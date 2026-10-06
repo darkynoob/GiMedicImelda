@@ -21,6 +21,13 @@ import { ConsultationsnestModule } from './g/consultationsnest/consultationsnest
 import { HospitalizationModule } from './hospitalization/hospitalization.module';
 import { MedicalRecordsModule } from './medical-records/medical-records.module';
 import { NursingModule } from './nursing/nursing.module';
+import { OutpatientConsultationModule } from './outpatient-consultation/outpatient-consultation.module';
+import { ClinicalHistoryModule } from './outpatient-consultation/clinical-history/clinical-history.module';
+import { ConsultationNoteModule } from './outpatient-consultation/consultation-note/consultation-note.module';
+import { EvolutionNoteModule } from './outpatient-consultation/evolution-note/evolution-note.module';
+import { PrescriptionModule } from './outpatient-consultation/prescription/prescription.module';
+import { OutpatientDocumentsModule } from './outpatient-consultation/documents/outpatient-documents.module';
+import { EpisodeSummaryModule } from './outpatient-consultation/summary/episode-summary.module';
 import { PatientsModule } from './patients/patients.module';
 import { PersistenceModule } from './shared/persistence/persistence.module';
 import { SurgeryModule } from './surgery/surgery.module';
@@ -45,6 +52,13 @@ import { UsersModule } from './users/users.module';
     PatientsModule,
     MedicalRecordsModule,
     EncountersModule,
+    OutpatientConsultationModule,
+    ClinicalHistoryModule,
+    ConsultationNoteModule,
+    EvolutionNoteModule,
+    PrescriptionModule,
+    OutpatientDocumentsModule,
+    EpisodeSummaryModule,
     DocumentsModule,
     ConsentsModule,
     AuditsModule,

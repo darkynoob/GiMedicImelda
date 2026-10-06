@@ -16,9 +16,17 @@ import { cn } from '../../lib/utils';
 
 const ADMIN_ROLES = ['Administrador del Tenant'];
 
+type NavItem = {
+  title: string;
+  icon: typeof LayoutDashboard;
+  path: string;
+  hidden?: boolean;
+  roles?: string[];
+};
+
 // Clinico section (Enfermeria, Laboratorio, Imagenologia, Consentimientos, Egresos) kept out of the
 // visible menu per navigation redesign; routes/components/permissions remain untouched.
-const navSections = [
+const navSections: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Principal',
     items: [

@@ -82,6 +82,26 @@ import { PATIENT_CLINICAL_PROFILE_REPOSITORY } from './tokens/patientClinicalPro
 import { PrismaPatientClinicalProfileRepository } from './repositories/patientClinicalProfile.repository';
 import { PATIENT_BILLING_PROFILE_REPOSITORY } from './tokens/patientBillingProfile.token';
 import { PrismaPatientBillingProfileRepository } from './repositories/patientBillingProfile.repository';
+import { ICDCATALOGENTRY_REPOSITORY } from './tokens/icdCatalogEntry.token';
+import { PrismaIcdCatalogEntryRepository } from './repositories/icdCatalogEntry.repository';
+import { MEDICATIONCATALOGENTRY_REPOSITORY } from './tokens/medicationCatalogEntry.token';
+import { PrismaMedicationCatalogEntryRepository } from './repositories/medicationCatalogEntry.repository';
+import { CLINICALHISTORY_REPOSITORY } from './tokens/clinicalHistory.token';
+import { PrismaClinicalHistoryRepository } from './repositories/clinicalHistory.repository';
+import { CLINICALHISTORYVERSION_REPOSITORY } from './tokens/clinicalHistoryVersion.token';
+import { PrismaClinicalHistoryVersionRepository } from './repositories/clinicalHistoryVersion.repository';
+import { CONSULTATIONNOTE_REPOSITORY } from './tokens/consultationNote.token';
+import { PrismaConsultationNoteRepository } from './repositories/consultationNote.repository';
+import { CONSULTATIONNOTEVERSION_REPOSITORY } from './tokens/consultationNoteVersion.token';
+import { PrismaConsultationNoteVersionRepository } from './repositories/consultationNoteVersion.repository';
+import { EVOLUTIONNOTE_REPOSITORY } from './tokens/evolutionNote.token';
+import { PrismaEvolutionNoteRepository } from './repositories/evolutionNote.repository';
+import { EVOLUTIONNOTEVERSION_REPOSITORY } from './tokens/evolutionNoteVersion.token';
+import { PrismaEvolutionNoteVersionRepository } from './repositories/evolutionNoteVersion.repository';
+import { PRESCRIPTION_REPOSITORY } from './tokens/prescription.token';
+import { PrismaPrescriptionRepository } from './repositories/prescription.repository';
+import { PRESCRIPTIONVERSION_REPOSITORY } from './tokens/prescriptionVersion.token';
+import { PrismaPrescriptionVersionRepository } from './repositories/prescriptionVersion.repository';
 
 @Global()
 @Module({
@@ -238,6 +258,56 @@ import { PrismaPatientBillingProfileRepository } from './repositories/patientBil
       provide: PATIENT_BILLING_PROFILE_REPOSITORY,
       useExisting: PrismaPatientBillingProfileRepository,
     },
+    PrismaIcdCatalogEntryRepository,
+    {
+      provide: ICDCATALOGENTRY_REPOSITORY,
+      useExisting: PrismaIcdCatalogEntryRepository,
+    },
+    PrismaMedicationCatalogEntryRepository,
+    {
+      provide: MEDICATIONCATALOGENTRY_REPOSITORY,
+      useExisting: PrismaMedicationCatalogEntryRepository,
+    },
+    PrismaClinicalHistoryRepository,
+    {
+      provide: CLINICALHISTORY_REPOSITORY,
+      useExisting: PrismaClinicalHistoryRepository,
+    },
+    PrismaClinicalHistoryVersionRepository,
+    {
+      provide: CLINICALHISTORYVERSION_REPOSITORY,
+      useExisting: PrismaClinicalHistoryVersionRepository,
+    },
+    PrismaConsultationNoteRepository,
+    {
+      provide: CONSULTATIONNOTE_REPOSITORY,
+      useExisting: PrismaConsultationNoteRepository,
+    },
+    PrismaConsultationNoteVersionRepository,
+    {
+      provide: CONSULTATIONNOTEVERSION_REPOSITORY,
+      useExisting: PrismaConsultationNoteVersionRepository,
+    },
+    PrismaEvolutionNoteRepository,
+    {
+      provide: EVOLUTIONNOTE_REPOSITORY,
+      useExisting: PrismaEvolutionNoteRepository,
+    },
+    PrismaEvolutionNoteVersionRepository,
+    {
+      provide: EVOLUTIONNOTEVERSION_REPOSITORY,
+      useExisting: PrismaEvolutionNoteVersionRepository,
+    },
+    PrismaPrescriptionRepository,
+    {
+      provide: PRESCRIPTION_REPOSITORY,
+      useExisting: PrismaPrescriptionRepository,
+    },
+    PrismaPrescriptionVersionRepository,
+    {
+      provide: PRESCRIPTIONVERSION_REPOSITORY,
+      useExisting: PrismaPrescriptionVersionRepository,
+    },
   ],
   exports: [
     PrismaService,
@@ -323,6 +393,26 @@ import { PrismaPatientBillingProfileRepository } from './repositories/patientBil
     PATIENT_CLINICAL_PROFILE_REPOSITORY,
     PrismaPatientBillingProfileRepository,
     PATIENT_BILLING_PROFILE_REPOSITORY,
+    PrismaIcdCatalogEntryRepository,
+    ICDCATALOGENTRY_REPOSITORY,
+    PrismaMedicationCatalogEntryRepository,
+    MEDICATIONCATALOGENTRY_REPOSITORY,
+    PrismaClinicalHistoryRepository,
+    CLINICALHISTORY_REPOSITORY,
+    PrismaClinicalHistoryVersionRepository,
+    CLINICALHISTORYVERSION_REPOSITORY,
+    PrismaConsultationNoteRepository,
+    CONSULTATIONNOTE_REPOSITORY,
+    PrismaConsultationNoteVersionRepository,
+    CONSULTATIONNOTEVERSION_REPOSITORY,
+    PrismaEvolutionNoteRepository,
+    EVOLUTIONNOTE_REPOSITORY,
+    PrismaEvolutionNoteVersionRepository,
+    EVOLUTIONNOTEVERSION_REPOSITORY,
+    PrismaPrescriptionRepository,
+    PRESCRIPTION_REPOSITORY,
+    PrismaPrescriptionVersionRepository,
+    PRESCRIPTIONVERSION_REPOSITORY,
   ],
 })
 export class PersistenceModule {}

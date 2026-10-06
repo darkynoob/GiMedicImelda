@@ -18,6 +18,8 @@
     "dev:web": "npm run dev --workspace apps/web",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "prisma:seed": "tsx prisma/seed.ts",
+    "catalog:seed:icd10": "tsx prisma/seeds/catalogs/load-icd10.ts",
+    "catalog:seed:medications": "tsx prisma/seeds/catalogs/seed-medications-basic.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
